@@ -114,7 +114,7 @@ class HashTable final {
 
       private:
         void next() {
-            Node* node = m_node;
+            Base* node = m_node;
             auto parent = node->m_parent;
             uint32_t hash = node->m_hash;
             node = m_node = node->m_next;
@@ -252,13 +252,13 @@ class HashTable final {
 
         m_array = std::move(newArray);
     }
-    Node* findFirst() {
+    Node* findFirst() const {
         for (auto& i : m_array) {
             if (i) return i;
         }
         return nullptr;
     }
-    Node* findNext(uint32_t hash) {
+    Node* findNext(uint32_t hash) const {
         unsigned bucket = hash & m_mask;
         for (bucket++; bucket < m_array.size(); bucket++) {
             if (m_array[bucket]) return m_array[bucket];

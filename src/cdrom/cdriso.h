@@ -52,7 +52,7 @@ class CDRIso {
     TrackType getTrackType(unsigned track);
     const std::filesystem::path& getIsoPath() { return m_isoPath; }
     uint8_t getTN();
-    IEC60908b::MSF getTD(uint8_t track);
+    IEC60908b::MSF getTD(uint8_t track) const;
     IEC60908b::MSF getLength(uint8_t track);
     IEC60908b::MSF getPregap(uint8_t track);
     bool getLocP(const IEC60908b::MSF msf, uint8_t locP[8]);

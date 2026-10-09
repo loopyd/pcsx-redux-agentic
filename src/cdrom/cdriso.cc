@@ -399,7 +399,7 @@ void PCSX::CDRIso::close() {
     m_ecm_file_detected = false;
 }
 
-PCSX::IEC60908b::MSF PCSX::CDRIso::getTD(uint8_t track) {
+PCSX::IEC60908b::MSF PCSX::CDRIso::getTD(uint8_t track) const {
     if (track == 0) {
         unsigned int sect;
         sect = m_ti[m_numtracks].start.toLBA() + m_ti[m_numtracks].length.toLBA() - m_ti[m_numtracks].pregap.toLBA();
