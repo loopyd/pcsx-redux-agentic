@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "core/history.h"
 #include "core/psxcounters.h"
 #include "core/psxdma.h"
 #include "core/psxemulator.h"
@@ -38,6 +39,9 @@ class HW {
     void write32(uint32_t add, uint32_t value);
 
   private:
+    uint8_t read8Value(uint32_t add);
+    uint16_t read16Value(uint32_t add);
+    uint32_t read32Value(uint32_t add);
     void dma0(uint32_t madr, uint32_t bcr, uint32_t chcr);
     void dma1(uint32_t madr, uint32_t bcr, uint32_t chcr);
     void dma2(uint32_t madr, uint32_t bcr, uint32_t chcr);
@@ -46,6 +50,7 @@ class HW {
     template <unsigned n>
     void dmaExec(uint32_t chcr) {
         auto &mem = g_emulator->m_mem;
+        uint32_t previous = mem->template getCHCR<n>();
         mem->setCHCR<n>(chcr);
         if ((chcr & 0x01000000) && mem->template isDMAEnabled<n>()) {
             uint32_t madr = mem->template getMADR<n>();
@@ -57,6 +62,8 @@ class HW {
             }
             uint32_t bcr = mem->template getBCR<n>();
             uint32_t mode = (chcr & 0x00000600) >> 9;
+            History::start(n, mem->template getMADR<n>(), madr, bcr, chcr, previous,
+                           mem->template readHardwareRegister<Memory::DMA_PCR>());
             if constexpr (n == 0) {
                 dma0(madr, bcr, chcr);
             } else if constexpr (n == 1) {

@@ -299,3 +299,13 @@ void PCSX::PPF::simplify(Patch& patch) {
         patch.data.push_back({pos, std::string(ptr, len)});
     }
 }
+
+bool PCSX::PPF::acceptsStateRead() const noexcept {
+    for (const auto& patch : m_patches) {
+        for (const auto& span : patch.data) {
+            if (span.first > IEC60908b::FRAMESIZE_RAW ||
+                span.second.size() > IEC60908b::FRAMESIZE_RAW - span.first) return false;
+        }
+    }
+    return true;
+}

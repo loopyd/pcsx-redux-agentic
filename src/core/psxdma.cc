@@ -17,6 +17,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
 #include "core/psxdma.h"
 
 #include "core/debug.h"
@@ -111,11 +112,14 @@ void dma6(uint32_t madr, uint32_t bcr, uint32_t chcr) {
             PCSX::g_emulator->m_mem->write32(madr, 0xffffff);
         } else {
             while (bcr--) {
-                *mem-- = SWAP_LE32((madr - 4) & 0xffffff);
+                uint32_t historyValue = (madr - 4) & 0xffffff;
+                *mem-- = SWAP_LE32(historyValue);
+                PCSX::History::scalar(6, madr, 0, historyValue, 4, 0);
                 madr -= 4;
             }
             mem++;
             *mem = 0xffffff;
+            PCSX::History::scalar(6, madr + 4, 0, 0xffffff, 4, 0);
         }
         PCSX::g_emulator->m_mem->msanDmaWrite(madr, size * 4);
         if (PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()

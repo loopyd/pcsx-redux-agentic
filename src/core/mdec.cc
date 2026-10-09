@@ -18,6 +18,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
 #include "core/mdec.h"
 
 #include <string.h>
@@ -326,9 +327,19 @@ void PCSX::MDEC::qtab_fromIqtab(unsigned char *qt, const int *iqtab) {
 
 #define MDEC_END_OF_DATA 0xfe00
 
-unsigned short *PCSX::MDEC::rl2blk(int *blk, unsigned short *mdec_rl) {
+bool PCSX::MDEC::rl2blk(int *blk, unsigned short *&mdec_rl) {
     int k, q_scale, rl, used_col;
     int *iqtab;
+    const auto canRead = [&]() {
+        const auto address = reinterpret_cast<uintptr_t>(mdec_rl);
+        const auto base = reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram);
+        if (!mdec_rl || !mdec.rl_end || address < base || address >= base + 0x800000 ||
+            address >= reinterpret_cast<uintptr_t>(mdec.rl_end)) {
+            mdec.rl_end = mdec_rl;
+            return false;
+        }
+        return true;
+    };
 
     memset(blk, 0, 6 * DSIZE2 * sizeof(int));
     iqtab = iq_uv;
@@ -345,6 +356,7 @@ unsigned short *PCSX::MDEC::rl2blk(int *blk, unsigned short *mdec_rl) {
             // to signed 11 bits per psx-spx's rl_decode_block, and the full matrix
             // multiply afterwards. Slower by construction; only taken when
             // something has actually uploaded a non-standard matrix.
+            if (!canRead()) return false;
             rl = SWAP_LE16(*mdec_rl);
             mdec_rl++;
             q_scale = RLE_RUN(rl);
@@ -353,6 +365,7 @@ unsigned short *PCSX::MDEC::rl2blk(int *blk, unsigned short *mdec_rl) {
             // through the fast one - both were wrong about the same two things.
             blk[0] = std::clamp(q_scale == 0 ? RLE_VAL(rl) * 2 : RLE_VAL(rl) * qtab[0], -0x400, 0x3ff);
             for (k = 0;;) {
+                if (!canRead()) return false;
                 rl = SWAP_LE16(*mdec_rl);
                 mdec_rl++;
                 if (rl == MDEC_END_OF_DATA) break;
@@ -366,7 +379,10 @@ unsigned short *PCSX::MDEC::rl2blk(int *blk, unsigned short *mdec_rl) {
             continue;
         }
 
+        if (!canRead()) return false;
         rl = SWAP_LE16(*mdec_rl);
+        History::inputScalar(uint32_t(reinterpret_cast<uintptr_t>(mdec_rl) -
+                             reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)), uint16_t(rl));
         mdec_rl++;
         q_scale = RLE_RUN(rl);
         {
@@ -395,7 +411,10 @@ unsigned short *PCSX::MDEC::rl2blk(int *blk, unsigned short *mdec_rl) {
                          : SCALER(sat * SCALER(aanscales[0], AAN_PRESCALE_SCALE), AAN_EXTRA - 3);
         }
         for (k = 0, used_col = 0;;) {
+            if (!canRead()) return false;
             rl = SWAP_LE16(*mdec_rl);
+        History::inputScalar(uint32_t(reinterpret_cast<uintptr_t>(mdec_rl) -
+                             reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)), uint16_t(rl));
             mdec_rl++;
             if (rl == MDEC_END_OF_DATA) break;
             k += RLE_RUN(rl) + 1;  // skip zero-coefficients
@@ -440,7 +459,7 @@ unsigned short *PCSX::MDEC::rl2blk(int *blk, unsigned short *mdec_rl) {
         idct(blk, used_col);
         blk += DSIZE2;
     }
-    return mdec_rl;
+    return true;
 }
 
 // The colour matrix, at 2^10. These were a generic full-scale JPEG set, and the
@@ -626,7 +645,33 @@ void yuv2rgb24(int *blk, uint8_t *image) {
     }
 }
 
+void PCSX::MDEC::observe(uint32_t reason) {
+    if (!History::active()) return;
+    auto address = [](const void *pointer) -> uint32_t {
+        uintptr_t first = reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram);
+        uintptr_t value = reinterpret_cast<uintptr_t>(pointer);
+        if (!pointer || value < first || value - first > 0x800000) return UINT32_MAX;
+        return uint32_t(value - first);
+    };
+    uint32_t offset = UINT32_MAX;
+    if (mdec.block_buffer_pos) {
+        uintptr_t first = reinterpret_cast<uintptr_t>(mdec.block_buffer);
+        uintptr_t pointer = reinterpret_cast<uintptr_t>(mdec.block_buffer_pos);
+        if (pointer < first || pointer - first > sizeof(mdec.block_buffer)) {
+            History::fail(History::Failure::Bounds);
+            return;
+        }
+        offset = uint32_t(pointer - first);
+    }
+    History::emit(History::Kind::DmaDevice, 0,
+                  {reason, mdec.reg0, mdec.reg1, mdec.pending_dma1.adr,
+                   mdec.pending_dma1.bcr, mdec.pending_dma1.chcr, offset}, History::buffer());
+    History::emit(History::Kind::DmaDevice, 1,
+                  {reason, address(mdec.rl), address(mdec.rl_end), offset}, History::input());
+}
+
 void PCSX::MDEC::init(void) {
+    History::fail(History::Failure::Discontinuity);
     memset(&mdec, 0, sizeof(mdec));
     memset(iq_y, 0, sizeof(iq_y));
     memset(iq_uv, 0, sizeof(iq_uv));
@@ -637,18 +682,25 @@ void PCSX::MDEC::init(void) {
 }
 
 // command register
-void PCSX::MDEC::write0(uint32_t data) { mdec.reg0 = data; }
+void PCSX::MDEC::write0(uint32_t data) {
+    observe(1);
+    mdec.reg0 = data;
+    observe(2);
+}
 
 uint32_t PCSX::MDEC::read0(void) { return mdec.reg0; }
 
 // status register
 void PCSX::MDEC::write1(uint32_t data) {
+    observe(3);
     if (data & MDEC1_RESET) {  // mdec reset
+        History::cancel();
         mdec.reg0 = 0;
         mdec.reg1 = 0;
         mdec.pending_dma1.adr = 0;
         mdec.block_buffer_pos = 0;
     }
+    observe(4);
 }
 
 uint32_t PCSX::MDEC::read1(void) {
@@ -681,6 +733,7 @@ void PCSX::MDEC::dma0(uint32_t adr, uint32_t bcr, uint32_t chcr) {
                                 "here and will decode this to flat grey; send MDEC(3) before MDEC(1).\n"));
             }
             mdec.rl = g_emulator->m_mem->getPointer<uint16_t>(adr);
+            History::retain();
             /* now the mdec is busy till all data are decoded */
             mdec.reg1 |= MDEC1_BUSY;
             /* detect the end of decoding */
@@ -694,9 +747,11 @@ void PCSX::MDEC::dma0(uint32_t adr, uint32_t bcr, uint32_t chcr) {
 
             /* process the pending dma1 */
             if (mdec.pending_dma1.adr) {
+                History::Owner pending(1, History::pending());
                 dma1(mdec.pending_dma1.adr, mdec.pending_dma1.bcr, mdec.pending_dma1.chcr);
             }
             mdec.pending_dma1.adr = 0;
+            History::release();
             return;
 
         case 0x4:  // quantization table upload
@@ -705,6 +760,8 @@ void PCSX::MDEC::dma0(uint32_t adr, uint32_t bcr, uint32_t chcr) {
             // printf("uploading new quantization table\n");
             // printmatrixu8(p);
             // printmatrixu8(p + 64);
+            for (unsigned i = 0; i < DSIZE2 * 2; ++i)
+                History::scalar(0, adr + i, 0, p[i], 1, 1);
             iqtab_init(iq_y, p);
             iqtab_init(iq_uv, p + 64);
             memcpy(qt_y, p, sizeof(qt_y));
@@ -720,7 +777,10 @@ void PCSX::MDEC::dma0(uint32_t adr, uint32_t bcr, uint32_t chcr) {
             // with the standard one: correct-looking output here, different output
             // on hardware, and no diagnostic either way.
             const int16_t *p = g_emulator->m_mem->getPointer<int16_t>(adr);
-            for (unsigned i = 0; i < DSIZE2; i++) scaletable[i] = SWAP_LE16(p[i]);
+            for (unsigned i = 0; i < DSIZE2; i++) {
+                scaletable[i] = SWAP_LE16(p[i]);
+                History::scalar(0, adr + i * 2, 0, uint16_t(scaletable[i]), 2, 1);
+            }
             customScaleTable = memcmp(scaletable, c_standardScaleTable, sizeof(scaletable)) != 0;
             scaleTableUploaded = true;
             warnedNoScaleTable = false;
@@ -729,6 +789,7 @@ void PCSX::MDEC::dma0(uint32_t adr, uint32_t bcr, uint32_t chcr) {
             return;
 
         default:
+            History::fail(History::Failure::Unsupported);
             // printf("mdec unknown command\n");
             break;
     }
@@ -764,10 +825,12 @@ void PCSX::MDEC::dma1(uint32_t adr, uint32_t bcr, uint32_t chcr) {
     }
 
     if (!(mdec.reg1 & MDEC1_BUSY)) {
+        History::defer(adr, bcr, chcr);
         /* add to pending */
         mdec.pending_dma1.adr = adr;
         mdec.pending_dma1.bcr = bcr;
         mdec.pending_dma1.chcr = chcr;
+        observe(6);
         /* do not free the dma */
     } else {
         image = g_emulator->m_mem->getPointer<uint8_t>(adr);
@@ -779,25 +842,30 @@ void PCSX::MDEC::dma1(uint32_t adr, uint32_t bcr, uint32_t chcr) {
 
             /* there is some partial block pending ? */
             if (mdec.block_buffer_pos != 0) {
-                int n = mdec.block_buffer - mdec.block_buffer_pos + SIZE_OF_16B_BLOCK;
-                /* TODO: check if partial block do not  larger than size */
+                const int remaining = mdec.block_buffer - mdec.block_buffer_pos + SIZE_OF_16B_BLOCK;
+                const int n = std::min(remaining, size);
                 memcpy(image, mdec.block_buffer_pos, n);
+                History::span(1, adr + uint32_t(reinterpret_cast<uintptr_t>(image) - reinterpret_cast<uintptr_t>(g_emulator->m_mem->getPointer<uint8_t>(adr))),
+                              image, uint32_t(n), 0, History::buffer());
                 image += n;
                 size -= n;
-                mdec.block_buffer_pos = 0;
+                mdec.block_buffer_pos = n == remaining ? nullptr : mdec.block_buffer_pos + n;
             }
 
-            while (size >= SIZE_OF_16B_BLOCK) {
-                mdec.rl = rl2blk(blk, mdec.rl);
+            while (size >= SIZE_OF_16B_BLOCK && rl2blk(blk, mdec.rl)) {
                 yuv2rgb15(blk, (uint16_t *)image);
+                History::span(1, adr + uint32_t(reinterpret_cast<uintptr_t>(image) - reinterpret_cast<uintptr_t>(g_emulator->m_mem->getPointer<uint8_t>(adr))),
+                              image, SIZE_OF_16B_BLOCK, 0, History::input());
                 image += SIZE_OF_16B_BLOCK;
                 size -= SIZE_OF_16B_BLOCK;
             }
 
-            if (size != 0) {
-                mdec.rl = rl2blk(blk, mdec.rl);
+            if (size > 0 && rl2blk(blk, mdec.rl)) {
                 yuv2rgb15(blk, (uint16_t *)mdec.block_buffer);
+                History::buffer(mdec.block_buffer, SIZE_OF_16B_BLOCK);
                 memcpy(image, mdec.block_buffer, size);
+                History::span(1, adr + uint32_t(reinterpret_cast<uintptr_t>(image) - reinterpret_cast<uintptr_t>(g_emulator->m_mem->getPointer<uint8_t>(adr))),
+                              image, uint32_t(size), 0, History::buffer());
                 mdec.block_buffer_pos = mdec.block_buffer + size;
             }
 
@@ -808,29 +876,35 @@ void PCSX::MDEC::dma1(uint32_t adr, uint32_t bcr, uint32_t chcr) {
 
             /* there is some partial block pending ? */
             if (mdec.block_buffer_pos != 0) {
-                int n = mdec.block_buffer - mdec.block_buffer_pos + SIZE_OF_24B_BLOCK;
-                /* TODO: check if partial block do not  larger than size */
+                const int remaining = mdec.block_buffer - mdec.block_buffer_pos + SIZE_OF_24B_BLOCK;
+                const int n = std::min(remaining, size);
                 memcpy(image, mdec.block_buffer_pos, n);
+                History::span(1, adr + uint32_t(reinterpret_cast<uintptr_t>(image) - reinterpret_cast<uintptr_t>(g_emulator->m_mem->getPointer<uint8_t>(adr))),
+                              image, uint32_t(n), 0, History::buffer());
                 image += n;
                 size -= n;
-                mdec.block_buffer_pos = 0;
+                mdec.block_buffer_pos = n == remaining ? nullptr : mdec.block_buffer_pos + n;
             }
 
-            while (size >= SIZE_OF_24B_BLOCK) {
-                mdec.rl = rl2blk(blk, mdec.rl);
+            while (size >= SIZE_OF_24B_BLOCK && rl2blk(blk, mdec.rl)) {
                 yuv2rgb24(blk, image);
+                History::span(1, adr + uint32_t(reinterpret_cast<uintptr_t>(image) - reinterpret_cast<uintptr_t>(g_emulator->m_mem->getPointer<uint8_t>(adr))),
+                              image, SIZE_OF_24B_BLOCK, 0, History::input());
                 image += SIZE_OF_24B_BLOCK;
                 size -= SIZE_OF_24B_BLOCK;
             }
 
-            if (size != 0) {
-                mdec.rl = rl2blk(blk, mdec.rl);
+            if (size > 0 && rl2blk(blk, mdec.rl)) {
                 yuv2rgb24(blk, mdec.block_buffer);
+                History::buffer(mdec.block_buffer, SIZE_OF_24B_BLOCK);
                 memcpy(image, mdec.block_buffer, size);
+                History::span(1, adr + uint32_t(reinterpret_cast<uintptr_t>(image) - reinterpret_cast<uintptr_t>(g_emulator->m_mem->getPointer<uint8_t>(adr))),
+                              image, uint32_t(size), 0, History::buffer());
                 mdec.block_buffer_pos = mdec.block_buffer + size;
             }
         }
 
+        observe(5);
         /* define the power of mdec */
         scheduleMDECOUTDMAIRQ((int)((dmacnt * MDEC_BIAS)));
     }
@@ -864,12 +938,19 @@ void PCSX::MDEC::scheduledCallback1() {
     /* this else if avoid to read outside memory */
     if (mdec.rl >= mdec.rl_end) {
         mdec.reg1 &= ~MDEC1_STP;
+        History::Owner input(0, History::input());
         scheduledCallback0();
         mdec.reg1 &= ~MDEC1_BUSY;
-    } else if (SWAP_LE16(*(mdec.rl)) == MDEC_END_OF_DATA) {
-        mdec.reg1 &= ~MDEC1_STP;
-        scheduledCallback0();
-        mdec.reg1 &= ~MDEC1_BUSY;
+    } else {
+        const uint16_t marker = SWAP_LE16(*(mdec.rl));
+        History::inputScalar(uint32_t(reinterpret_cast<uintptr_t>(mdec.rl) -
+                             reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)), marker, true);
+        if (marker == MDEC_END_OF_DATA) {
+            mdec.reg1 &= ~MDEC1_STP;
+            History::Owner input(0, History::input());
+            scheduledCallback0();
+            mdec.reg1 &= ~MDEC1_BUSY;
+        }
     }
 
     auto &mem = g_emulator->m_mem;

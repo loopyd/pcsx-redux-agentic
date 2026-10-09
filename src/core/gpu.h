@@ -22,6 +22,7 @@
 #include <stdint.h>
 
 #include <functional>
+#include <array>
 #include <magic_enum/magic_enum_all.hpp>
 #include <memory>
 #include <stdexcept>
@@ -143,13 +144,15 @@ class GPU {
     int init(UI *);
     virtual int initBackend(UI *) = 0;
     virtual int shutdown() = 0;
-    uint32_t readData();
+    uint32_t readData(uint32_t address = 0);
     virtual uint32_t readStatusInternal() = 0;
-    void writeData(uint32_t gdata);
+    void writeData(uint32_t gdata, uint32_t address = 0);
     void directDMAWrite(const uint32_t *feed, int transferSize, uint32_t hwAddr);
     void directDMARead(uint32_t *dest, int transferSize, uint32_t hwAddr);
     void chainedDMAWrite(const uint32_t *memory, uint32_t hwAddr);
-    void writeStatus(uint32_t gdata);
+    void writeStatus(uint32_t gdata, uint32_t address = 0);
+    std::array<uint32_t, 8> historyState();
+    void history(uint32_t phase);
     virtual void setOpenGLContext() {}
 
     virtual void restoreStatus(uint32_t status) = 0;
@@ -297,6 +300,7 @@ class GPU {
         virtual ~Command() {}
         virtual void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length);
         virtual void reset() {}
+        virtual bool historyReady() const { return true; }
         void setActive() { m_gpu->m_processor = this; }
 
       protected:
@@ -364,6 +368,7 @@ class GPU {
         void getVertices(AddTri &&, PixelOp) override;
         FastFill(GPU *parent) : Command(parent) {}
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
+        bool historyReady() const override { return m_state == READ_COLOR; }
         void reset() override { m_state = READ_COLOR; }
         bool isInside(unsigned x, unsigned y) override {
             return (x >= this->x) && (y >= this->y) && (x < this->x + this->w) && (y < this->y + this->h);
@@ -391,6 +396,7 @@ class GPU {
         void getVertices(AddTri &&, PixelOp) override;
         BlitVramVram(GPU *parent) : Command(parent) {}
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
+        bool historyReady() const override { return m_state == READ_COMMAND; }
         void reset() override { m_state = READ_COMMAND; }
         bool isInside(unsigned x, unsigned y) override {
             return (x >= this->dX) && (y >= this->dY) && (x < this->dX + this->w) && (y < this->dY + this->h);
@@ -426,6 +432,7 @@ class GPU {
         }
         BlitRamVram(BlitRamVram &&) = delete;
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
+        bool historyReady() const override { return m_state == READ_COMMAND && m_data.empty(); }
         void reset() override {
             m_state = READ_COMMAND;
             m_data.clear();
@@ -457,6 +464,7 @@ class GPU {
         void getVertices(AddTri &&, PixelOp) override;
         BlitVramRam(GPU *parent) : Command(parent) {}
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
+        bool historyReady() const override { return m_state == READ_COMMAND; }
 
         unsigned x, y, w, h;
 
@@ -582,6 +590,7 @@ class GPU {
         void getVertices(AddTri &&, PixelOp) override;
         Poly() {}
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
+        bool historyReady() const override { return m_state == READ_COLOR && m_count == 0; }
         void reset() override {
             m_state = READ_COLOR;
             m_count = 0;
@@ -648,6 +657,11 @@ class GPU {
         Line() {
             if constexpr (lineType == LineType::Simple) m_count = 0;
         }
+        bool historyReady() const override {
+            if (m_state != READ_COLOR) return false;
+            if constexpr (lineType == LineType::Simple) return m_count == 0;
+            else return x.empty() && y.empty() && colors.empty();
+        }
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
         void reset() override {
             m_state = READ_COLOR;
@@ -699,6 +713,7 @@ class GPU {
         void getVertices(AddTri &&, PixelOp) override;
         Rect() {}
         void processWrite(Buffer &, Logged::Origin, uint32_t value, uint32_t length) override;
+        bool historyReady() const override { return m_state == READ_COLOR; }
         void reset() override { m_state = READ_COLOR; }
         bool isInside(unsigned x, unsigned y) override {
             return (x >= (this->x + offset.x)) && (y >= (this->y + offset.y)) && (x < (this->x + offset.x) + this->w) &&
@@ -922,6 +937,7 @@ class GPU {
     TPage m_lastTPage;
     TWindow m_lastTWindow;
     DrawingOffset m_lastOffset;
+    uint32_t m_historyKnown = 0;
 
     uint32_t m_dataRet = 0;
     uint32_t m_textureWindowRaw = 0;

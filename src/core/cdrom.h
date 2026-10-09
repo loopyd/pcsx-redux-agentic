@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <array>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -47,15 +48,18 @@ class CDRom {
     static CDRom* factory();
     bool isLidOpen();
     void closeLid() {
+        History::CD::Scope historyScope(History::CD::Operation::Lid, 0);
         m_lidOpen = false;
         m_lidCloseScheduled = false;
     }
     void openLid() {
+        History::CD::Scope historyScope(History::CD::Operation::Lid, 1);
         m_lidOpen = true;
         m_wasLidOpened = true;
         m_lidCloseScheduled = false;
     }
     void scheduleCloseLid() {
+        History::CD::Scope historyScope(History::CD::Operation::Lid, 2);
         m_lidOpen = true;
         m_wasLidOpened = true;
         m_lidCloseScheduled = true;
@@ -77,7 +81,13 @@ class CDRom {
     const std::string& getCDRomID() { return m_cdromId; }
     const std::string& getCDRomLabel() { return m_cdromLabel; }
 
+    virtual bool acceptsPreparedState(const SaveStates::CDRom&, uint32_t scheduleMask) const noexcept = 0;
     virtual void reset() = 0;
+    bool historyInitialized() const;
+    void historyReset();
+    void history(uint32_t phase);
+    void historyIsoIdentity(uint32_t phase);
+    std::array<uint8_t, 384> historyContext();
 
     virtual void fifoScheduledCallback() = 0;
     virtual void commandsScheduledCallback() = 0;
@@ -175,8 +185,8 @@ class CDRom {
     uint8_t m_lastLocL[8] = {0};
 
     struct QueueElement {
-        uint8_t payload[16];
-        uint8_t value;
+        uint8_t payload[16] = {0};
+        uint8_t value = 0;
         bool valueRead = false;
         bool hasValue = false;
         bool hitMax = false;
@@ -218,6 +228,13 @@ class CDRom {
         }
     };
 
+    bool m_historyNativeInitialized = false;
+    std::array<uint64_t, 4> m_historyQueueIds{};
+    uint8_t m_historyReadingType = 0;
+    std::array<uint8_t, 32> historyQueue(const QueueElement& queue, uint64_t id) const;
+    void historyQueueChanged(uint32_t index);
+    void historyResponse(const QueueElement& queue, uint32_t branch, bool result, std::array<uint64_t, 2> before);
+    bool m_xaFormatReady = false;
     QueueElement m_commandFifo;
     QueueElement m_commandExecuting;
     QueueElement m_responseFifo[2];

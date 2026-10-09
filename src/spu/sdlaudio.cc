@@ -27,6 +27,7 @@
 #include <string>
 
 #include "core/system.h"
+#include "core/transactions.h"
 #include "spu/interface.h"
 
 // Upper clamp for the sink speed multiplier. Any host is emulation-bound long before this, so a value
@@ -67,6 +68,8 @@ PCSX::SPU::SDLAudio::SDLAudio(PCSX::SPU::SettingsType& settings)
 }
 
 void PCSX::SPU::SDLAudio::init(bool safe) {
+    m_capture.fail(Capture::Discontinuity);
+    History::CD::invalidate();
     // Pick the audio driver. SDL_HINT_AUDIO_DRIVER must be set before SDL_InitSubSystem.
     if (safe) {
         SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
@@ -204,6 +207,8 @@ void PCSX::SPU::SDLAudio::init(bool safe) {
 }
 
 void PCSX::SPU::SDLAudio::uninit() {
+    m_capture.fail(Capture::Discontinuity);
+    History::CD::invalidate();
     stopNullThread();
     closePlaybackDevice();
     if (m_stream) {
@@ -245,10 +250,12 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
     // mixing scratch buffer.
     while (requested > 0) {
         const uint32_t chunk = std::min<uint32_t>(requested, VoiceStream::BUFFER_SIZE);
+        std::array<uint32_t, STREAMS> available{};
 
         for (unsigned i = 0; i < STREAMS; i++) {
             size_t a = (i == 0) ? m_voicesStream.dequeue(m_mixBuffers[i].data(), chunk)
                                 : m_audioStream.dequeue(m_mixBuffers[i].data(), chunk);
+            available[i] = a;
             for (size_t f = (muted ? 0 : a); f < chunk; f++) {
                 // Same as the previous backend: silently zero-fill on underflow.
                 // CDDA underflow on stream 1 is expected and fine.
@@ -273,7 +280,9 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
             }
         }
 
-        SDL_PutAudioStreamData(stream, m_outputBuffer.data(), chunk * kFrameSizeBytes);
+        const bool submitted = SDL_PutAudioStreamData(stream, m_outputBuffer.data(), chunk * kFrameSizeBytes);
+        m_capture.pcm(m_outputBuffer.data(), chunk, available[0], available[1],
+                      (mono ? Capture::Mono : 0u) | (muted ? Capture::Muted : 0u) | (submitted ? Capture::Submitted : 0u));
 
         // Fast-forward lives at the sink (the master clock). We have already kept the first `chunk`
         // frames of each stream for playback at native 44.1kHz -- pitch is preserved. To run the whole

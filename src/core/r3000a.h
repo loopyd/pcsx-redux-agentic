@@ -19,6 +19,9 @@
 
 #pragma once
 
+#include "core/history.h"
+#include "core/transactions.h"
+#include <bit>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -28,6 +31,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "core/kernel.h"
 #include "core/psxcounters.h"
@@ -301,6 +305,10 @@ class R3000Acpu {
         PSXIRQ_LOG("Scheduling callback %08x at %08x\n", s, eCycle);
         const uint64_t cycle = m_regs.cycle;
         uint64_t target = cycle + uint64_t(double(eCycle) * m_scheduleScales[s]);
+        History::emit(History::Kind::Schedule, s,
+                      {eCycle, m_regs.scheduleMask, uint32_t(m_regs.scheduleTargets[s]),
+                       uint32_t(m_regs.scheduleTargets[s] >> 32)}, target);
+        History::CD::schedulerChange(s, m_regs.scheduleMask, m_regs.scheduleTargets[s], target, std::bit_cast<uint32_t>(m_scheduleScales[s]), false);
         m_regs.scheduleMask |= (1 << s);
         m_regs.scheduleTargets[s] = target;
         int64_t lowest = m_regs.lowestTarget - cycle;
@@ -311,6 +319,7 @@ class R3000Acpu {
     void unschedule(Schedule s_) {
         unsigned s = static_cast<unsigned>(s_);
         PSXIRQ_LOG("Unscheduling callback %08x\n", s);
+        History::CD::schedulerChange(s, m_regs.scheduleMask, m_regs.scheduleTargets[s], m_regs.scheduleTargets[s], std::bit_cast<uint32_t>(m_scheduleScales[s]), true);
         m_regs.scheduleMask &= ~(1 << s);
     }
 
@@ -572,6 +581,7 @@ Formula One 2001
     struct PCdrvFile;
     typedef Intrusive::HashTable<uint32_t, PCdrvFile> PCdrvFiles;
     struct PCdrvFile : public IO<File>, public PCdrvFiles::Node {
+        PCdrvFile(IO<PosixFile> file) : IO<File>(std::move(file)) {}
         PCdrvFile(const std::filesystem::path &filename) : IO<File>(new PosixFile(filename)) {}
         PCdrvFile(const std::filesystem::path &filename, FileOps::ReadWrite)
             : IO<File>(new PosixFile(filename, FileOps::READWRITE)) {}
@@ -586,6 +596,24 @@ Formula One 2001
     std::list<uint16_t> m_availableFDs;
 
   public:
+    struct PCdrvRestore {
+        uint16_t fd;
+        std::filesystem::path filename;
+        bool create;
+    };
+    struct PreparedPCdrv {
+        struct Entry {
+            uint16_t fd;
+            bool create;
+            PosixFile* file;
+            std::unique_ptr<PCdrvFile> node;
+        };
+        std::vector<Entry> entries;
+        std::list<uint16_t> availableFDs;
+    };
+    std::unique_ptr<PreparedPCdrv> preparePCdrv(const std::vector<PCdrvRestore>& files);
+    bool commitPCdrv(PreparedPCdrv& prepared);
+
     void closeAllPCdrvFiles() {
         m_pcdrvFiles.destroyAll();
         m_availableFDs.clear();

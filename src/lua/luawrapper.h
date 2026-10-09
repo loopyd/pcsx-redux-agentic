@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <exception>
 #include <functional>
 #include <map>
 #include <optional>
@@ -89,6 +90,10 @@ class Lua {
     void call(std::string_view funcName, int tableIdx = LUA_GLOBALSINDEX, int nArgs = 0);
     void call(int nArgs = 0);
     int pcall(int nArgs = 0);
+    static void unpackErrorRaw(lua_State*);
+    static int pcallRaw(lua_State*, int nargs, int results = LUA_MULTRET, lua_CFunction hidden = nullptr);
+    static void pushLuaContextRaw(lua_State*, bool inTable = false, lua_CFunction hidden = nullptr);
+    static int displayStackRaw(lua_State*, bool error, std::exception_ptr*, lua_CFunction hidden = nullptr);
 
     void push() {
         checkstack();

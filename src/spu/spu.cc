@@ -17,6 +17,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include <limits>
+#include <stdexcept>
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -28,6 +30,7 @@
 #include "core/r3000a.h"
 #include "spu/externals.h"
 #include "spu/interface.h"
+#include "core/transactions.h"
 
 namespace {
 // The ADSR step returns the full 15-bit (0..0x7fff) envelope volume; the
@@ -167,11 +170,12 @@ void PCSX::SPU::impl::captureVoiceSample(int ch, int32_t &capVoice1Index, int32_
 // the SPUSTAT bit 6 flag latches, and it is software writing the enable back that
 // re-arms it. Without that, one armed address keeps re-firing every time any voice reads
 // it, which a streaming driver re-pointing IRQA per chunk sees as extra interrupts.
-void PCSX::SPU::impl::triggerIrq() {
+void PCSX::SPU::impl::triggerIrq(uint32_t kind, uint32_t channel) {
+    const uint32_t previousControl = spuCtrl;
     spuCtrl &= ~ControlFlags::IRQEnable;
     spuStat |= StatusFlags::IRQFlag;
     // Notify the main emulator.
-    scheduleInterrupt();
+    scheduleInterrupt(kind, channel, History::CD::spuAddress(spuRamBase, irqAddress), previousControl | (uint32_t(spuCtrl) << 16), spuStat);
 }
 
 // Everything that happens at an ADPCM block boundary: decode the next 16-byte block into
@@ -194,15 +198,22 @@ bool PCSX::SPU::impl::decodeNextBlock(int ch, SPUCHAN *voice) {
     cursor = decoded.blockEnd;
     const int blockFlags = decoded.flags;
 
+    if (!(spuCtrl & ControlFlags::IRQEnable)) History::CD::workerObserve(4,
+        {uint32_t(ch), uint32_t(blockFlags), uint32_t(spuCtrl), History::CD::spuAddress(spuRamBase, irqAddress), 0, 0});
     if (spuCtrl & ControlFlags::IRQEnable) {
         const bool addrReached = irqAddress > cursor - 16 && irqAddress <= cursor;
         // Special case: IRQ on the looping address, when the stop/loop flag is set.
+        const uintptr_t base = reinterpret_cast<uintptr_t>(spuRamBase);
+        const uintptr_t loop = reinterpret_cast<uintptr_t>(voice->adpcm.loop());
+        const uintptr_t irq = reinterpret_cast<uintptr_t>(irqAddress);
         const bool loopAddrReached = (blockFlags & 1) && voice->adpcm.loop() != nullptr &&
-                                     irqAddress > voice->adpcm.loop() - 16 && irqAddress <= voice->adpcm.loop();
+                                     irq >= base && loop >= base && irq <= loop && loop - irq < 16;
+        History::CD::workerObserve(4, {uint32_t(ch), uint32_t(blockFlags), uint32_t(spuCtrl),
+            History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(addrReached), uint32_t(loopAddrReached)});
         if (addrReached || loopAddrReached) {
             // Debug flag.
             irqDone = 1;
-            triggerIrq();
+            triggerIrq(1, ch);
         }
     }
 
@@ -243,6 +254,7 @@ bool PCSX::SPU::impl::decodeNextBlock(int ch, SPUCHAN *voice) {
 // address psx-spx does not pin down, so it is left alone rather than guessed at.
 void PCSX::SPU::impl::walkSilentVoice(int ch, SPUCHAN *voice) {
     for (int ns = 0; ns < NSSIZE; ns++) {
+        History::CD::workerSample(ns);
         while (voice->interp.owesSample()) {
             if (voice->adpcm.bufferExhausted() && !decodeNextBlock(ch, voice)) return;
             // Read and discard: only the cursor motion matters here.
@@ -303,6 +315,7 @@ void PCSX::SPU::impl::synthesizeVoice(int ch, SPUCHAN *voice, int32_t &capVoice1
 
     // Collect 1 ms of this channel's audio.
     for (int ns = 0; ns < NSSIZE; ns++) {
+        History::CD::workerSample(ns);
         int rawSample;
 
         // EXPERIMENTAL key-on startup latency: emit silence and freeze decode/pitch/ADSR
@@ -456,6 +469,8 @@ void PCSX::SPU::impl::MainThread() {
             if (newChannelMask) secureStart = 1;
         }
 
+        History::CD::WorkerBatch historyBatch;
+
         {
             // capBufVoiceIndex is reset from the emulation thread (resetCaptureBuffer).
             std::lock_guard<std::mutex> lock(cbMtx);
@@ -530,13 +545,22 @@ void PCSX::SPU::impl::MainThread() {
         // runs under cbMtx. triggerIrq only sets flags (scheduleInterrupt stores an atomic),
         // so nothing in here takes another lock. The hold is NSSIZE * 4 compares.
         std::unique_lock<std::mutex> irqLock(cbMtx);
+        History::CD::workerObserve(2, {History::CD::spuAddress(spuRamBase, mixIrqAddress),
+            History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), uint32_t(bool(mixIrqAddress)), 0, 0});
         if (mixIrqAddress) {
             for (ns = 0; ns < NSSIZE; ns++) {
-                if ((spuCtrl & ControlFlags::IRQEnable) && irqAddress && irqAddress < spuRamBase + 0x1000) {
+                History::CD::workerSample(ns);
+                const bool irqCondition = (spuCtrl & ControlFlags::IRQEnable) && irqAddress && irqAddress < spuRamBase + 0x1000;
+                History::CD::workerObserve(2, {History::CD::spuAddress(spuRamBase, mixIrqAddress),
+                    History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), 1, uint32_t(irqCondition), 0}, true);
+                if (irqCondition) {
                     for (ch = 0; ch < 4; ch++) {
-                        if (irqAddress >= mixIrqAddress + (ch * 0x400) &&
-                            irqAddress < mixIrqAddress + (ch * 0x400) + 2) {
-                            triggerIrq();
+                        const bool regionReached = irqAddress >= mixIrqAddress + (ch * 0x400) &&
+                            irqAddress < mixIrqAddress + (ch * 0x400) + 2;
+                        History::CD::workerObserve(3, {uint32_t(ch), History::CD::spuAddress(spuRamBase, mixIrqAddress)+(ch*0x400),
+                            History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), uint32_t(regionReached), 0}, true);
+                        if (regionReached) {
+                            triggerIrq(2, ch);
                             s_chan[ch].data.get<PCSX::SPU::Chan::IrqDone>().value = 1;
                         }
                     }
@@ -546,6 +570,7 @@ void PCSX::SPU::impl::MainThread() {
             }
         }
         irqLock.unlock();
+        historyBatch.finish();
 
         m_reverb.init(NSSIZE);
 
@@ -605,10 +630,10 @@ void PCSX::SPU::impl::writeCaptureBufferCD(int numbSamples) {
 
 void PCSX::SPU::impl::playADPCMchannel(xa_decode_t *xap) {
     // Nothing to do when XA streaming is disabled.
-    if (!settings.get<Streaming>()) return;
-    if (!xap) return;
+    if (!settings.get<Streaming>()) { observeCDFeed(1, nullptr); return; }
+    if (!xap) { observeCDFeed(2, nullptr); return; }
     // Nothing to do without an XA frequency.
-    if (!xap->freq) return;
+    if (!xap->freq) { observeCDFeed(3, nullptr); return; }
 
     // Call the main XA feeder.
     FeedXA(xap);
@@ -650,29 +675,56 @@ void PCSX::SPU::impl::SetupThread() {
     endThread = 0;
     threadEnded = 0;
     // Flag that initialization is complete.
-    bSpuInit = 1;
-
     hMainThread = std::thread([this]() { MainThread(); });
+    bSpuInit = 1;
+    m_stateRestartFailed = false;
 }
 
 // Kill the mixing thread.
 void PCSX::SPU::impl::RemoveThread() {
-    // Raise the flag to end the thread.
+    if (!hMainThread.joinable()) return;
     endThread = 1;
-
-    using namespace std::chrono_literals;
-    // Wait until the thread has ended.
-    while (!threadEnded) {
-        std::this_thread::sleep_for(5ms);
-    }
-    std::this_thread::sleep_for(5ms);
-
     hMainThread.join();
-
-    // No more SPU is running.
     threadEnded = 0;
     bSpuInit = 0;
 }
+
+bool PCSX::SPU::impl::stateAccessAvailable() const noexcept {
+    const int64_t divisor = 4 - int64_t(settings.get<Volume>());
+    return spuIsOpen && spuBuffer && m_reverb.mixStart && !m_stateAccess && !m_stateRestartFailed &&
+           divisor >= std::numeric_limits<int>::min() && divisor <= std::numeric_limits<int>::max() &&
+           divisor != 0 && divisor != -1;
+}
+
+bool PCSX::SPU::impl::beginStateAccess() {
+    if (!stateAccessAvailable() || (hMainThread.joinable() && hMainThread.get_id() == std::this_thread::get_id()))
+        return false;
+    m_stateRestart = hMainThread.joinable();
+    RemoveThread();
+    m_stateAccess = true;
+    return true;
+}
+
+void PCSX::SPU::impl::endStateAccess() {
+    if (!m_stateAccess) return;
+    const bool restart = m_stateRestart;
+    m_stateAccess = false;
+    m_stateRestart = false;
+    if (!restart) return;
+    const int64_t divisor = 4 - int64_t(settings.get<Volume>());
+    if (divisor < std::numeric_limits<int>::min() || divisor > std::numeric_limits<int>::max() ||
+        divisor == 0 || divisor == -1) {
+        m_stateRestartFailed = true;
+        throw std::runtime_error("Invalid SPU host volume divisor");
+    }
+    try {
+        SetupThread();
+    } catch (...) {
+        m_stateRestartFailed = true;
+        throw;
+    }
+}
+
 
 // Initialize most of the SPU buffers.
 void PCSX::SPU::impl::SetupStreams() {
@@ -713,6 +765,7 @@ void PCSX::SPU::impl::RemoveStreams(void) {
 
 // Called by the main emulator after init.
 bool PCSX::SPU::impl::open() {
+    invalidateCapture();
     // Guard against a redundant open.
     if (spuIsOpen) return true;
 
@@ -743,6 +796,7 @@ bool PCSX::SPU::impl::open() {
 
 // Called before shutdown.
 long PCSX::SPU::impl::close(void) {
+    invalidateCapture();
     // Guard against closing when not open.
     if (!spuIsOpen) return 0;
 
@@ -778,6 +832,7 @@ void PCSX::SPU::impl::playCDDAchannel(int16_t *data, int size) {
 }
 
 void PCSX::SPU::impl::setLua(Lua L) {
+    m_audioOut.setCaptureLua(L, [this] { return captureInfluences(); });
     L.getfieldtable("PCSX", LUA_GLOBALSINDEX);
     L.getfieldtable("settings");
     L.push("spu");

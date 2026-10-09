@@ -63,7 +63,8 @@ int16_t PCSX::SPU::impl::zigzag(const int16_t *ring, unsigned table) {
 void PCSX::SPU::impl::FeedXA(xa_decode_t *xap) {
     int voldiv = 4 - settings.get<Volume>();
 
-    if (!spuIsOpen) return;
+    const bool cdda = xap == &m_cdda;
+    if (!spuIsOpen) { observeCDFeed(4, nullptr, 0, cdda); return; }
 
     // Store the info for save states.
     xapGlobal = xap;
@@ -79,6 +80,19 @@ void PCSX::SPU::impl::FeedXA(xa_decode_t *xap) {
     // is itself a race, and could pair a skipped lock with a later unlock.
     std::unique_lock<std::mutex> cbLock(cbMtx);
     cdFeedCycle = PCSX::g_emulator->m_cpu->m_regs.cycle;
+
+    const auto submit = [&](uint32_t frames) {
+        if (!frames) { observeCDFeed(5, xap, 0, cdda); return; }
+        const bool accepted = m_audioOut.feedStreamData(XABuffer, frames, 1);
+        if (!m_audioOut.capture().ownerThread()) {
+            m_audioOut.capture().fail(Capture::Thread); observeCDFeed(accepted ? 6 : 7, nullptr, frames, cdda); return;
+        }
+        m_audioOut.checkCaptureSettings();
+        const uint64_t event = m_audioOut.capture().event(g_emulator->m_cpu->m_regs.cycle, Capture::Kind::Feed,
+            xap->freq, frames, xap->nsamples, 0, xap->stereo, uint32_t(accepted) | (uint32_t(cdda)<<1));
+        observeCDFeed(accepted ? 6 : 7, xap, frames, cdda, event);
+        if (!accepted) m_audioOut.capture().streamingLoss(frames);
+    };
 
     if (xap->freq == 44100) {
         // CD-DA is already at the output rate and skips the zigzag interpolator.
@@ -99,9 +113,7 @@ void PCSX::SPU::impl::FeedXA(xa_decode_t *xap) {
             *XAFeed++ = f;
         }
         cbLock.unlock();
-        if (XAFeed != XABuffer) {
-            m_audioOut.feedStreamData(reinterpret_cast<SDLAudio::Frame *>(XABuffer), (XAFeed - XABuffer), 1);
-        }
+        submit(XAFeed-XABuffer);
         return;
     }
 
@@ -154,7 +166,5 @@ void PCSX::SPU::impl::FeedXA(xa_decode_t *xap) {
     }
     cbLock.unlock();
 
-    if (XAFeed != XABuffer) {
-        m_audioOut.feedStreamData(reinterpret_cast<SDLAudio::Frame *>(XABuffer), (XAFeed - XABuffer), 1);
-    }
+    submit(XAFeed-XABuffer);
 }

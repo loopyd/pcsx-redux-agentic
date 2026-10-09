@@ -188,3 +188,37 @@ The codebase still requires a lot of cleanup, and while the product is usable in
 - see [TODO](TODO.md) for more
 
 [![Redux definition](https://pbs.twimg.com/media/ENJhNwGWwAEbrGb?format=jpg)](https://twitter.com/MerriamWebster/status/1212357808026341376)
+
+## Native agentic missions
+
+This fork embeds 54 Lua resources: 19 entry missions and 35 modules. In the host
+repository, build the pinned component with `bin/harness setup --component
+pcsx-redux`; inspect it with `bin/harness runtime status` and `bin/harness runtime
+missions`. Linux managed builds retain the approved SDL3 prefix and exact source,
+recursive pin, generated-source, binary and resource identities.
+
+```sh
+third_party/pcsx-redux-agentic/scripts/manage-psx-emulator-skill.sh install /path/to/host-repository
+bin/harness runtime run --bios /path/to/bios.bin --mission state --argument action=schema --output out/schema
+bin/harness runtime run --bios /path/to/bios.bin --script /path/to/trusted.lua --module helper=/path/to/helper.lua --output out/custom
+```
+
+The host owner first migrates its known physical skill directory to this fork.
+The management script refuses unowned directories and unrelated symlinks. `check`
+and `remove` operate only on the expected host discovery links; no home, hooks,
+packages or global configuration are changed.
+
+`pcsx-redux -mission-catalog` is a bounded immutable query before device startup.
+`-mission NAME` selects an entry at the existing native Lua startup boundary and
+rejects helper entries, collisions and combinations with external code. The host
+harness owns deadlines, process cleanup, staging, physical capture readback and
+v2 receipts. Lua is trusted host code, and successful execution does not establish
+original PS1 behavior or hardware fidelity.
+
+The native state owner is version 6, `PCSX-Redux Agentic SaveState v6`. Checked
+save/load requires a paused settled boundary and owns card data/protocol/topology.
+Historical wire4 and old card5 state inputs are rejected checked inputs. CD
+observation wire3 exposes this fork's actual queues, callbacks, 11 scheduler
+scales, FIFO/DMA receipts and worker lineage. Scanner and VRAM extraction perform
+bounded native bulk work from one Lua call. Their current-fork native validation
+and performance evidence must qualify each delivered binary.

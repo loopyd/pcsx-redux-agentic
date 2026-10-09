@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "core/history.h"
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -56,11 +57,20 @@ enum class MsanStatus {
 class Memory {
   public:
     Memory();
+    ~Memory() noexcept;
     int init();
     void reset();
     void shutdown();
 
     void setLuts();
+    struct RamState {
+        uint32_t biu = 0;
+        bool writes = false;
+        bool setting8MB = false;
+    };
+    bool captureRamState(RamState& state) const noexcept;
+    void restoreRamState(const RamState& state);
+    bool acceptsStateDma(uint32_t address, uint64_t bytes, const RamState&, const uint8_t* hardware) const noexcept;
 
     enum class ReadType { Data, Instr };
 
@@ -161,6 +171,7 @@ class Memory {
 
     template <unsigned n>
     void dmaInterrupt() {
+        History::Completion observation(n);
         uint32_t icr = readHardwareRegister<DMA_ICR>();
         if ((icr & 0x00800000) == 0) return;
         bool triggeredIRQ = false;
@@ -204,6 +215,7 @@ class Memory {
     void clearDMABusy() {
         uint32_t chcr = readHardwareRegister<DMA_BASE + DMA_CHCR + n * 0x10>();
         writeHardwareRegister<DMA_BASE + DMA_CHCR + n * 0x10>(chcr & ~0x01000000);
+        History::emit(History::Kind::DmaComplete, n, {chcr, chcr & ~0x01000000});
     }
 
     template <unsigned n>
@@ -261,14 +273,18 @@ class Memory {
 
     void setIRQ(uint32_t irq) {
         uint32_t istat = readHardwareRegister<ISTAT>();
+        uint32_t previous = istat;
         istat |= irq;
         writeHardwareRegister<ISTAT>(istat);
+        History::emit(History::Kind::IRQAssert, 0, {irq, previous, istat});
     }
 
     void clearIRQ(uint32_t irq) {
         uint32_t istat = readHardwareRegister<ISTAT>();
+        uint32_t previous = istat;
         istat &= ~irq;
         writeHardwareRegister<ISTAT>(istat);
+        History::emit(History::Kind::IRQClear, 0, {irq, previous, istat});
     }
 
     uint32_t getBiosCRC32() { return m_biosCRC; }
@@ -306,6 +322,8 @@ class Memory {
         size_t m_ptrW = 0;
         size_t cappedSize(size_t size, size_t ptr) const { return std::min(size, c_size - ptr); }
         Memory *m_memory;
+        void invalidateOwner() noexcept { m_memory = nullptr; }
+        void closeInternal() final override { invalidateOwner(); }
 
         void readBlock(void *dest, size_t size, size_t ptr);
         void writeBlock(const void *src, size_t size, size_t ptr);
@@ -319,6 +337,7 @@ class Memory {
   private:
     friend class MemoryAsFile;
     IO<MemoryAsFile> m_memoryAsFile;
+    void applyRamLuts(bool writes);
 
     // The scratchpad and the hardware registers share a single 64kB page, and the guest path has
     // to dispatch register accesses to the hardware itself for their side effects, so that page is

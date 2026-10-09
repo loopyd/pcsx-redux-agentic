@@ -20,6 +20,7 @@
 #include "lua/luawrapper.h"
 
 #include <assert.h>
+#include <cstdio>
 
 static int callwrap(lua_State* raw, lua_CFunction func) {
     PCSX::Lua L(raw);
@@ -225,81 +226,52 @@ void PCSX::Lua::call(int nargs) {
     }
 }
 
-int PCSX::Lua::pcall(int nargs) {
-    push([](lua_State* L_) -> int {
-        Lua L(L_);
-        L.pushLuaContext(true);
-        return 1;
-    });
-
-    const int errfunc = gettop() - (nargs + 1);
-    insert(-2 - nargs);
-    const int top = gettop();
-
-    int r = lua_pcall(L, nargs, LUA_MULTRET, errfunc);
-    remove(errfunc);
-
-    if (r == 0) {
-        const int nresult = gettop() - top + nargs + 2;
-        return nresult;
-    }
-
-    int n = 1;
-    int t = gettop();
-    while (true) {
-        push(lua_Number(n++));
-        gettable(t);
-        if (isnil()) {
-            pop();
-            remove();
-            break;
+void PCSX::Lua::unpackErrorRaw(lua_State* L) {
+    if (!lua_istable(L, -1)) return;
+    const int table = lua_gettop(L);
+    int next = 1;
+    for (;;) {
+        lua_pushnumber(L, next++);
+        lua_gettable(L, table);
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            lua_remove(L, table);
+            return;
         }
     }
+}
+
+int PCSX::Lua::pcallRaw(lua_State* L, int nargs, int results, lua_CFunction hidden) {
+    struct Context { lua_CFunction hidden; } context{hidden};
+    lua_pushlightuserdata(L, &context);
+    lua_pushcclosure(L, [](lua_State* state) -> int {
+        const auto* context = static_cast<const Context*>(lua_touserdata(state, lua_upvalueindex(1)));
+        PCSX::Lua::pushLuaContextRaw(state, true, context->hidden);
+        return 1;
+    }, 1);
+    const int error = lua_gettop(L) - nargs - 1;
+    lua_insert(L, error);
+    const int status = lua_pcall(L, nargs, results, error);
+    lua_remove(L, error);
+    return status;
+}
+
+int PCSX::Lua::pcall(int nargs) {
+    const int prefix = gettop() - nargs - 1;
+    const int status = pcallRaw(L, nargs);
+    if (!status) return gettop() - prefix;
+    PCSX::Lua::unpackErrorRaw(L);
     displayStack(true);
     while (gettop()) pop();
-
-    switch (r) {
-        case LUA_ERRRUN:
-            throw std::runtime_error("Runtime error while running LUA code.");
-        case LUA_ERRMEM:
-            throw std::runtime_error("Memory allocation error while running LUA code.");
-        case LUA_ERRERR:
-            throw std::runtime_error("Error in Error function.");
-        case LUA_ERRSYNTAX:
-            throw std::runtime_error("Syntax error in Lua code.");
+    switch (status) {
+        case LUA_ERRRUN: throw std::runtime_error("Runtime error while running LUA code.");
+        case LUA_ERRMEM: throw std::runtime_error("Memory allocation error while running LUA code.");
+        case LUA_ERRERR: throw std::runtime_error("Error in Error function.");
+        case LUA_ERRSYNTAX: throw std::runtime_error("Syntax error in Lua code.");
         default:
             throw std::runtime_error(std::string("Unknow error while running LUA code (err code: ") +
-                                     std::to_string(r) + ")");
+                                     std::to_string(status) + ")");
     }
-}
-
-void PCSX::Lua::settable(int i, bool raw) {
-    if (raw) {
-        lua_rawset(L, i);
-    } else {
-        lua_settable(L, i);
-    }
-}
-
-void PCSX::Lua::gettable(int i, bool raw) {
-    if (raw) {
-        lua_rawget(L, i);
-    } else {
-        lua_gettable(L, i);
-    }
-}
-
-void PCSX::Lua::getfieldtable(std::string_view name, int tableIdx, bool raw) {
-    tableIdx = getabsolute(tableIdx);
-    push(name);
-    gettable(tableIdx, raw);
-    if (!isnil()) return;
-
-    pop();
-    newtable();
-    push(name);
-    copy(-2);
-    settable(tableIdx, raw);
 }
 
 void PCSX::Lua::getfieldtable(int idx, int tableIdx, bool raw) {
@@ -315,47 +287,30 @@ void PCSX::Lua::getfieldtable(int idx, int tableIdx, bool raw) {
     settable(tableIdx, raw);
 }
 
-void PCSX::Lua::pushLuaContext(bool inTable) {
-    struct lua_Debug ar;
-    bool got_error = false;
-    int level = 0;
-    int n = 1;
+void PCSX::Lua::pushLuaContextRaw(lua_State* L, bool inTable, lua_CFunction hidden) {
+    lua_Debug ar;
+    const int nargs = lua_gettop(L);
+    int next = 1;
     if (inTable) {
-        auto nargs = gettop();
-        newtable();
-        for (auto i = 1; i <= nargs; i++) {
-            push(lua_Number(n++));
-            copy(i);
-            settable();
+        lua_newtable(L);
+        for (int i = 1; i <= nargs; ++i) {
+            lua_pushnumber(L, next++);
+            lua_pushvalue(L, i);
+            lua_settable(L, -3);
         }
     }
-
-    do {
-        if (lua_getstack(L, level, &ar) == 1) {
-            if (lua_getinfo(L, "nSl", &ar) != 0) {
-                if (inTable) {
-                    push(lua_Number(n++));
-                }
-                std::string ctx = "at ";
-                ctx += ar.source;
-                ctx += ":";
-                ctx += std::to_string(ar.currentline);
-                ctx += " (";
-                ctx += ar.name ? ar.name : "[top]";
-                ctx += ")";
-                push(ctx);
-                if (inTable) {
-                    settable();
-                }
-            } else {
-                got_error = true;
-            }
-        } else {
-            got_error = true;
-        }
-        level++;
-    } while (!got_error);
+    for (int level = 0; lua_getstack(L, level, &ar) == 1; ++level) {
+        if (!lua_getinfo(L, "nSlf", &ar)) break;
+        const bool skip = hidden && lua_tocfunction(L, -1) == hidden;
+        lua_pop(L, 1);
+        if (skip) continue;
+        if (inTable) lua_pushnumber(L, next++);
+        lua_pushfstring(L, "at %s:%d (%s)", ar.source, ar.currentline, ar.name ? ar.name : "[top]");
+        if (inTable) lua_settable(L, -3);
+    }
 }
+
+void PCSX::Lua::pushLuaContext(bool inTable) { pushLuaContextRaw(L, inTable); }
 
 int PCSX::Lua::error(std::string_view msg) {
     push(msg);
@@ -441,143 +396,145 @@ void PCSX::Lua::load(std::string_view code, const char* name, bool docall) {
     if (docall) pcall();
 }
 
-void PCSX::Lua::displayStack(bool error) {
-    int n = lua_gettop(L);
-
-    getfield("IN_DISPLAY_STACK", LUA_REGISTRYINDEX);
-    bool isInDisplayStackAlready = toboolean();
-    pop();
-
-    if (n == 0) {
-        if ((normalPrinter && !error) || (errorPrinter && error)) {
-            if (error) {
-                errorPrinter(
-                    "Got an error but stack is empty: FFI code probably threw an exception. Please report this bug "
-                    "with a reproduction case.");
-            } else {
-                normalPrinter("Stack empty");
-            }
-        }
-
-        if (isInDisplayStackAlready) {
-            if (error) {
-                printf(
-                    "Got an error but stack is empty: FFI code probably threw an exception. Please report this bug "
-                    "with a reproduction case.");
-            } else {
-                printf("Stack empty");
-            }
-            return;
-        }
-
-        checkstack(2);
-        push(true);
-        setfield("IN_DISPLAY_STACK", LUA_REGISTRYINDEX);
-        lua_pushstring(L, error ? "printError" : "print");
-        lua_gettable(L, LUA_GLOBALSINDEX);
-        if (error) {
-            push(
-                "Got an error but stack is empty: FFI code probably threw an exception. Please report this bug with a "
-                "reproduction case.");
-        } else {
-            push("Stack empty");
-        }
-        pcall(1);
-        push(false);
-        setfield("IN_DISPLAY_STACK", LUA_REGISTRYINDEX);
-        return;
+namespace {
+bool invokeNativePrinter(const std::function<void(std::string_view)>* printer, const char* text,
+                         size_t length, std::exception_ptr* exception) {
+    if (!exception) {
+        (*printer)(std::string_view(text, length));
+        return true;
     }
-
-    checkstack(6);
-    bool useLuaPrinter = false;
-    bool hasLuaPrinter = true;
-
-    if ((!normalPrinter && error) || (!errorPrinter && !error)) {
-        useLuaPrinter = true;
-        lua_pushstring(L, error ? "printError" : "print");
-        lua_gettable(L, LUA_GLOBALSINDEX);
-        hasLuaPrinter = !isnil(-1);
+    try {
+        (*printer)(std::string_view(text, length));
+        return true;
+    } catch (...) {
+        *exception = std::current_exception();
     }
-    for (int i = 1; i <= n; i++) {
-        int c = 3;
-        if (useLuaPrinter) {
-            lua_pushvalue(L, -1);
-        }
-        push((lua_Number)i);
-        push(": ");
-        switch (lua_type(L, i)) {
-            case LUA_TNONE:
-                push("Invalid");
-                break;
-            case LUA_TNIL:
-                push("(Nil)");
-                break;
-            case LUA_TNUMBER:
-                push("(Number) ");
-                copy(i);
-                c++;
-                break;
-            case LUA_TBOOLEAN:
-                push("(Bool)   " + std::string(lua_toboolean(L, i) ? "true" : "false"));
-                break;
-            case LUA_TSTRING:
-                push("(String) ");
-                copy(i);
-                c++;
-                break;
-            case LUA_TTABLE:
-                push("(Table)");
-                break;
-            case LUA_TFUNCTION:
-                push("(Function)");
-                break;
-            case LUA_TUSERDATA:
-                push("(Userdata) ");
-                lua_pushfstring(L, "%08x", lua_touserdata(L, i));
-                break;
-            case LUA_TLIGHTUSERDATA:
-                push("(Lightuserdata) ");
-                lua_pushfstring(L, "%08x", lua_touserdata(L, i));
-                break;
-            case LUA_TTHREAD:
-                push("(Thread)");
-                break;
-            case 9:
-                push("(Proto)");
-                break;
-            case 10:
-                push("(CData)");
-                lua_pushfstring(L, "%08x", lua_topointer(L, i));
-                break;
-            default:
-                push("Unknown");
-                break;
-        }
-        concat(c);
-        if (useLuaPrinter) {
-            if (isInDisplayStackAlready || !hasLuaPrinter) {
-                std::string msg = tostring();
-                pop();
-                printf("%s\n", msg.c_str());
-            } else {
-                push(true);
-                setfield("IN_DISPLAY_STACK", LUA_REGISTRYINDEX);
-                pcall(1);
-                push(false);
-                setfield("IN_DISPLAY_STACK", LUA_REGISTRYINDEX);
-            }
-        } else {
-            std::string msg = tostring();
-            pop();
-            if (error) {
-                errorPrinter(msg);
-            } else {
-                normalPrinter(msg);
-            }
-        }
-    }
-    pop();
+    return false;
 }
+
+int displayLuaStack(lua_State* L, bool error, std::exception_ptr* exception,
+                    lua_CFunction hidden, bool recursive) {
+    const int count = lua_gettop(L);
+    if (!lua_checkstack(L, 12)) return luaL_error(L, "not enough Lua stack for error display");
+    lua_pushliteral(L, "IN_DISPLAY_STACK");
+    const int key = lua_gettop(L);
+    lua_pushvalue(L, key);
+    lua_rawget(L, LUA_REGISTRYINDEX);
+    const int oldGuard = lua_gettop(L);
+    const bool already = recursive || lua_toboolean(L, oldGuard);
+    const auto* native = error ? &PCSX::Lua::errorPrinter : &PCSX::Lua::normalPrinter;
+    const char* empty = error ?
+        "Got an error but stack is empty: FFI code probably threw an exception. Please report this bug with a reproduction case." :
+        "Stack empty";
+    if (!count && *native && !invokeNativePrinter(native, empty, strlen(empty), exception)) return 0;
+    if (!count && already) {
+        printf("%s", empty);
+        lua_settop(L, count);
+        return 0;
+    }
+    const bool useLua = !count || ((!PCSX::Lua::normalPrinter && error) ||
+                                  (!PCSX::Lua::errorPrinter && !error));
+    bool hasPrinter = false;
+    int printer = 0;
+    if (useLua) {
+        lua_getfield(L, LUA_GLOBALSINDEX, error ? "printError" : "print");
+        printer = lua_gettop(L);
+        hasPrinter = !lua_isnil(L, printer);
+    }
+    for (int i = count ? 1 : 0; i <= count; ++i) {
+        if (useLua) lua_pushvalue(L, printer);
+        if (!count) {
+            lua_pushstring(L, empty);
+        } else {
+            int fragments = 3;
+            lua_pushnumber(L, i);
+            lua_pushliteral(L, ": ");
+            switch (lua_type(L, i)) {
+                case LUA_TNONE: lua_pushliteral(L, "Invalid"); break;
+                case LUA_TNIL: lua_pushliteral(L, "(Nil)"); break;
+                case LUA_TNUMBER:
+                    lua_pushliteral(L, "(Number) "); lua_pushvalue(L, i); ++fragments; break;
+                case LUA_TBOOLEAN:
+                    lua_pushstring(L, lua_toboolean(L, i) ? "(Bool)   true" : "(Bool)   false"); break;
+                case LUA_TSTRING:
+                    lua_pushliteral(L, "(String) "); lua_pushvalue(L, i); ++fragments; break;
+                case LUA_TTABLE: lua_pushliteral(L, "(Table)"); break;
+                case LUA_TFUNCTION: lua_pushliteral(L, "(Function)"); break;
+                case LUA_TUSERDATA: case LUA_TLIGHTUSERDATA: {
+                    char pointer[2 * sizeof(void*) + 4];
+                    std::snprintf(pointer, sizeof(pointer), "%p", lua_touserdata(L, i));
+                    lua_pushstring(L, lua_type(L, i) == LUA_TUSERDATA ? "(Userdata) " : "(Lightuserdata) ");
+                    lua_pushstring(L, pointer);
+                    ++fragments;
+                    break;
+                }
+                case LUA_TTHREAD: lua_pushliteral(L, "(Thread)"); break;
+                case 9: lua_pushliteral(L, "(Proto)"); break;
+                case 10: {
+                    char pointer[2 * sizeof(void*) + 4];
+                    std::snprintf(pointer, sizeof(pointer), "%p", lua_topointer(L, i));
+                    lua_pushliteral(L, "(CData)");
+                    lua_pushstring(L, pointer);
+                    ++fragments;
+                    break;
+                }
+                default: lua_pushliteral(L, "Unknown"); break;
+            }
+            lua_concat(L, fragments);
+        }
+        if (useLua && !already && (hasPrinter || !count)) {
+            struct Context { lua_CFunction hidden; } context{hidden};
+            lua_pushlightuserdata(L, &context);
+            lua_pushcclosure(L, [](lua_State* state) -> int {
+                const auto* context = static_cast<const Context*>(lua_touserdata(state, lua_upvalueindex(1)));
+                PCSX::Lua::pushLuaContextRaw(state, true, context->hidden);
+                return 1;
+            }, 1);
+            const int handler = lua_gettop(L) - 2;
+            lua_insert(L, handler);
+            lua_pushvalue(L, key);
+            lua_pushboolean(L, true);
+            lua_rawset(L, LUA_REGISTRYINDEX);
+            const int status = lua_pcall(L, 1, LUA_MULTRET, handler);
+            lua_remove(L, handler);
+            lua_pushvalue(L, key);
+            lua_pushvalue(L, oldGuard);
+            lua_rawset(L, LUA_REGISTRYINDEX);
+            if (status) {
+                lua_replace(L, count + 1);
+                lua_settop(L, count + 1);
+                PCSX::Lua::unpackErrorRaw(L);
+                const int secondary = displayLuaStack(L, true, exception, hidden, true);
+                return secondary ? secondary : status;
+            }
+            lua_settop(L, printer);
+        } else {
+            size_t length = 0;
+            const char* text = lua_tolstring(L, -1, &length);
+            if (useLua) {
+                printf("%s\n", text);
+            } else if (!invokeNativePrinter(native, text, length, exception)) {
+                return 0;
+            }
+            lua_pop(L, useLua ? 2 : 1);
+        }
+    }
+    lua_settop(L, count);
+    return 0;
+}
+}
+
+int PCSX::Lua::displayStackRaw(lua_State* L, bool error, std::exception_ptr* exception, lua_CFunction hidden) {
+    return displayLuaStack(L, error, exception, hidden, false);
+}
+
+void PCSX::Lua::displayStack(bool error) {
+    std::exception_ptr exception;
+    const int status = displayStackRaw(L, error, &exception);
+    if (exception) std::rethrow_exception(exception);
+    if (status) throw std::runtime_error("Runtime error while running LUA code.");
+}
+
 
 json PCSX::Lua::toJson(int t) {
     if (!istable(t)) return {};

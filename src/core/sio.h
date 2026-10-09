@@ -77,6 +77,17 @@ class SIO {
     static constexpr size_t c_cardSize = c_blockSize * 16;    // 16 blocks per frame(directory+15 saves)
     static constexpr size_t c_cardCount = 2;
 
+    struct PreparedRestore {
+        std::array<std::string_view, 2> images;
+        std::array<uint8_t, 2> replies{};
+        std::array<uint16_t, 2> directoryIndices{};
+        std::queue<uint8_t> rxFIFO;
+        uint32_t data = 0;
+    };
+    SaveStates::Result saveState(SaveStates::SIO& state) const;
+    SaveStates::Result prepareRestore(const SaveStates::SIO& state, PreparedRestore& prepared) const;
+    void restorePrepared(PreparedRestore& prepared) noexcept;
+
     SIO() { reset(); }
 
     void write8(uint8_t value);
@@ -220,7 +231,9 @@ class SIO {
             }
         }
 
-        size_t size() { return queue_.size(); }
+        size_t size() const { return queue_.size(); }
+        std::queue<T> snapshot() const { return queue_; }
+        void swap(std::queue<T>& prepared) noexcept { queue_.swap(prepared); }
 
       private:
         std::queue<T> queue_;

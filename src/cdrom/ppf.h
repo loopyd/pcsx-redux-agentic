@@ -36,6 +36,7 @@ class PPF {
   public:
     ~PPF() { clear(); }
     void clear() { m_patches.destroyAll(); }
+    bool empty() const { return m_patches.empty(); }
     // given an input iso filename, attempt to load its corresponding ppf
     bool load(std::filesystem::path iso);
     // given an input iso filename, create a new ppf1 file for it from memory patches
@@ -46,6 +47,8 @@ class PPF {
     void calculatePatch(const uint8_t *in, const uint8_t *out, IEC60908b::MSF);
     // inject a new patch in memory using an offset - this is allowed to straddle across sectors
     void injectPatch(std::string_view data, uint32_t offset, IEC60908b::MSF);
+
+    bool acceptsStateRead() const noexcept;
 
     void simplify();
     void simplify(IEC60908b::MSF msf);

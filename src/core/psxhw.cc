@@ -17,11 +17,13 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
 #include "core/psxhw.h"
 
 #include <stdint.h>
 
 #include "core/cdrom.h"
+#include "core/transactions.h"
 #include "core/debug.h"
 #include "core/gpu.h"
 #include "core/logger.h"
@@ -52,7 +54,20 @@ static constexpr bool addressInRegisterSpace(uint32_t address) {
             between(masked_addr, 0x1f801120, 0x1f80112b));                // Timer 2
 }
 
+namespace {
+class AudioAccess {
+  public:
+    AudioAccess(uint32_t address, uint32_t value, uint32_t width, bool read = false)
+        : m_spu(PCSX::g_emulator->m_spu.get()), m_parent(m_spu->captureAccess(address, value, width, read)) {}
+    ~AudioAccess() { m_spu->captureEnd(m_parent); }
+  private:
+    PCSX::SPUInterface* m_spu;
+    uint64_t m_parent;
+};
+}
+
 void PCSX::HW::reset() {
+    History::fail(History::Failure::Discontinuity);
     if (g_emulator->settings.get<Emulator::SettingSpuIrq>()) g_emulator->m_mem->setIRQ(0x200);
 
     memset(g_emulator->m_mem->m_hard, 0, 0x10000);
@@ -64,6 +79,16 @@ void PCSX::HW::reset() {
 }
 
 uint8_t PCSX::HW::read8(uint32_t add) {
+    History::CD::Scope cd(History::CD::Operation::CpuRead, add, 8);
+    AudioAccess audio(add, 0, 8, true);
+    const auto value = read8Value(add);
+    cd.result(value);
+    g_emulator->m_spu->captureReturn(add, value, 8);
+    return value;
+}
+
+uint8_t PCSX::HW::read8Value(uint32_t add) {
+    History::Register observation(add, 0, 8, true);
     uint8_t hard;
     uint32_t hwadd = add & 0x1fffffff;
 
@@ -133,6 +158,16 @@ uint8_t PCSX::HW::read8(uint32_t add) {
 }
 
 uint16_t PCSX::HW::read16(uint32_t add) {
+    History::CD::Scope cd(History::CD::Operation::CpuRead, add, 16);
+    AudioAccess audio(add, 0, 16, true);
+    const auto value = read16Value(add);
+    cd.result(value);
+    g_emulator->m_spu->captureReturn(add, value, 16);
+    return value;
+}
+
+uint16_t PCSX::HW::read16Value(uint32_t add) {
+    History::Register observation(add, 0, 16, true);
     uint16_t hard;
     uint32_t hwadd = add & 0x1fffffff;
 
@@ -262,6 +297,16 @@ uint16_t PCSX::HW::read16(uint32_t add) {
 }
 
 uint32_t PCSX::HW::read32(uint32_t add) {
+    History::CD::Scope cd(History::CD::Operation::CpuRead, add, 32);
+    AudioAccess audio(add, 0, 32, true);
+    const auto value = read32Value(add);
+    cd.result(value);
+    g_emulator->m_spu->captureReturn(add, value, 32);
+    return value;
+}
+
+uint32_t PCSX::HW::read32Value(uint32_t add) {
+    History::Register observation(add, 0, 32, true);
     uint32_t hard;
     uint32_t hwadd = add & 0x1fffffff;
 
@@ -303,7 +348,7 @@ uint32_t PCSX::HW::read32(uint32_t add) {
             return hard;
         }
         case 0x1f801810:
-            hard = g_emulator->m_gpu->readData();
+            hard = g_emulator->m_gpu->readData(add);
             PSXHW_LOG("GPU DATA 32bit read %x\n", hard);
             break;
         case 0x1f801814:
@@ -406,6 +451,9 @@ uint32_t PCSX::HW::read32(uint32_t add) {
 }
 
 void PCSX::HW::write8(uint32_t add, uint32_t rawvalue) {
+    History::CD::Scope cd(History::CD::Operation::CpuWrite, add, 8, rawvalue);
+    History::Register observation(add, rawvalue, 8);
+    AudioAccess audio(add, rawvalue, 8);
     uint8_t value = (uint8_t)rawvalue;
     uint32_t hwadd = add & 0x1fffffff;
 
@@ -477,6 +525,8 @@ void PCSX::HW::write8(uint32_t add, uint32_t rawvalue) {
             g_emulator->m_debug->m_checkKernel = value;
             break;
         case 0x1f802089:
+            g_emulator->m_spu->invalidateCapture();
+            History::fail(History::Failure::Unsupported);
             g_emulator->m_mem->initMsan(value);
             break;
         default:
@@ -506,6 +556,9 @@ void PCSX::HW::write8(uint32_t add, uint32_t rawvalue) {
 }
 
 void PCSX::HW::write16(uint32_t add, uint32_t rawvalue) {
+    History::CD::Scope cd(History::CD::Operation::CpuWrite, add, 16, rawvalue);
+    History::Register observation(add, rawvalue, 16);
+    AudioAccess audio(add, rawvalue, 16);
     uint16_t value = (uint16_t)rawvalue;
     uint32_t hwadd = add & 0x1fffffff;
 
@@ -648,6 +701,9 @@ inline void PCSX::HW::dma3(uint32_t madr, uint32_t bcr, uint32_t chcr) {
 }
 
 void PCSX::HW::write32(uint32_t add, uint32_t value) {
+    History::CD::Scope cd(History::CD::Operation::CpuWrite, add, 32, value);
+    History::Register observation(add, value, 32);
+    AudioAccess audio(add, value, 32);
     uint32_t hwadd = add & 0x1fffffff;
 
     switch (hwadd) {
@@ -773,11 +829,11 @@ void PCSX::HW::write32(uint32_t add, uint32_t value) {
             break;
         case 0x1f801810:
             PSXHW_LOG("GPU DATA 32bit write %x (CMD/MSB %x)\n", value, value >> 24);
-            g_emulator->m_gpu->writeData(value);
+            g_emulator->m_gpu->writeData(value, add);
             break;
         case 0x1f801814:
             PSXHW_LOG("GPU STATUS 32bit write %x\n", value);
-            g_emulator->m_gpu->writeStatus(value);
+            g_emulator->m_gpu->writeStatus(value, add);
             break;
         case 0x1f801820:
             g_emulator->m_mdec->write0(value);

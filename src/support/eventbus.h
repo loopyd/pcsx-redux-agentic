@@ -96,6 +96,7 @@ struct ListenerElementsHashTableList : public ListenersHashTable::Node {
 class EventBus {
   public:
     ~EventBus() { m_table.destroyAll(); }
+    bool dispatching() const noexcept { return m_dispatching != 0; }
     template <typename Event>
     void signal(const Event& event) {
         using Functor = typename ListenerElement<Event>::Functor;

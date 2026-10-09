@@ -30,6 +30,7 @@ struct SaveStateWrapper;
 
 class MDEC {
   public:
+    void observe(uint32_t reason);
     void init();
     void write0(uint32_t data);
     void write1(uint32_t data);
@@ -130,7 +131,7 @@ class MDEC {
     void scaletable_init();
     void standardTables_init();
     void real_idct(int *block);
-    unsigned short *rl2blk(int *blk, unsigned short *mdec_rl);
+    bool rl2blk(int *blk, unsigned short *&mdec_rl);
 };
 
 }  // namespace PCSX

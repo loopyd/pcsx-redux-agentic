@@ -26,6 +26,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <memory>
+#include <functional>
 #include <mutex>
 #include <set>
 #include <stdexcept>
@@ -35,6 +36,8 @@
 
 #include "lua/luawrapper.h"
 #include "spu/settings.h"
+#include "spu/capture.h"
+#include "spu/environment.h"
 #include "support/circular.h"
 #include "support/eventbus.h"
 #include "supportpsx/adpcm.h"
@@ -46,10 +49,12 @@
 #endif
 
 namespace PCSX {
+class Lua;
 namespace SPU {
 
 class SDLAudio {
   public:
+    static constexpr unsigned AudioStreamCapacity = 16 * 1024;
     struct Frame {
         int16_t L = 0, R = 0;
     };
@@ -114,6 +119,11 @@ class SDLAudio {
     void setLua(Lua L);
 
     SDLAudio(SettingsType& settings);
+    Capture& capture() { return m_capture; }
+    void setCaptureLua(Lua, std::function<std::array<uint32_t, 2>()>);
+    void checkCaptureSettings();
+    bool captureEnvironment(Environment&);
+    bool checkEnvironment(const Environment&);
     ~SDLAudio() { uninit(); }
     uint32_t getFrameCount() { return m_frameCount.load(); }
     void reinit() {
@@ -167,6 +177,12 @@ class SDLAudio {
     }
 
   private:
+    Capture m_capture;
+    std::function<std::array<uint32_t, 2>()> m_influences;
+    std::array<int64_t, 14> captureSettings() const;
+    std::array<int64_t, 14> m_captureSettings{};
+    std::string m_captureBackend, m_captureDevice, m_captureDriver;
+    std::array<uint32_t, 2> m_captureInitial{}, m_captureFinal{};
     static constexpr unsigned STREAMS = 2;
     static constexpr int kSampleRate = 44100;
     static constexpr int kChannels = 2;
@@ -202,7 +218,7 @@ class SDLAudio {
 
     typedef Circular<Frame, 2 * 1024> VoiceStream;
     VoiceStream m_voicesStream;
-    Circular<Frame, 16 * 1024> m_audioStream;
+    Circular<Frame, AudioStreamCapacity> m_audioStream;
     typedef std::array<Frame, VoiceStream::BUFFER_SIZE> Buffer;
 
     // Mixing scratch space, only ever touched from the SDL audio thread.

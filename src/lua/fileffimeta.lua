@@ -17,32 +17,50 @@
 --   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 local C = ffi.load 'SUPPORT_FILE'
 
+local function sliceWrapper(slice)
+    local wrapper = rawget(slice, '_wrapper')
+    assert(wrapper ~= nil, 'closed LuaSlice')
+    return wrapper
+end
+
+local function closeSlice(slice)
+    local wrapper = rawget(slice, '_wrapper')
+    if wrapper == nil then return end
+    ffi.gc(wrapper, nil)
+    rawset(slice, '_wrapper', nil)
+    C.destroySlice(wrapper)
+end
+
 local sliceMeta = {
-    __tostring = function(slice) return ffi.string(C.getSliceData(slice._wrapper), C.getSliceSize(slice._wrapper)) end,
-    __len = function(slice) return tonumber(C.getSliceSize(slice._wrapper)) end,
+    __tostring = function(slice) return ffi.string(C.getSliceData(sliceWrapper(slice)), C.getSliceSize(sliceWrapper(slice))) end,
+    __len = function(slice) return tonumber(C.getSliceSize(sliceWrapper(slice))) end,
     __index = function(slice, index)
-        if type(index) == 'number' and index >= 0 and index < C.getSliceSize(slice._wrapper) then
-            local data = C.getSliceData(slice._wrapper)
+        if index == "close" then return closeSlice end
+        sliceWrapper(slice)
+        if type(index) == 'number' and index >= 0 and index < C.getSliceSize(sliceWrapper(slice)) then
+            local data = C.getSliceData(sliceWrapper(slice))
             local buffer = ffi.cast('const uint8_t*', data)
             return buffer[index]
         elseif index == 'data' then
-            return C.getSliceData(slice._wrapper)
+            return C.getSliceData(sliceWrapper(slice))
         elseif index == 'mutable' then
-            return C.getSliceMutableData(slice._wrapper)
+            return C.getSliceMutableData(sliceWrapper(slice))
         elseif index == 'size' then
-            return tonumber(C.getSliceSize(slice._wrapper))
+            return tonumber(C.getSliceSize(sliceWrapper(slice)))
         elseif index == 'resize' then
-            return function(slice, size) C.resizeSlice(slice._wrapper, size) end
+            return function(slice, size)
+                C.resizeSlice(sliceWrapper(slice), size)
+            end
         end
         error('Unknown index `' .. index .. '` for LuaSlice')
     end,
     __newindex = function(slice, index, value)
-        if type(index) == 'number' and index >= 0 and index < C.getSliceSize(slice._wrapper) then
-            local data = C.getSliceMutableData(slice._wrapper)
+        if type(index) == 'number' and index >= 0 and index < C.getSliceSize(sliceWrapper(slice)) then
+            local data = C.getSliceMutableData(sliceWrapper(slice))
             local buffer = ffi.cast('uint8_t*', data)
             buffer[index] = value
         elseif index == 'size' then
-            C.resizeSlice(slice._wrapper, value)
+            C.resizeSlice(sliceWrapper(slice), value)
         else
             error('Unknown or immutable index `' .. index .. '` for LuaSlice')
         end
@@ -50,6 +68,7 @@ local sliceMeta = {
 }
 
 local function createSliceWrapper(wrapper)
+    assert(wrapper ~= nil, "missing LuaSlice")
     local slice = { _wrapper = ffi.gc(wrapper, C.destroySlice), _type = 'Slice' }
     return setmetatable(slice, sliceMeta)
 end

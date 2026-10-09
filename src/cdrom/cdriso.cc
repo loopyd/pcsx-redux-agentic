@@ -18,6 +18,8 @@
  ***************************************************************************/
 
 #include "cdrom/cdriso.h"
+#include <limits>
+#include "core/transactions.h"
 
 #include "supportpsx/iec-60908b.h"
 
@@ -258,6 +260,7 @@ void PCSX::CDRIso::printTracks() {
 }
 
 bool PCSX::CDRIso::open(IO<File> isoFile) {
+    if (History::CD::active()) History::fail(History::Failure::Discontinuity);
     m_cdHandle = isoFile;
     if (m_cdHandle->failed()) {
         m_cdHandle.reset();
@@ -273,6 +276,7 @@ bool PCSX::CDRIso::open(IO<File> isoFile) {
     m_subChanMixed = false;
     m_subChanRaw = false;
     m_pregapOffset = 0;
+    m_historyPregapKnown = true;
     m_cdrIsoMultidiskCount = 1;
     m_multifile = false;
 
@@ -355,10 +359,13 @@ bool PCSX::CDRIso::open(IO<File> isoFile) {
         }
     }
 
+    cacheStateReadOwners();
     return true;
 }
 
 void PCSX::CDRIso::close() {
+    clearStateReadOwners();
+    if (History::CD::active()) History::fail(History::Failure::Discontinuity);
     m_cdHandle.reset();
     m_subHandle.reset();
 
@@ -378,6 +385,7 @@ void PCSX::CDRIso::close() {
     m_ti[1].type = TrackType::CLOSED;
 
     memset(m_cdbuffer, 0, sizeof(m_cdbuffer));
+    m_historyBufferDefined = true;
     m_useCompressed = false;
     // ECM LUT
     free(m_ecm_savetable);
@@ -395,37 +403,37 @@ PCSX::IEC60908b::MSF PCSX::CDRIso::getTD(uint8_t track) {
     if (track == 0) {
         unsigned int sect;
         sect = m_ti[m_numtracks].start.toLBA() + m_ti[m_numtracks].length.toLBA() - m_ti[m_numtracks].pregap.toLBA();
-        return IEC60908b::MSF(sect);
+        { const auto result = IEC60908b::MSF(sect); History::CD::mediaQuery(1, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
     } else if (m_numtracks > 1 && track <= m_numtracks) {
-        return IEC60908b::MSF(m_ti[track].start.toLBA());
+        { const auto result = IEC60908b::MSF(m_ti[track].start.toLBA()); History::CD::mediaQuery(1, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
     }
-    return IEC60908b::MSF(0, 2, 0);
+    { const auto result = IEC60908b::MSF(0, 2, 0); History::CD::mediaQuery(1, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
 }
 
 PCSX::IEC60908b::MSF PCSX::CDRIso::getLength(uint8_t track) {
     if (track == 0) {
         unsigned int sect;
         sect = m_ti[m_numtracks].start.toLBA() + m_ti[m_numtracks].length.toLBA();
-        return IEC60908b::MSF(sect);
+        { const auto result = IEC60908b::MSF(sect); History::CD::mediaQuery(2, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
     } else if (m_numtracks > 0 && track <= m_numtracks) {
-        return m_ti[track].length;
+        { const auto result = m_ti[track].length; History::CD::mediaQuery(2, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
     }
-    return IEC60908b::MSF(0, 0, 0);
+    { const auto result = IEC60908b::MSF(0, 0, 0); History::CD::mediaQuery(2, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
 }
 
 PCSX::IEC60908b::MSF PCSX::CDRIso::getPregap(uint8_t track) {
     if (track <= 1) {
-        return IEC60908b::MSF(0, 0, 0);
+        { const auto result = IEC60908b::MSF(0, 0, 0); History::CD::mediaQuery(3, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
     } else if (m_numtracks > 0 && track <= m_numtracks) {
-        return m_ti[track].pregap;
+        { const auto result = m_ti[track].pregap; History::CD::mediaQuery(3, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
     }
-    return IEC60908b::MSF(0, 2, 0);
+    { const auto result = IEC60908b::MSF(0, 2, 0); History::CD::mediaQuery(3, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
 }
 
 bool PCSX::CDRIso::getLocP(const PCSX::IEC60908b::MSF msf, uint8_t locP[8]) {
     // TODO: actually check subchannels from iso.
     auto length = getTD(0) + IEC60908b::MSF{0, 2, 0};
-    if (msf >= length) return false;
+    if (msf >= length) { History::CD::mediaQuery(6, uint32_t(msf.m) | (uint32_t(msf.s)<<8) | (uint32_t(msf.f)<<16), false); return false; }
     unsigned track;
     for (track = m_numtracks; track != 1; track--) {
         if (m_ti[track].start <= msf) break;
@@ -453,12 +461,13 @@ bool PCSX::CDRIso::getLocP(const PCSX::IEC60908b::MSF msf, uint8_t locP[8]) {
     relative.toBCD(locP + 2);
     msf.toBCD(locP + 5);
 
+    History::CD::mediaQuery(6, uint32_t(msf.m) | (uint32_t(msf.s)<<8) | (uint32_t(msf.f)<<16), true, locP, 8);
     return true;
 }
 
 unsigned PCSX::CDRIso::getTrack(const PCSX::IEC60908b::MSF msf) {
     auto length = getTD(0) + IEC60908b::MSF{0, 2, 0};
-    if (msf >= length) return 0;
+    if (msf >= length) { History::CD::mediaQuery(4, uint32_t(msf.m) | (uint32_t(msf.s)<<8) | (uint32_t(msf.f)<<16), 0); return 0; }
     unsigned track;
     for (track = m_numtracks; track != 1; track--) {
         if (m_ti[track].start <= msf) break;
@@ -469,6 +478,7 @@ unsigned PCSX::CDRIso::getTrack(const PCSX::IEC60908b::MSF msf) {
             track++;
         }
     }
+    History::CD::mediaQuery(4, uint32_t(msf.m) | (uint32_t(msf.s)<<8) | (uint32_t(msf.f)<<16), track);
     return track;
 }
 
@@ -492,7 +502,12 @@ bool PCSX::CDRIso::readTrack(const IEC60908b::MSF time) {
     int sector = time.toLBA() - 150;
     long ret;
 
-    if (!m_cdHandle || m_cdHandle->failed()) {
+    const bool present = bool(m_cdHandle);
+    const bool unavailable = present && m_cdHandle->failed();
+    History::CD::predicate(History::CD::Predicate::Availability,
+        {uint32_t(present), uint32_t(present), uint32_t(unavailable)});
+    if (!present || unavailable) {
+        PCSX::History::CD::mediaOutcome(5, 0);
         return false;
     }
     if (m_pregapOffset) {
@@ -502,9 +517,15 @@ bool PCSX::CDRIso::readTrack(const IEC60908b::MSF time) {
             if (sector < m_pregapOffset) m_subChanMissing = true;
         }
     }
+    if (History::CD::active()) History::CD::predicate(History::CD::Predicate::SubchannelState,
+        {1, uint32_t(bool(m_subHandle)), uint32_t(m_subChanMixed), uint32_t(m_subChanMissing)});
 
     ret = (*this.*m_cdimg_read_func)(m_cdHandle, 0, m_cdbuffer, sector);
-    if (ret < 0) return false;
+    if (ret < 0) {
+        if (History::CD::active()) History::CD::mediaOutcome(6, ret, 0, 0, uint32_t(sector),
+            12 | (m_useCompressed ? 1 : 0) | (m_isMode1ISO ? 16 : 0) | (m_subChanMixed ? 32 : 0));
+        return false;
+    }
 
     if (m_subHandle) {
         m_subHandle->rSeek(sector * IEC60908b::SUB_FRAMESIZE, SEEK_SET);
@@ -515,10 +536,13 @@ bool PCSX::CDRIso::readTrack(const IEC60908b::MSF time) {
 
     m_ppf.maybePatchSector(m_cdbuffer, time);
 
+    if (History::CD::active()) History::CD::mediaOutcome(7, ret, 0, 0, uint32_t(sector),
+        12 | (m_useCompressed ? 1 : 0) | (m_isMode1ISO ? 16 : 0) | (m_subChanMixed ? 32 : 0));
     return true;
 }
 
 unsigned PCSX::CDRIso::readSectors(uint32_t lba, void *buffer_, unsigned count) {
+    if (History::CD::active() && !History::CD::isoScan()) History::fail(History::Failure::Association);
     unsigned actual = 0;
     uint8_t *buffer = reinterpret_cast<uint8_t *>(buffer_);
 
@@ -528,13 +552,22 @@ unsigned PCSX::CDRIso::readSectors(uint32_t lba, void *buffer_, unsigned count) 
 
     for (unsigned i = 0; i < count; i++) {
         auto ptr = buffer + actual * IEC60908b::FRAMESIZE_RAW;
+        History::CD::Media historyMedium(3, 0, lba, History::CD::backing());
         if (lba < m_ti[1].length.toLBA()) {
             IEC60908b::MSF time(lba + 150);
             long ret = (*this.*m_cdimg_read_func)(m_cdHandle, 0, ptr, lba++);
             m_ppf.maybePatchSector(ptr, time);
+            History::CD::mediaOutcome(ret < 0 ? 6 : 7, ret, 0, 0, lba-1,
+                12 | (m_isMode1ISO ? 16 : 0) | (m_subChanMixed ? 32 : 0));
+            historyMedium.result(ret >= 0, 0);
             if (ret < 0) return actual;
+            if (History::CD::active() && ret != (m_isMode1ISO ? 2048 : IEC60908b::FRAMESIZE_RAW)) History::fail(History::Failure::Bounds);
+            else History::CD::dataMutation(8, 0, IEC60908b::FRAMESIZE_RAW, ptr, historyMedium.id());
         } else {
-            if (!readCDDA(IEC60908b::MSF(lba++), ptr)) return actual;
+            const bool read = readCDDA(IEC60908b::MSF(lba++), ptr);
+            historyMedium.result(read, 0);
+            History::CD::dataMutation(8, 0, IEC60908b::FRAMESIZE_RAW, ptr, historyMedium.id());
+            if (!read) return actual;
         }
         actual++;
     }
@@ -544,6 +577,8 @@ unsigned PCSX::CDRIso::readSectors(uint32_t lba, void *buffer_, unsigned count) 
 
 // gets subchannel data
 const PCSX::IEC60908b::Sub *PCSX::CDRIso::getBufferSub() {
+    if (History::CD::active()) History::CD::predicate(History::CD::Predicate::SubchannelState,
+        {2, uint32_t(bool(m_subHandle)), uint32_t(m_subChanMixed), uint32_t(m_subChanMissing)});
     if ((m_subHandle || m_subChanMixed) && !m_subChanMissing) {
         return &m_subbuffer;
     }
@@ -568,12 +603,14 @@ bool PCSX::CDRIso::readCDDA(IEC60908b::MSF msf, unsigned char *buffer) {
     // data tracks play silent
     if (m_ti[track].type != TrackType::CDDA) {
         memset(buffer, 0, IEC60908b::FRAMESIZE_RAW);
+        PCSX::History::CD::mediaOutcome(1, 0, track);
         return true;
     }
 
     // if above the track's end (likely next track's pregap), play silence
     if (lba >= (track_start + m_ti[track].length.toLBA())) {
         memset(buffer, 0, IEC60908b::FRAMESIZE_RAW);
+        PCSX::History::CD::mediaOutcome(2, 0, track);
         return true;
     }
 
@@ -588,6 +625,9 @@ bool PCSX::CDRIso::readCDDA(IEC60908b::MSF msf, unsigned char *buffer) {
     ret = (*this.*m_cdimg_read_func)(m_ti[file].handle, m_ti[track].start_offset, buffer, lba - track_start);
     if (ret != IEC60908b::FRAMESIZE_RAW) {
         memset(buffer, 0, IEC60908b::FRAMESIZE_RAW);
+        if (History::CD::active()) History::CD::mediaOutcome(3, ret, track, file, lba-track_start,
+            8 | (m_useCompressed ? 5 : 0) | (m_isMode1ISO ? 16 : 0) | (m_subChanMixed ? 32 : 0),
+            m_ti[track].start_offset);
         return false;
     }
 
@@ -601,7 +641,231 @@ bool PCSX::CDRIso::readCDDA(IEC60908b::MSF msf, unsigned char *buffer) {
         }
     }
 
+    if (History::CD::active()) History::CD::mediaOutcome(4, ret, track, file, lba-track_start,
+        8 | (m_useCompressed ? 5 : 0) | (m_cddaBigEndian ? 2 : 0) |
+        (m_isMode1ISO ? 16 : 0) | (m_subChanMixed ? 32 : 0), m_ti[track].start_offset);
     return true;
 }
 
 bool PCSX::CDRIso::failed() { return !m_cdHandle && !m_ecm_savetable && !m_decoded_ecm; }
+
+uint32_t PCSX::CDRIso::historyFile(File* file, uint32_t depth) {
+    if (!file) return 0;
+    if (depth > 4) throw std::runtime_error("CD file graph depth");
+    for (uint32_t n = 0; n < m_historyFileCount; ++n) {
+        if (m_historyFiles[n] != file) continue;
+        if (depth + m_historyDepths[n] > 4) throw std::runtime_error("CD cached file graph depth");
+        return n+1;
+    }
+    if (m_historyFileCount == HistoryFiles) throw std::runtime_error("CD file graph bound");
+    size_t provedBytes = 0;
+    if (file->stateReadExtent(provedBytes) != File::RawSnapshotStatus::Ok || !file->stateReadAvailable())
+        throw std::runtime_error("unsupported CD backing capacity or completion");
+    uint32_t parent = 0, kind = 1;
+    uint64_t start = 0, size = provedBytes;
+    std::u8string path;
+    if (auto* slice = dynamic_cast<SubFile*>(file)) {
+        kind = 2;
+        parent = historyFile(slice->m_file ? slice->m_file.operator->() : nullptr, depth+1);
+        if (!parent) throw std::runtime_error("CD slice without backing file");
+        start = slice->m_start;
+        if (size != slice->m_size) throw std::runtime_error("CD view extent differs from proved capacity");
+    } else if (dynamic_cast<UvFile*>(file)) {
+        path = file->filename().generic_u8string();
+        if (path.empty() || path.size() > 4096 || path.find(u8'\0') != path.npos)
+            throw std::runtime_error("CD backing path bound");
+    } else {
+        throw std::runtime_error("unsupported CD backing file");
+    }
+    if (m_historyFileCount == HistoryFiles) throw std::runtime_error("CD file graph bound");
+    const uint32_t ordinal = ++m_historyFileCount;
+    m_historyFiles[ordinal-1] = file;
+    m_historyDepths[ordinal-1] = parent ? m_historyDepths[parent-1]+1 : 0;
+    auto word = [&](uint32_t value) {
+        for (unsigned b = 0; b < 4; ++b) m_historyImage.push_back(value >> (b*8));
+    };
+    word(ordinal); word(kind); word(parent); word(path.size());
+    word(start); word(start >> 32); word(size); word(size >> 32);
+    m_historyImage.insert(m_historyImage.end(), path.begin(), path.end());
+    return ordinal;
+}
+
+bool PCSX::CDRIso::historyGeometry(std::array<uint32_t, HistoryWords>& words) {
+    if (m_numtracks < 0 || m_numtracks >= int(MAXTRACKS) || m_useCompressed || m_compr_img ||
+        m_ecm_file_detected || m_ecm_savetable || m_decoded_ecm || m_subHandle ||
+        m_subChanMixed || m_subChanRaw || !m_ppf.empty() || (m_historySbiKnown && sbicount)) return false;
+    uint32_t backend = 0;
+    if (m_cdimg_read_func == &CDRIso::cdread_normal) backend = 1;
+    else if (m_cdimg_read_func == &CDRIso::cdread_2048) backend = 2;
+    else if (m_cdimg_read_func) return false;
+    if (m_cdHandle && (!backend || !m_historyPregapKnown)) return false;
+    auto ordinal = [&](IO<File>& handle) {
+        if (!handle) return uint32_t(0);
+        auto* file = handle.operator->();
+        for (uint32_t n = 0; n < m_historyFileCount; ++n)
+            if (m_historyFiles[n] == file) return n+1;
+        return UINT32_MAX;
+    };
+    const auto main = ordinal(m_cdHandle);
+    if (main == UINT32_MAX) return false;
+    words = {};
+    words[0] = m_numtracks; words[1] = MAXTRACKS; words[2] = m_historyPregapKnown;
+    words[3] = m_historyPregapKnown ? m_pregapOffset : 0;
+    words[4] = m_multifile; words[5] = m_isMode1ISO; words[6] = m_cddaBigEndian;
+    words[7] = backend; words[8] = main; words[13] = m_historySbiKnown;
+    words[HistoryPpfEmpty] = 1;
+    const auto msf = [](IEC60908b::MSF value) {
+        return uint32_t(value.m) | (uint32_t(value.s) << 8) | (uint32_t(value.f) << 16);
+    };
+    for (unsigned n = 0; n < MAXTRACKS; ++n) {
+        auto& track = m_ti[n];
+        const auto file = ordinal(track.handle);
+        if (file == UINT32_MAX) return false;
+        const unsigned first = 16 + n*7;
+        words[first] = uint32_t(track.type); words[first+1] = msf(track.start);
+        words[first+2] = msf(track.pregap); words[first+3] = msf(track.length);
+        words[first+4] = track.start_offset; words[first+5] = track.cddatype; words[first+6] = file;
+    }
+    return true;
+}
+
+bool PCSX::CDRIso::historyPrepare() {
+    if (History::active() || !History::CD::idle()) return false;
+    m_historyFileCount = 0; m_historyFiles.fill(nullptr);
+    m_historyImage.clear();
+    try {
+        m_historyImage.resize(HistoryWords * 4);
+        historyFile(m_cdHandle ? m_cdHandle.operator->() : nullptr, 0);
+        for (auto& track : m_ti) historyFile(track.handle ? track.handle.operator->() : nullptr, 0);
+        if (!historyGeometry(m_historyGeometry)) { m_historyImage.clear(); return false; }
+        for (unsigned n = 0; n < HistoryWords; ++n)
+            for (unsigned b = 0; b < 4; ++b) m_historyImage[n*4+b] = m_historyGeometry[n] >> (b*8);
+    } catch (...) {
+        m_historyImage.clear(); return false;
+    }
+    return true;
+}
+
+bool PCSX::CDRIso::historyValidate() {
+    std::array<uint32_t, HistoryWords> geometry{};
+    return !m_historyImage.empty() && historyGeometry(geometry) && geometry == m_historyGeometry;
+}
+
+void PCSX::CDRIso::history(uint32_t phase) {
+    if (!History::CD::active()) return;
+    if (phase > 1 || !historyValidate()) { History::fail(History::Failure::Discontinuity); return; }
+    History::emit(History::Kind::CdImage, phase, {3, uint32_t(HistoryWords), m_historyFileCount, MAXTRACKS},
+        0, m_historyImage.data(), m_historyImage.size(), 1);
+}
+
+void PCSX::CDRIso::clearStateReadOwners() noexcept {
+    for (auto& owner : m_stateReadOwners) {
+        owner.file.reset();
+        owner.bytes = 0;
+        owner.available = false;
+    }
+    m_stateReadOwnerCount = 0;
+}
+
+void PCSX::CDRIso::cacheStateReadOwners() noexcept {
+    clearStateReadOwners();
+    const auto add = [this](IO<File> file) {
+        if (!file || m_stateReadOwnerCount == m_stateReadOwners.size()) return;
+        for (size_t i = 0; i < m_stateReadOwnerCount; ++i) {
+            if (m_stateReadOwners[i].file.operator->() == file.operator->()) return;
+        }
+        auto& owner = m_stateReadOwners[m_stateReadOwnerCount++];
+        owner.file = file;
+        owner.available = file->stateReadExtent(owner.bytes) == File::RawSnapshotStatus::Ok;
+    };
+    add(m_cdHandle);
+    add(m_subHandle);
+    if (m_numtracks < MAXTRACKS) {
+        for (unsigned i = 1; i <= m_numtracks; ++i) add(m_ti[i].handle);
+    }
+}
+
+bool PCSX::CDRIso::acceptsStateFile(IO<File> file, uint64_t start, uint64_t length) const noexcept {
+    if (!file || start > uint64_t(std::numeric_limits<ssize_t>::max()) ||
+        length > uint64_t(std::numeric_limits<ssize_t>::max()) - start) return false;
+    for (size_t i = 0; i < m_stateReadOwnerCount; ++i) {
+        auto owner = m_stateReadOwners[i].file;
+        if (owner && owner.operator->() == file.operator->()) {
+            const auto& proof = m_stateReadOwners[i];
+            return proof.available && file->stateReadAvailable() && start <= proof.bytes &&
+                   length <= proof.bytes - start;
+        }
+    }
+    return false;
+}
+
+bool PCSX::CDRIso::acceptsStateSector(IO<File> file, uint32_t base, int64_t sector) const noexcept {
+    if (sector < 0 || sector > std::numeric_limits<int>::max()) return false;
+    uint64_t stride = 0;
+    if (m_cdimg_read_func == &CDRIso::cdread_normal) stride = IEC60908b::FRAMESIZE_RAW;
+    else if (m_cdimg_read_func == &CDRIso::cdread_sub_mixed)
+        stride = IEC60908b::FRAMESIZE_RAW + IEC60908b::SUB_FRAMESIZE;
+    else if (m_cdimg_read_func == &CDRIso::cdread_2048) {
+        if (sector > std::numeric_limits<int>::max() / 2048 ||
+            sector > std::numeric_limits<int>::max() - 150) return false;
+        stride = 2048;
+    } else return false;
+    const uint64_t start = uint64_t(base) + uint64_t(sector) * stride;
+    return acceptsStateFile(file, start, stride);
+}
+
+bool PCSX::CDRIso::statePosition(IEC60908b::MSF at, unsigned& track) const noexcept {
+    if (m_numtracks >= MAXTRACKS) return false;
+    const auto& last = m_ti[m_numtracks];
+    const auto end = IEC60908b::MSF(last.start.toLBA() + last.length.toLBA() - last.pregap.toLBA()) +
+                     IEC60908b::MSF{0, 2, 0};
+    if (at >= end) {
+        track = 0;
+        return true;
+    }
+    if (m_numtracks == 0) return false;
+    track = m_numtracks;
+    while (track != 1 && m_ti[track].start > at) --track;
+    if (track != m_numtracks && at >= m_ti[track + 1].start - m_ti[track + 1].pregap) ++track;
+    return true;
+}
+
+bool PCSX::CDRIso::acceptsStateAccess(StateAccess kind, IEC60908b::MSF at, uint8_t requestedTrack) const noexcept {
+    if (m_numtracks >= MAXTRACKS) return false;
+    if (kind == StateAccess::TrackCount || kind == StateAccess::TrackAddress) return true;
+    if (kind == StateAccess::AudioSector && at >= getTD(0)) return true;
+    unsigned track = 0;
+    if (!statePosition(at, track)) return false;
+    if (kind == StateAccess::Position || track == 0) return true;
+    if (kind == StateAccess::DataSector) {
+        if (m_ti[track].type == TrackType::CDDA) return true;
+        int64_t sector = int64_t(at.toLBA()) - 150;
+        if (sector < 0) return false;
+        if (m_pregapOffset && uint64_t(sector) >= m_pregapOffset) sector -= 150;
+        if (!acceptsStateSector(m_cdHandle, 0, sector) || !m_ppf.acceptsStateRead()) return false;
+        return !m_subHandle || acceptsStateFile(m_subHandle, uint64_t(sector) * IEC60908b::SUB_FRAMESIZE,
+                                               IEC60908b::SUB_FRAMESIZE);
+    }
+    if (kind != StateAccess::AudioSector) return false;
+    const uint32_t lba = at.toLBA();
+    track = m_numtracks;
+    while (track > 1 && m_ti[track].start.toLBA() > lba) --track;
+    const uint32_t start = m_ti[track].start.toLBA();
+    if (m_ti[track].type != TrackType::CDDA || lba >= start + m_ti[track].length.toLBA()) return true;
+    if (lba < start) return false;
+    unsigned file = 1;
+    if (m_multifile) {
+        file = track;
+        while (file > 1 && !m_ti[file].handle) --file;
+    }
+    return acceptsStateSector(m_ti[file].handle, m_ti[track].start_offset, int64_t(lba) - start);
+}
+
+uint8_t PCSX::CDRIso::getTN() {
+    const uint8_t result = std::max(m_numtracks, 1U);
+    History::CD::mediaQuery(0, 0, result); return result;
+}
+PCSX::CDRIso::TrackType PCSX::CDRIso::getTrackType(unsigned track) {
+    const auto result = m_ti[track].type;
+    History::CD::mediaQuery(5, track, uint32_t(result)); return result;
+}

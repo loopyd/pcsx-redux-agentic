@@ -82,12 +82,12 @@ void PCSX::UI::tick() {
     auto L = *g_emulator->m_lua;
     L.getfield("AfterPollingCleanup", LUA_GLOBALSINDEX);
     if (!L.isnil()) {
+        L.push();
+        L.setfield("AfterPollingCleanup", LUA_GLOBALSINDEX);
         try {
             L.pcall();
         } catch (...) {
         }
-        L.push();
-        L.setfield("AfterPollingCleanup", LUA_GLOBALSINDEX);
     } else {
         L.pop();
     }

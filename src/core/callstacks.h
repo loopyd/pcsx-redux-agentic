@@ -20,6 +20,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <memory>
+#include <vector>
 
 #include "core/system.h"
 #include "support/eventbus.h"
@@ -55,6 +57,18 @@ class CallStacks {
     bool hasCurrent() { return m_current; }
     const CallStack& getCurrent() { return *m_current; }
     const TreeType& getCallstacks() { return m_callstacks; }
+
+    struct PreparedState {
+        struct Entry {
+            uint32_t low, high;
+            std::unique_ptr<CallStack> node;
+        };
+        std::vector<Entry> entries;
+        CallStack* current = nullptr;
+        uint32_t currentSP = 0;
+    };
+    std::unique_ptr<PreparedState> prepareState(const SaveStateWrapper*) const;
+    void commitState(PreparedState&) noexcept;
 
     void serialize(SaveStateWrapper*);
     void deserialize(const SaveStateWrapper*);

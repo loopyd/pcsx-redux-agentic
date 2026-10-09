@@ -18,6 +18,7 @@
  ***************************************************************************/
 
 #include "cdrom/cdriso.h"
+#include "core/transactions.h"
 
 bool PCSX::CDRIso::LoadSBI(const char *filename) {
     IO<File> sbihandle(new UvFile(filename));
@@ -30,6 +31,7 @@ bool PCSX::CDRIso::LoadSBI(const char *filename) {
 
     // init
     sbicount = 0;
+    m_historySbiKnown = true;
 
     // 4-byte SBI header
     sbihandle->read(buffer, 4);
@@ -44,6 +46,8 @@ bool PCSX::CDRIso::LoadSBI(const char *filename) {
 }
 
 bool PCSX::CDRIso::CheckSBI(const uint8_t *time) {
+    if (History::CD::active() && (!m_historySbiKnown || sbicount != 0))
+        History::fail(History::Failure::Unsupported);
     int lcv;
 
     // both BCD format
@@ -54,7 +58,7 @@ bool PCSX::CDRIso::CheckSBI(const uint8_t *time) {
     return false;
 }
 
-void PCSX::CDRIso::UnloadSBI() { sbicount = 0; }
+void PCSX::CDRIso::UnloadSBI() { sbicount = 0; m_historySbiKnown = true; }
 
 bool PCSX::CDRIso::opensbifile(const char *isoname) {
     char sbiname[MAXPATHLEN];

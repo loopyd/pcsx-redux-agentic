@@ -25,6 +25,8 @@
 
 #include <magic_enum/magic_enum_all.hpp>
 #include <string_view>
+#include <bit>
+#include "core/transactions.h"
 
 #include "cdrom/iso9660-reader.h"
 #include "core/cdromlogger.h"
@@ -104,6 +106,117 @@ class CDRomImpl final : public PCSX::CDRom {
         return m_seed >> 9;
     }
 
+    bool acceptsPreparedState(const PCSX::SaveStates::CDRom& cd, uint32_t mask) const noexcept override {
+        using namespace PCSX::SaveStates;
+        using Access = PCSX::CDRIso::StateAccess;
+        const auto msf = [](const auto& field) {
+            return MSF{field.template get<CDMSFMinute>().decodedValue(),
+                       field.template get<CDMSFSecond>().decodedValue(),
+                       field.template get<CDMSFFrame>().decodedValue()};
+        };
+        const auto position = msf(cd.get<CDCurrentPosition>());
+        const auto seek = msf(cd.get<CDSeekPosition>());
+        const auto access = [this](Access kind, MSF at, uint8_t track = 0) {
+            return m_iso && m_iso->acceptsStateAccess(kind, at, track);
+        };
+        const auto data = [&](MSF at, bool resetsXA) {
+            if (!access(Access::DataSector, at)) return false;
+            const auto track = m_iso->getTrack(at);
+            if (track == 0 || m_iso->getTrackType(track) == PCSX::CDRIso::TrackType::CDDA || resetsXA ||
+                !cd.get<CDRealtime>().decodedValue() || cd.get<CDXAEnded>().decodedValue() ||
+                cd.get<CDXAFirstSector>().decodedValue()) return true;
+            if (!m_xaFormatReady) return false;
+            return (m_xa.freq == 18900 || m_xa.freq == 37800) && (m_xa.nbits == 4 || m_xa.nbits == 8) &&
+                   (m_xa.stereo == 0 || m_xa.stereo == 1) && m_xa.nsamples >= 0 &&
+                   m_xa.nsamples <= (m_xa.stereo ? 2016 : 4032);
+        };
+        const auto audio = [&](MSF at) {
+            if (!access(Access::TrackAddress, at)) return false;
+            if (at >= m_iso->getTD(0)) return true;
+            if (!access(Access::Position, at)) return false;
+            uint8_t locP[8];
+            if (m_iso->getLocP(at, locP) && cd.get<CDAutoPause>().decodedValue() &&
+                cd.get<CDPlayTrack>().decodedValue() != 0 && locP[0] != cd.get<CDPlayTrack>().decodedValue())
+                return true;
+            return access(Access::AudioSector, at);
+        };
+        const auto command = [&](const auto& queue, bool start) {
+            const auto op = queue.template get<CDQueueValue>().decodedValue();
+            const auto payload = queue.template get<CDQueuePayload>().decodedData();
+            const auto size = queue.template get<CDQueuePayloadSize>().decodedValue();
+            switch (op) {
+                case CdlPlay: {
+                    bool seeks = cd.get<CDSetLocPending>().decodedValue();
+                    MSF next = seeks ? seek : position;
+                    if (!access(Access::TrackCount, position)) return false;
+                    if (size > 0) {
+                        unsigned track = isValidBCD(payload[0]) ? PCSX::IEC60908b::btoi(payload[0]) : 100;
+                        if (track != 0) {
+                            if (track > m_iso->getTN()) {
+                                if (!access(Access::Position, position)) return false;
+                                track = m_iso->getTrack(position);
+                            }
+                            if (track != 0) {
+                                if (!access(Access::TrackAddress, position, track)) return false;
+                                next = m_iso->getTD(track);
+                                seeks = true;
+                            }
+                        }
+                    }
+                    return (!seeks || access(Access::Position, next)) && audio(next);
+                }
+                case CdlReadN: case CdlReadS:
+                    return access(Access::Position, seek) && data(seek, true);
+                case CdlGetLocP: return access(Access::Position, position);
+                case CdlGetTN: return access(Access::TrackCount, position);
+                case CdlGetTD:
+                    if (!isValidBCD(payload[0])) return true;
+                    return access(Access::TrackCount, position) &&
+                           access(Access::TrackAddress, position, PCSX::IEC60908b::btoi(payload[0]));
+                case CdlSeekL: case CdlSeekP: return access(Access::Position, seek);
+                default: return true;
+            }
+        };
+        if (mask & (1u << static_cast<unsigned>(PCSX::Schedule::CDRCOMMANDS))) {
+            const auto& queue = cd.get<CDCommandExecuting>();
+            const auto op = queue.get<CDQueueValue>().decodedValue();
+            if (op >= c_cdCmdEnumCount || !c_commandsHandlers[op] || !command(queue, false)) return false;
+        }
+        if (mask & (1u << static_cast<unsigned>(PCSX::Schedule::CDRFIFO))) {
+            const auto valueEmpty = [](const auto& q) {
+                return !q.template get<CDQueueHasValue>().decodedValue() ||
+                       q.template get<CDQueueValueRead>().decodedValue();
+            };
+            const auto empty = [&](const auto& q) {
+                return valueEmpty(q) && (q.template get<CDQueuePayloadSize>().decodedValue() == 0 ||
+                                        q.template get<CDQueueHitMax>().decodedValue());
+            };
+            const auto& head = cd.get<CDResponseFifo0>();
+            const auto& tail = cd.get<CDResponseFifo1>();
+            const auto& queue = cd.get<CDCommandFifo>();
+            const bool promote = valueEmpty(head) && !empty(tail);
+            const bool ready = promote ? valueEmpty(tail) : valueEmpty(head) && empty(tail);
+            const auto op = queue.get<CDQueueValue>().decodedValue();
+            if (ready && !empty(queue) && op < c_cdCmdEnumCount && c_commandsHandlers[op] &&
+                (c_commandsArgumentsCount[op] < 0 ||
+                 c_commandsArgumentsCount[op] == queue.get<CDQueuePayloadSize>().decodedValue()) &&
+                !command(queue, true)) return false;
+        }
+        if (!(mask & (1u << static_cast<unsigned>(PCSX::Schedule::CDREAD)))) return true;
+        const auto reading = cd.get<CDReadingState>().decodedValue();
+        const auto type = cd.get<CDReadingType>().decodedValue();
+        const auto status = cd.get<CDStatus>().decodedValue();
+        if (reading == static_cast<uint8_t>(ReadingState::Seeking)) {
+            if (!access(Access::Position, seek)) return false;
+            return type == static_cast<uint8_t>(ReadingType::Play) ? audio(seek) : data(seek, false);
+        }
+        if (reading == static_cast<uint8_t>(ReadingState::Reading))
+            return type == static_cast<uint8_t>(ReadingType::Play) ? audio(position) : data(position, false);
+        if (status == static_cast<uint8_t>(Status::ReadingData)) return data(position, false);
+        if (status == static_cast<uint8_t>(Status::PlayingCDDA)) return audio(position);
+        return true;
+    }
+
     void reset() override {
         m_seed = 9223521712174600777ull;
         m_dataFIFOIndex = 0;
@@ -130,6 +243,7 @@ class CDRomImpl final : public PCSX::CDRom {
         m_xaEnded = false;
         m_xaFirstSector = true;
         xa_decode_reset(&m_xa);
+        m_xaFormatReady = false;
         m_atv[0] = m_atvPending[0] = 0x80;
         m_atv[1] = m_atvPending[1] = 0;
         m_atv[2] = m_atvPending[2] = 0x80;
@@ -139,13 +253,17 @@ class CDRomImpl final : public PCSX::CDRom {
         m_responseFifo[0].clear();
         m_responseFifo[1].clear();
         m_readingState = ReadingState::None;
+        m_historyNativeInitialized = true;
+        PCSX::History::CD::invalidate();
     }
 
     void fifoScheduledCallback() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::Fifo, 0, 0, 0);
         const bool debug = PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
                                .get<PCSX::Emulator::DebugSettings::LoggingCDROM>();
         if (m_responseFifo[0].valueEmpty() && !m_responseFifo[1].empty()) {
             m_responseFifo[0] = m_responseFifo[1];
+            m_historyQueueIds[2] = m_historyQueueIds[3];
             m_responseFifo[1].clear();
             raiseIRQIfUnmasked();
             if (debug) {
@@ -157,12 +275,14 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     void commandsScheduledCallback() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::Continuation, 0, 0, 0);
         auto command = m_commandExecuting.value;
         auto handler = c_commandsHandlers[command];
-        (this->*handler)(m_commandExecuting, false);
+        invokeCommand(handler, m_commandExecuting, false);
     }
 
     void readScheduledCallback() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::Read, 0, 0, 0);
         static const std::chrono::nanoseconds c_retryDelay = 50us;
         const bool debug = PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
                                .get<PCSX::Emulator::DebugSettings::LoggingCDROM>();
@@ -204,12 +324,19 @@ class CDRomImpl final : public PCSX::CDRom {
                     maybeEnqueueError(4, 0x10);
                 } else {
                     m_invalidLocL = false;
-                    m_iso->readTrack(m_currentPosition);
+                    PCSX::History::CD::Media historyMedium(1, uint32_t(m_currentPosition.m) | (uint32_t(m_currentPosition.s)<<8) | (uint32_t(m_currentPosition.f)<<16), m_currentPosition.toLBA(), PCSX::History::CD::backing());
+                    const bool readResult = m_iso->readTrack(m_currentPosition);
+                    historyMedium.result(readResult, 0);
                     PCSX::g_emulator->m_cdromLogger->recordAccess(m_currentPosition.toLBA(),
                                                                   PCSX::CDRomLogger::AccessType::Data,
                                                                   PCSX::g_emulator->m_cpu->m_regs.cycle);
                     auto buffer = m_iso->getBuffer();
+                    if (PCSX::History::CD::active()) {
+                        if (!m_iso->historyBufferDefined()) PCSX::History::fail(PCSX::History::Failure::Bounds);
+                        else PCSX::History::CD::dataMutation(2, 0, 2340, buffer, historyMedium.id());
+                    }
                     memcpy(m_lastLocL, buffer, sizeof(m_lastLocL));
+                    PCSX::History::CD::dataMutation(3, 0, sizeof(m_lastLocL), m_lastLocL, historyMedium.id());
                     uint32_t size = 0;
                     bool passToData = true;
                     if ((buffer[3] == 2) && (m_realtime || m_subheaderFilter)) {
@@ -245,6 +372,7 @@ class CDRomImpl final : public PCSX::CDRom {
                     auto readDelay = computeReadDelay();
                     // A sector withheld from the host leaves the previous data sector in the buffer.
                     if (passToData) {
+                        PCSX::History::CD::dataMutation(1, 0, size, m_dataFIFO, historyMedium.id());
                         m_dataFIFOIndex = 0;
                         m_dataFIFOPending = size;
                         m_dataFIFOSize = m_dataRequested ? size : 0;
@@ -274,6 +402,7 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     void scheduledDmaCallback() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::DmaComplete, 0, 0, 0);
         auto &mem = PCSX::g_emulator->m_mem;
         if (mem->isDMABusy<3>()) {
             mem->clearDMABusy<3>();
@@ -294,16 +423,22 @@ class CDRomImpl final : public PCSX::CDRom {
     void scheduleDMA(std::chrono::nanoseconds delay) { scheduleDMA(PCSX::psxRegisters::durationToCycles(delay)); }
 
     bool maybeEnqueueResponse(QueueElement &response) {
+        const std::array<uint64_t, 2> historyBefore{m_historyQueueIds[2], m_historyQueueIds[3]};
         if (m_responseFifo[0].valueEmpty() && !m_responseFifo[1].empty()) {
             m_responseFifo[0] = m_responseFifo[1];
             m_responseFifo[1] = response;
+            historyResponse(response, 3, true, historyBefore);
             return true;
         }
         if (m_responseFifo[0].empty()) {
             m_responseFifo[0] = response;
+            historyResponse(response, 1, true, historyBefore);
             return true;
         } else if (m_responseFifo[1].empty()) {
             m_responseFifo[1] = response;
+            historyResponse(response, 2, false, historyBefore);
+        } else {
+            historyResponse(response, 0, false, historyBefore);
         }
         return false;
     }
@@ -312,7 +447,9 @@ class CDRomImpl final : public PCSX::CDRom {
     // and the interrupt fires when the mask lets it through. The mask applies to the bits of
     // the cause value: on a SCPH-9002, cause 3 is held back by 1Ch and goes through 1Bh.
     void raiseIRQIfUnmasked() {
-        if (!m_responseFifo[0].valueEmpty() && (m_responseFifo[0].value & m_interruptCauseMask)) {
+        const bool assertIRQ = !m_responseFifo[0].valueEmpty() && (m_responseFifo[0].value & m_interruptCauseMask);
+        PCSX::History::emit(PCSX::History::Kind::CdIRQ, 1, {m_responseFifo[0].value, m_interruptCauseMask, uint32_t(assertIRQ)}, m_historyQueueIds[2]);
+        if (assertIRQ) {
             PCSX::g_emulator->m_mem->setIRQ(4);
         }
     }
@@ -364,6 +501,7 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     uint8_t read0() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerRead, 0x1f801800+0, 8);
         // HSTS (host status) register
         /*
           bit 7: BUSYSTS (busy status)
@@ -414,10 +552,11 @@ class CDRomImpl final : public PCSX::CDRom {
             PCSX::g_system->log(PCSX::LogClass::CDROM, "CD-Rom: %08x.%08x] r0: %02x\n", regs.pc, regs.cycle, ret);
         }
 
-        return ret;
+        { const uint8_t historyResult = ret; historyScope.result(historyResult); return historyResult; }
     }
 
     uint8_t read1() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerRead, 0x1f801800+1, 8);
         // RESULT
         uint8_t ret = m_responseFifo[0].readPayloadByte();
         maybeScheduleNextCommand();
@@ -428,16 +567,19 @@ class CDRomImpl final : public PCSX::CDRom {
             auto &regs = PCSX::g_emulator->m_cpu->m_regs;
             PCSX::g_system->log(PCSX::LogClass::CDROM, "CD-Rom: %08x.%08x] r1: %02x\n", regs.pc, regs.cycle, ret);
         }
-        return ret;
+        { const uint8_t historyResult = ret; historyScope.result(historyResult); return historyResult; }
     }
 
     uint8_t read2() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerRead, 0x1f801800+2, 8);
         // RD DATA
         uint8_t ret = 0;
         if (!dataFIFOHasData()) {
             ret = 0;
         } else {
+            const uint32_t consumedOffset = m_dataFIFOIndex;
             ret = m_dataFIFO[m_dataFIFOIndex++];
+            PCSX::History::CD::consume(consumedOffset, 1, &ret, 0x1f801802, false);
             // Draining the whole sector drops the data request: with BFRD left set, the next
             // sector is not loaded into the fifo until the host writes BFRD again.
             if (m_dataFIFOIndex == m_dataFIFOSize) m_dataRequested = false;
@@ -449,10 +591,11 @@ class CDRomImpl final : public PCSX::CDRom {
             auto &regs = PCSX::g_emulator->m_cpu->m_regs;
             PCSX::g_system->log(PCSX::LogClass::CDROM, "CD-Rom: %08x.%08x] r2: %02x\n", regs.pc, regs.cycle, ret);
         }
-        return ret;
+        { const uint8_t historyResult = ret; historyScope.result(historyResult); return historyResult; }
     }
 
     uint8_t read3() override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerRead, 0x1f801800+3, 8);
         /*
          * bit 4: BFWRDY (buffer write ready)
          *        The BFWRDY status is established if there is area where writing is possible in the buffer of 1 sector
@@ -488,10 +631,11 @@ class CDRomImpl final : public PCSX::CDRom {
             PCSX::g_system->log(PCSX::LogClass::CDROM, "CD-Rom: %08x.%08x] r3.%i: %02x\n", regs.pc, regs.cycle,
                                 m_registerAddress & 1, ret);
         }
-        return ret | 0xe0;
+        { const uint8_t historyResult = ret | 0xe0; historyScope.result(historyResult); return historyResult; }
     }
 
     void write0(uint8_t value) override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerWrite, 0x1f801800+0, 8, value);
         // ADDRESS
         const bool debug = PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
                                .get<PCSX::Emulator::DebugSettings::LoggingHWCDROM>();
@@ -503,6 +647,7 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     void write1(uint8_t value) override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerWrite, 0x1f801800+1, 8, value);
         const bool debug = PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
                                .get<PCSX::Emulator::DebugSettings::LoggingHWCDROM>();
         if (debug) {
@@ -514,6 +659,7 @@ class CDRomImpl final : public PCSX::CDRom {
             case 0:
                 // COMMAND
                 m_commandFifo.value = value;
+                PCSX::History::CD::submission(); historyQueueChanged(0);
                 if (!m_commandFifo.hasValue) {
                     if (PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
                             .get<PCSX::Emulator::DebugSettings::LoggingCDROM>()) {
@@ -558,6 +704,7 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     void write2(uint8_t value) override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerWrite, 0x1f801800+2, 8, value);
         const bool debug = PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
                                .get<PCSX::Emulator::DebugSettings::LoggingHWCDROM>();
         if (debug) {
@@ -569,6 +716,7 @@ class CDRomImpl final : public PCSX::CDRom {
             case 0: {
                 // PARAMETER
                 m_commandFifo.pushPayloadData(value);
+                historyQueueChanged(0);
             } break;
             case 1: {
                 // HINT MSK (host interrupt mask)
@@ -587,6 +735,7 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     void write3(uint8_t value) override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::HandlerWrite, 0x1f801800+3, 8, value);
         const bool debug = PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
                                .get<PCSX::Emulator::DebugSettings::LoggingHWCDROM>();
         if (debug) {
@@ -711,13 +860,17 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     void dma(uint32_t madr, uint32_t bcr, uint32_t chcr) override {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::Dma, madr, 32, chcr);
         uint32_t size = bcr & 0xffff;
         size *= 4;
         if (size == 0) size = 0xffffffff;
         size = std::min(m_dataFIFOSize - m_dataFIFOIndex, size);
         PCSX::IO<PCSX::File> memFile = PCSX::g_emulator->m_mem->getMemoryAsFile();
         memFile->wSeek(madr);
-        memFile->write(m_dataFIFO + m_dataFIFOIndex, size);
+        PCSX::History::CD::consume(m_dataFIFOIndex, size, m_dataFIFO + m_dataFIFOIndex, madr, true);
+        PCSX::History::CD::dmaBegin(madr, m_dataFIFOIndex, size);
+        const auto written = memFile->write(m_dataFIFO + m_dataFIFOIndex, size);
+        PCSX::History::CD::dmaEnd(written);
         m_dataFIFOIndex += size;
         if ((size != 0) && (m_dataFIFOIndex == m_dataFIFOSize)) m_dataRequested = false;
         PCSX::g_emulator->m_cpu->Clear(madr, size / 4);
@@ -746,6 +899,18 @@ class CDRomImpl final : public PCSX::CDRom {
         error.pushPayloadData(getStatus() | mask1);
         error.pushPayloadData(mask2);
         maybeTriggerIRQ(Cause::Error, error);
+    }
+
+    bool invokeCommand(bool (CDRomImpl::*handler)(const QueueElement&, bool), const QueueElement& command, bool start) {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::Command, command.value, 0, start);
+        const auto queue = historyQueue(command, start ? m_historyQueueIds[0] : m_historyQueueIds[1]);
+        PCSX::History::emit(PCSX::History::Kind::CdCommand, 1, {command.value, uint32_t(start), command.payloadSize},
+            PCSX::History::CD::access(), queue.data(), queue.size(), historyScope.id());
+        const bool result = (this->*handler)(command, start);
+        historyScope.result(result);
+        PCSX::History::emit(PCSX::History::Kind::CdCommand, 2, {command.value, uint32_t(start), uint32_t(result)},
+            PCSX::History::CD::access(), nullptr, 0, historyScope.id());
+        return result;
     }
 
     void maybeStartCommand() {
@@ -781,7 +946,7 @@ class CDRomImpl final : public PCSX::CDRom {
         }
         auto handler = c_commandsHandlers[command];
         if (handler) {
-            if ((this->*handler)(m_commandFifo, true)) m_commandExecuting = m_commandFifo;
+            if (invokeCommand(handler, m_commandFifo, true)) { m_commandExecuting = m_commandFifo; m_historyQueueIds[1] = m_historyQueueIds[0]; }
         } else {
             // 17h and 18h are unused opcodes and error out like 00h. Anything else without a
             // handler is a real command that is not emulated yet.
@@ -906,6 +1071,7 @@ class CDRomImpl final : public PCSX::CDRom {
 
     void resetXA() {
         xa_decode_reset(&m_xa);
+        m_xaFormatReady = false;
         m_xaFirstSector = true;
         m_xaEnded = false;
     }
@@ -931,11 +1097,25 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     void playXASector(uint8_t *subHeader, const PCSX::IEC60908b::SubHeaders &subHeaders) {
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::NativeBranch, {1, uint32_t(m_xaEnded)});
         if (m_xaEnded) return;
-        if (m_subheaderFilter && ((subHeader[0] != m_filterFile) || (subHeader[1] != m_filterChannel))) return;
+        const bool filtered = m_subheaderFilter && ((subHeader[0] != m_filterFile) || (subHeader[1] != m_filterChannel));
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::NativeBranch,
+            {2, uint32_t(filtered), uint32_t(m_subheaderFilter), subHeader[0], subHeader[1], m_filterFile, m_filterChannel});
+        if (filtered) return;
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::NativeBranch, {3, uint32_t(subHeader[1] == 0xff), subHeader[1]});
         if (subHeader[1] == 0xff) return;
-        if (xa_decode_sector(&m_xa, subHeader, m_xaFirstSector) == 0) {
+        const int decoded = xa_decode_sector(&m_xa, subHeader, m_xaFirstSector);
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::XaDecode,
+            {uint32_t(decoded), uint32_t(m_xaFirstSector), uint32_t(subHeader[0]), uint32_t(subHeader[1]), 0, 1});
+        if (decoded == 0) {
+            PCSX::History::CD::dataMutation(6, 0, m_xa.nsamples * (m_xa.stereo ? 2 : 1) * sizeof(m_xa.pcm[0]), m_xa.pcm);
+            PCSX::History::CD::predicate(PCSX::History::CD::Predicate::XaDecode,
+                {0, uint32_t(m_xa.freq), uint32_t(m_xa.nbits), uint32_t(m_xa.stereo), uint32_t(m_xa.nsamples), 2});
+            m_xaFormatReady = true;
             m_xaFirstSector = false;
+            PCSX::History::CD::predicate(PCSX::History::CD::Predicate::NativeBranch,
+                {4, uint32_t(!m_muted && !m_adpcmMuted), uint32_t(m_muted), uint32_t(m_adpcmMuted)});
             if (!m_muted && !m_adpcmMuted) {
                 // Mono feeds the same sample to both matrix inputs (SCPH-9002: L gets ATV0+ATV3,
                 // R gets ATV1+ATV2).
@@ -949,12 +1129,17 @@ class CDRomImpl final : public PCSX::CDRom {
                     for (int i = 0; i < m_xa.nsamples; i++) m_xaOut.pcm[i * 2] = m_xaOut.pcm[i * 2 + 1] = m_xa.pcm[i];
                 }
                 PCSX::g_emulator->m_spu->setXAVolume(m_atv);
+                PCSX::History::CD::dataMutation(7, 0, m_xaOut.nsamples * 2 * sizeof(m_xaOut.pcm[0]), m_xaOut.pcm);
+                const auto ids = PCSX::History::CD::identities();
+                PCSX::History::CD::Feed historyFeed(false, ids[4], ids[3], ids[2], m_xaOut.freq, m_xaOut.nsamples, m_xaOut.stereo);
                 PCSX::g_emulator->m_spu->playADPCMchannel(&m_xaOut);
             }
         }
         // A sector with both EOF and EOR stops ADPCM playback, with no interrupt; reading carries on.
         // EOF alone or EOR alone does not (#6, SCPH-9002).
-        if (subHeaders.isEOF() && subHeaders.isEndOfRecord()) m_xaEnded = true;
+        const bool ended = subHeaders.isEOF() && subHeaders.isEndOfRecord();
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::NativeBranch, {5, uint32_t(ended), uint32_t(subHeaders.isEOF()), uint32_t(subHeaders.isEndOfRecord())});
+        if (ended) m_xaEnded = true;
     }
 
     void startPlaying() {
@@ -973,7 +1158,10 @@ class CDRomImpl final : public PCSX::CDRom {
 
     // One sector of CD-DA playback: audio to the SPU, then the optional report.
     void playSector() {
-        if (m_currentPosition >= m_iso->getTD(0)) {
+        PCSX::History::CD::Scope historyScope(PCSX::History::CD::Operation::Play, 0, 0, 0);
+        const bool endOfDisc = m_currentPosition >= m_iso->getTD(0);
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::Playback, {1, uint32_t(endOfDisc)});
+        if (endOfDisc) {
             // End of disc: an end cause, and the motor stops.
             stopPlaying();
             m_motorOn = false;
@@ -981,9 +1169,12 @@ class CDRomImpl final : public PCSX::CDRom {
         }
         uint8_t locP[8];
         bool haveQ = m_iso->getLocP(m_currentPosition, locP);
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::Playback, {2, uint32_t(haveQ)});
         if (haveQ) {
             if (m_playTrack == 0) m_playTrack = locP[0];
-            if (m_autoPause && (locP[0] != m_playTrack)) {
+            const bool autoPause = m_autoPause && (locP[0] != m_playTrack);
+            PCSX::History::CD::predicate(PCSX::History::CD::Predicate::Playback, {3, uint32_t(autoPause), uint32_t(m_autoPause), locP[0], m_playTrack});
+            if (autoPause) {
                 // Autopause: an end cause on the SubQ track transition, staying where we are.
                 stopPlaying();
                 return;
@@ -991,13 +1182,19 @@ class CDRomImpl final : public PCSX::CDRom {
         }
 
         int16_t samples[PCSX::IEC60908b::FRAMESIZE_RAW / 2];
-        m_iso->readCDDA(m_currentPosition, reinterpret_cast<uint8_t *>(samples));
+        PCSX::History::CD::Media historyMedium(2, uint32_t(m_currentPosition.m) | (uint32_t(m_currentPosition.s)<<8) | (uint32_t(m_currentPosition.f)<<16), m_currentPosition.toLBA(), PCSX::History::CD::backing());
+        const bool audioReadResult = m_iso->readCDDA(m_currentPosition, reinterpret_cast<uint8_t *>(samples));
+        historyMedium.result(audioReadResult, 0);
+        PCSX::History::CD::dataMutation(5, 0, sizeof(samples), samples, historyMedium.id());
         PCSX::g_emulator->m_cdromLogger->recordAccess(m_currentPosition.toLBA(), PCSX::CDRomLogger::AccessType::Data,
                                                       PCSX::g_emulator->m_cpu->m_regs.cycle);
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::Playback, {4, uint32_t(!m_muted)});
         if (!m_muted) {
             int16_t out[std::size(samples)];
             memcpy(out, samples, sizeof(out));
             attenuateCDDA(out, std::size(out) / 2);
+            const auto ids = PCSX::History::CD::identities();
+            PCSX::History::CD::Feed historyFeed(true, ids[4], ids[3], ids[2], 44100, sizeof(out)/4, 1);
             PCSX::g_emulator->m_spu->playCDDAchannel(out, sizeof(out));
         }
 
@@ -1005,8 +1202,12 @@ class CDRomImpl final : public PCSX::CDRom {
         m_peakFlag = !m_peakFlag;
         const uint32_t elapsed = PCSX::g_emulator->m_cpu->m_regs.cycle - m_playStartCycle;
         const bool settled = elapsed >= PCSX::psxRegisters::durationToCycles(750ms);
-        if (m_report && haveQ && settled) {
+        const bool reportEligible = m_report && haveQ && settled;
+        PCSX::History::CD::predicate(PCSX::History::CD::Predicate::Playback,
+            {5, uint32_t(reportEligible), uint32_t(m_report), uint32_t(haveQ), uint32_t(settled), elapsed});
+        if (reportEligible) {
             uint8_t frame = PCSX::IEC60908b::btoi(locP[7]);
+            PCSX::History::CD::predicate(PCSX::History::CD::Predicate::Playback, {6, uint32_t((frame % 10) == 0), frame});
             if ((frame % 10) == 0) {
                 unsigned peak = 0;
                 for (unsigned i = m_peakFlag ? 1 : 0; i < std::size(samples); i += 2) {
@@ -1697,6 +1898,7 @@ class CDRomImpl final : public PCSX::CDRom {
 PCSX::CDRom *PCSX::CDRom::factory() { return new CDRomImpl; }
 
 void PCSX::CDRom::parseIso() {
+    History::CD::Scope historyScope(History::CD::Operation::IsoScan);
     m_cdromId.clear();
     m_cdromLabel.clear();
     if (m_iso) g_emulator->m_cdromLogger->setDiscSectors(m_iso->getTD(0).toLBA());
@@ -1747,6 +1949,7 @@ void PCSX::CDRom::parseIso() {
 }
 
 bool PCSX::CDRom::isLidOpen() {
+    History::CD::Scope historyScope(History::CD::Operation::Lid);
     if (m_lidCloseScheduled) {
         const uint32_t cycle = g_emulator->m_cpu->m_regs.cycle;
         if (((int32_t)(m_lidCloseAtCycles - cycle)) <= 0) {
@@ -1754,5 +1957,103 @@ bool PCSX::CDRom::isLidOpen() {
             m_lidOpen = false;
         }
     }
+    historyScope.result(m_lidOpen);
+    History::CD::predicate(History::CD::Predicate::LidState, {uint32_t(m_lidOpen), uint32_t(m_lidCloseScheduled), m_lidCloseAtCycles});
     return m_lidOpen;
+}
+
+bool PCSX::CDRom::historyInitialized() const { return m_historyNativeInitialized; }
+void PCSX::CDRom::historyReset() { m_historyQueueIds.fill(0); m_historyReadingType = uint8_t(m_readingType); }
+std::array<uint8_t, 32> PCSX::CDRom::historyQueue(const QueueElement& queue, uint64_t id) const {
+    std::array<uint8_t, 32> out{};
+    if (queue.payloadSize > 16 || queue.payloadIndex > 16) { History::fail(History::Failure::Bounds); return out; }
+    out[0] = uint8_t(queue.hasValue) | (uint8_t(queue.valueRead) << 1) | (uint8_t(queue.hitMax) << 2) | 8 | (id ? 0 : 16);
+    out[1] = queue.value; out[2] = queue.payloadSize; out[3] = queue.payloadIndex;
+    for (unsigned b = 0; b < 8; ++b) out[8+b] = id >> (b*8);
+    std::copy_n(queue.payload, queue.payloadSize, out.begin()+16);
+    return out;
+}
+void PCSX::CDRom::historyQueueChanged(uint32_t index) {
+    if (History::CD::active() && index < 4) m_historyQueueIds[index] = History::CD::nextIdentity();
+}
+std::array<uint8_t, 384> PCSX::CDRom::historyContext() {
+    std::array<uint8_t, 384> out{};
+    if (!History::CD::active()) return out;
+    const auto put = [&](uint32_t offset, uint64_t value, uint32_t length) {
+        for (uint32_t b = 0; b < length; ++b) out[offset+b] = value >> (b*8);
+    };
+    if (m_historyReadingType != uint8_t(m_readingType)) {
+        m_historyReadingType = uint8_t(m_readingType); History::CD::stream(m_historyReadingType);
+    }
+    const std::array<bool, 19> booleans{m_lidOpen, m_wasLidOpened, m_lidCloseScheduled, m_motorOn,
+        m_speedChanged, m_invalidLocL, m_dataRequested, m_subheaderFilter, m_realtime, m_startPlaying,
+        m_autoPause, m_report, m_setLocPending, m_muted, m_peakFlag, m_adpcmMuted, m_xaEnded,
+        m_xaFirstSector, m_soundMapEnabled};
+    uint32_t flags = 0; for (unsigned n = 0; n < booleans.size(); ++n) flags |= uint32_t(booleans[n]) << n;
+    put(0, 3, 4); put(4, out.size(), 4); put(8, 1, 4);
+    put(16, History::CD::epoch(), 8); put(24, History::CD::audioEpoch(), 8);
+    put(32, flags, 4); put(36, m_dataFIFOIndex, 4); put(40, m_dataFIFOSize, 4); put(44, m_dataFIFOPending, 4);
+    put(48, m_playStartCycle, 4); put(52, m_lidCloseAtCycles, 4); put(56, m_seed, 8);
+    const std::array<uint8_t, 11> registers{m_registerAddress, uint8_t(m_readingState), uint8_t(m_readingType),
+        uint8_t(m_status), uint8_t(m_speed), uint8_t(m_readSpan), m_interruptCauseMask, m_playTrack, m_mode,
+        m_filterFile, m_filterChannel};
+    std::copy(registers.begin(), registers.end(), out.begin()+64);
+    out[75] = m_currentPosition.m; out[76] = m_currentPosition.s; out[77] = m_currentPosition.f;
+    out[78] = m_seekPosition.m; out[79] = m_seekPosition.s; out[80] = m_seekPosition.f;
+    std::copy_n(m_atv, 4, out.begin()+81); std::copy_n(m_atvPending, 4, out.begin()+85);
+    std::copy_n(m_lastLocP, 8, out.begin()+96); std::copy_n(m_lastLocL, 8, out.begin()+104);
+    const std::array<const QueueElement*, 4> queues{&m_commandFifo, &m_commandExecuting, &m_responseFifo[0], &m_responseFifo[1]};
+    for (unsigned n = 0; n < queues.size(); ++n) {
+        const auto queue = historyQueue(*queues[n], m_historyQueueIds[n]);
+        std::copy(queue.begin(), queue.end(), out.begin()+112+n*32);
+    }
+    const auto ids = History::CD::identities();
+    for (unsigned n = 0; n < ids.size(); ++n) put(240+n*8, ids[n], 8);
+    const auto& cpu = g_emulator->m_cpu->m_regs;
+    put(304, cpu.scheduleMask, 4); put(308, g_emulator->m_mem->getCHCR<3>(), 4);
+    put(312, cpu.lowestTarget, 8);
+    constexpr std::array<unsigned, 4> slots{2, 3, 4, 10};
+    const auto owners = History::CD::scheduleOwners();
+    for (unsigned n = 0; n < slots.size(); ++n) { put(320+n*16, cpu.scheduleTargets[slots[n]], 8); put(328+n*16, owners[n], 8); }
+    if (m_dataFIFOIndex > m_dataFIFOSize || m_dataFIFOSize > sizeof(m_dataFIFO) || m_dataFIFOPending > sizeof(m_dataFIFO)) History::fail(History::Failure::Bounds);
+    return out;
+}
+void PCSX::CDRom::history(uint32_t phase) {
+    if (!History::CD::active()) return;
+    const auto context = historyContext();
+    History::emit(History::Kind::CdContext, phase, {3, uint32_t(context.size())}, 0, context.data(), context.size(), 0);
+    History::CD::dataBoundary(phase, m_dataFIFO, sizeof(m_dataFIFO));
+    History::emit(History::Kind::CdBuffer, phase, {1, m_dataFIFOIndex, m_dataFIFOSize, m_dataFIFOPending, sizeof(m_dataFIFO)}, 0, m_dataFIFO, sizeof(m_dataFIFO), 0);
+    constexpr std::array<unsigned, 4> slots{2, 3, 4, 10};
+    const auto owners = History::CD::scheduleOwners(); const auto& cpu = g_emulator->m_cpu->m_regs;
+    for (unsigned n = 0; n < slots.size(); ++n) {
+        const auto target = cpu.scheduleTargets[slots[n]];
+        History::emit(History::Kind::CdSchedule, phase ? 7 : 6,
+            {slots[n], (cpu.scheduleMask >> slots[n]) & 1, uint32_t(target), uint32_t(target >> 32),
+             std::bit_cast<uint32_t>(g_emulator->m_cpu->m_scheduleScales[slots[n]])}, target, nullptr, 0, owners[n]);
+    }
+}
+void PCSX::CDRom::historyResponse(const QueueElement& queue, uint32_t branch, bool result, std::array<uint64_t, 2> before) {
+    if (!History::CD::active()) return;
+    const uint64_t candidate = History::CD::nextIdentity();
+    if (branch == 1) m_historyQueueIds[2] = candidate;
+    if (branch == 2) m_historyQueueIds[3] = candidate;
+    if (branch == 3) { m_historyQueueIds[2] = before[1]; m_historyQueueIds[3] = candidate; }
+    std::array<uint8_t, 64> payload{};
+    const std::array<uint64_t, 4> ids{before[0], before[1], m_historyQueueIds[2], m_historyQueueIds[3]};
+    for (unsigned n = 0; n < ids.size(); ++n) for (unsigned b = 0; b < 8; ++b) payload[n*8+b] = ids[n] >> (b*8);
+    const auto snapshot = historyQueue(queue, candidate); std::copy(snapshot.begin(), snapshot.end(), payload.begin()+32);
+    History::emit(History::Kind::CdResponse, branch, {uint32_t(result), queue.value, queue.payloadSize},
+        History::CD::access(), payload.data(), payload.size(), candidate);
+}
+
+void PCSX::CDRom::historyIsoIdentity(uint32_t phase) {
+    if (!History::CD::active()) return;
+    if (m_cdromId.size() > 9 || m_cdromLabel.size() > 32) { History::fail(History::Failure::Bounds); return; }
+    std::array<uint8_t, 64> payload{};
+    payload[0] = m_cdromId.size(); payload[1] = m_cdromLabel.size();
+    std::copy(m_cdromId.begin(), m_cdromId.end(), payload.begin()+8);
+    std::copy(m_cdromLabel.begin(), m_cdromLabel.end(), payload.begin()+24);
+    History::emit(History::Kind::CdMedia, 4+phase, {uint32_t(m_cdromId.size()), uint32_t(m_cdromLabel.size())},
+        History::CD::access(), payload.data(), payload.size(), History::CD::operation());
 }

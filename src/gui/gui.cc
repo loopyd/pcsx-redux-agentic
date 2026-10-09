@@ -53,6 +53,7 @@ extern "C" {
 #include "core/gdb-server.h"
 #include "core/gpu.h"
 #include "core/gpulogger.h"
+#include "core/history.h"
 #include "core/pad.h"
 #include "core/psxemulator.h"
 #include "core/psxmem.h"
@@ -1809,6 +1810,7 @@ in Configuration->Emulation, restart PCSX-Redux, then try again.)"));
                     newPixel = writtenByte | (vramData[maskedOffset + 1] << 8);
                 }
 
+                History::fail(History::Failure::Discontinuity);
                 g_emulator->m_gpu->partialUpdateVRAM(x, y, 1, 1, &newPixel);
             };
             m_vramEditor.editor.Cache.BulkReadFn = [vramData](void* dest, size_t off, size_t len) {
@@ -2844,44 +2846,60 @@ std::string PCSX::GUI::buildSaveStateFilename(std::string saveStateName) {
     return fmt::format("{}{}{}", getSaveStatePrefix(true), saveStateName, getSaveStatePostfix());
 }
 
-bool PCSX::GUI::saveSaveState(std::filesystem::path filename) {
-    if (filename.is_relative()) {
-        filename = g_system->getPersistentDir() / filename;
+namespace {
+bool readSaveState(const std::filesystem::path& filename, std::string& output) {
+    PCSX::IO<PCSX::File> file(new PCSX::PosixFile(filename));
+    PCSX::IO<PCSX::File> reader(new PCSX::ZReader(file));
+    if (reader->failed()) return false;
+    std::array<char, 65536> buffer;
+    while (!reader->eof()) {
+        const auto count = reader->read(buffer.data(), buffer.size());
+        if (count < 0 || (count == 0 && !reader->eof())) return false;
+        if (size_t(count) > PCSX::SaveStates::MaxSize - output.size()) return false;
+        output.append(buffer.data(), count);
     }
-    // TODO: yeet this to libuv's threadpool.
-    ZWriter save(new UvFile(filename, FileOps::TRUNCATE), ZWriter::GZIP);
-    bool success = !save.failed();
-    if (success) save.writeString(SaveStates::save());
-    save.close();
+    const bool success = !reader->failed();
+    reader->close();
+    file->close();
     return success;
+}
+}
+
+bool PCSX::GUI::saveSaveState(std::filesystem::path filename) {
+    if (filename.is_relative()) filename = g_system->getPersistentDir() / filename;
+    try {
+        const auto bytes = SaveStates::save();
+        if (bytes.empty()) {
+            g_system->log(LogClass::UI, "Save state capture failed before opening target\n");
+            return false;
+        }
+        IO<File> file(new PosixFile(filename, FileOps::TRUNCATE));
+        bool success = false;
+        if (!file->failed()) {
+            IO<File> writer(new ZWriter(file, ZWriter::GZIP));
+            const bool written = writer->write(bytes.data(), bytes.size()) == ssize_t(bytes.size());
+            writer->close();
+            success = written && !writer->failed();
+        }
+        file->close();
+        std::string readback;
+        if (success && readSaveState(filename, readback) && readback == bytes) return true;
+    } catch (...) {}
+    g_system->log(LogClass::UI, "Save state capture/write/readback failed: %s\n", filename.string().c_str());
+    return false;
 }
 
 bool PCSX::GUI::loadSaveState(std::filesystem::path filename) {
-    if (filename.is_relative()) {
-        filename = g_system->getPersistentDir() / filename;
-    }
-    ZReader save(new PosixFile(filename));
-    if (save.failed()) return false;
-    std::ostringstream os;
-    constexpr unsigned buff_size = 1 << 16;
-    char* buff = new char[buff_size];
-    bool error = false;
-
-    while (!save.eof()) {
-        auto cnt = save.read(buff, buff_size);
-        if (cnt == 0) break;
-        if (cnt < 0) {
-            error = true;
-            break;
+    if (filename.is_relative()) filename = g_system->getPersistentDir() / filename;
+    try {
+        std::string bytes;
+        if (readSaveState(filename, bytes)) {
+            SaveStates::loadSafe(std::move(bytes));
+            return true;
         }
-        os.write(buff, cnt);
-    }
-
-    save.close();
-    delete[] buff;
-
-    if (!error) SaveStates::loadSafe(os.str());
-    return !error;
+    } catch (...) {}
+    g_system->log(LogClass::UI, "Load state read failed: %s\n", filename.string().c_str());
+    return false;
 }
 
 bool PCSX::GUI::deleteSaveState(std::filesystem::path filename) {

@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include <array>
+
 #include "core/decode_xa.h"
 #include "core/psxemulator.h"
 #include "core/psxmem.h"
@@ -26,6 +28,7 @@
 #include "core/sstate.h"
 #include "json.hpp"
 #include "lua/luawrapper.h"
+#include "spu/environment.h"
 
 namespace PCSX {
 
@@ -57,16 +60,29 @@ class SPUInterface {
     virtual bool configure() = 0;
     virtual void save(SaveStates::SPU &) = 0;
     virtual void load(const SaveStates::SPU &) = 0;
+    virtual bool stateAccessAvailable() const noexcept = 0;
+    virtual bool acceptsPreparedState(const SaveStates::SPU&) const noexcept = 0;
+    virtual bool beginStateAccess() = 0;
+    virtual void endStateAccess() = 0;
+    virtual void saveStopped(SaveStates::SPU&) = 0;
+    virtual void loadStopped(const SaveStates::SPU&) = 0;
     virtual uint32_t getCurrentFrames() = 0;
     virtual void waitForGoal(uint32_t goal) = 0;
     virtual uint32_t getFrameCount() = 0;
     virtual void setLua(Lua L) = 0;
+    virtual uint64_t captureAccess(uint32_t, uint32_t, uint32_t, bool) = 0;
+    virtual void captureEnd(uint64_t) = 0;
+    virtual void captureReturn(uint32_t, uint32_t, uint32_t) = 0;
+    virtual void invalidateCapture() = 0;
+    virtual std::array<uint64_t, 2> captureIdentity() = 0;
+    virtual bool captureEnvironment(SPU::Environment&) = 0;
+    virtual bool checkEnvironment(const SPU::Environment&) = 0;
 
     bool m_showDebug = false;
     bool m_showCfg = false;
 
   protected:
-    void scheduleInterrupt();
+    void scheduleInterrupt(uint32_t kind = 0, uint32_t channel = UINT32_MAX, uint32_t address = UINT32_MAX, uint32_t control = 0, uint32_t status = 0);
 };
 
 }  // namespace PCSX

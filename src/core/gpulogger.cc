@@ -18,6 +18,7 @@
  ***************************************************************************/
 
 #include "core/gpulogger.h"
+#include "core/history.h"
 
 #include <algorithm>
 #include <limits>
@@ -278,6 +279,7 @@ void PCSX::GPULogger::addNodeInternal(GPU::Logged* node, GPU::Logged::Origin ori
 void PCSX::GPULogger::startNewFrame() { m_vram = g_emulator->m_gpu->getVRAM(GPU::Ownership::ACQUIRE); }
 
 void PCSX::GPULogger::replay(GPU* gpu) {
+    History::Gpu observation(*gpu, History::GpuSource::HostReplay, 0, 0);
     if (m_vram.data()) gpu->partialUpdateVRAM(0, 0, 1024, 512, m_vram.data<uint16_t>());
     for (auto& node : m_list) {
         if (node.enabled) node.execute(gpu);

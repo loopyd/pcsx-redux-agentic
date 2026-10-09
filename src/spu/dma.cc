@@ -17,6 +17,9 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
+#include "core/psxemulator.h"
+#include "core/psxmem.h"
 #include "spu/externals.h"
 #include "spu/interface.h"
 
@@ -28,7 +31,12 @@ void PCSX::SPU::impl::readDMAMem(uint16_t* mainMem, int size) {
 
     for (int i = 0; i < size; i++) {
         // Copy 2 bytes.
-        *mainMem++ = spuMem[spuAddr >> 1];
+        const uint16_t value = spuMem[spuAddr >> 1];
+        *mainMem = value;
+        History::scalar(4, uint32_t(reinterpret_cast<uintptr_t>(mainMem) -
+                        reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)),
+                        spuAddr, value, 2, 0);
+        ++mainMem;
         // Increment the SPU address and wrap around.
         spuAddr = (spuAddr + 2) & 0x7ffff;
     }
@@ -41,6 +49,7 @@ void PCSX::SPU::impl::lockSPURAM() { cbMtx.lock(); }
 void PCSX::SPU::impl::unlockSPURAM() { cbMtx.unlock(); }
 
 void PCSX::SPU::impl::resetCaptureBuffer() {
+    invalidateCapture();
     // The capture buffers are always live: hardware writes them continuously and
     // raises the IRQ whenever the write reaches SPU_IRQ_ADDR. Nothing about that is
     // optional, so the cursor is always armed.
@@ -61,7 +70,12 @@ void PCSX::SPU::impl::writeDMAMem(uint16_t* mainMem, int size) {
 
     for (int i = 0; i < size; i++) {
         // Copy 2 bytes.
-        spuMem[spuAddr >> 1] = *mainMem++;
+        const uint16_t value = *mainMem;
+        spuMem[spuAddr >> 1] = value;
+        History::scalar(4, uint32_t(reinterpret_cast<uintptr_t>(mainMem) -
+                        reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)),
+                        spuAddr, value, 2, 1);
+        ++mainMem;
         // Increment the SPU address and wrap around.
         spuAddr = (spuAddr + 2) & 0x7ffff;
     }

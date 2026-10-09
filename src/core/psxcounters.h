@@ -35,6 +35,7 @@ class Counters {
 
     void set();
     void reset(uint32_t index);
+    void observe(uint32_t index, History::Kind kind, uint32_t reason = 0);
     void calculateHsync();
     void recalculateRate(uint32_t index);
 
@@ -91,6 +92,7 @@ class Counters {
 
     uint32_t m_HSyncTotal[PCSX::Emulator::PSX_TYPE_PAL + 1];  // 2
   public:
+    void history();
     uint64_t m_psxNextCounter;
     bool m_pollSIO1 = false;
     void init();

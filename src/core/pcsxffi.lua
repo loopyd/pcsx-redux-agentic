@@ -65,6 +65,39 @@ bool breakpointEnabled(Breakpoint*);
 void removeBreakpoint(Breakpoint*);
 void pauseEmulator();
 void resumeEmulator();
+bool debuggerStepInto();
+typedef struct {
+    uint64_t sequence, cycle, request, related;
+    uint32_t kind, device, data[8], offset, length;
+} HistoryRecord;
+typedef struct {
+    uint64_t beginCycle, endCycle;
+    uint32_t version, state, events, bytes, failures, firstFailure, dropped;
+} HistoryStatus;
+typedef struct {
+    uint32_t structureBytes, wireVersion, contextBytes, queueBytes, schedulerCount, cdSchedulerMask;
+    uint32_t eventCeiling, payloadCeiling, minimumBoundaryEvents, minimumBoundaryBytes, workerRecordBytes, workerEventCeiling;
+} HistoryCDLimits;
+typedef struct {
+    uint64_t sequence, epoch, batch, sampleOrdinal, cpuPublicationCycle, relatedFeed;
+    uint32_t kind, flags, data[6];
+} CDWorkerRecord;
+typedef struct {
+    uint64_t epoch, beginBatch, endBatch;
+    uint32_t version, state, events, limit, failures, dropped;
+} CDWorkerStatus;
+bool historyCDLimits(uint32_t flags, HistoryCDLimits* out);
+bool historyBeginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, uint32_t flags);
+bool historyCDWorkerStatus(CDWorkerStatus* out);
+bool historyCDWorkerRecord(uint32_t index, CDWorkerRecord* out);
+bool historyBegin(uint32_t events, uint32_t bytes);
+bool historyBeginCD(uint32_t events, uint32_t bytes, bool audio);
+bool historyStop();
+bool historyClear();
+bool historyStatus(HistoryStatus* out);
+bool historyRecord(uint32_t index, HistoryRecord* out);
+bool historyBytes(uint32_t offset, uint32_t length, void* out);
+
 void softResetEmulator();
 void hardResetEmulator();
 void luaMessage(const char* msg, bool error);
@@ -99,6 +132,9 @@ LuaSlice* getVRAM();
 LuaSlice* createSaveState();
 void loadSaveStateFromSlice(LuaSlice*);
 void loadSaveStateFromFile(LuaFile*);
+uint32_t createSaveStateChecked(LuaSlice**);
+uint32_t loadSaveStateFromSliceChecked(LuaSlice*);
+uint32_t loadSaveStateFromFileChecked(LuaFile*);
 
 LuaFile* getMemoryAsFile();
 
@@ -106,6 +142,80 @@ void quit(int code);
 ]]
 
 local C = ffi.load 'PCSX'
+
+local stateResults = {
+    [0] = 'ok', 'unavailable_context', 'running', 'quitting', 'recorder_active', 'busy',
+    'too_large', 'malformed', 'unsupported_version', 'invalid_state', 'invalid_memory_card',
+    'topology_mismatch', 'allocation_failed', 'commit_failed',
+}
+local function stateResult(result)
+    result = tonumber(result)
+    if result ~= 0 then error('savestate: ' .. (stateResults[result] or 'unknown_result'), 3) end
+end
+
+local function historyInteger(value, maximum, label)
+    assert(type(value) == 'number' and value >= 0 and value <= maximum and value == math.floor(value),
+           'invalid history ' .. label)
+    return value
+end
+
+local history = {
+    cdLimits = function(flags)
+        historyInteger(flags, 3, 'CD flags')
+        local result = ffi.new('HistoryCDLimits[1]')
+        assert(C.historyCDLimits(flags, result), 'CD limits require a paused owner and supported native environment')
+        return ffi.new('HistoryCDLimits', result[0])
+    end,
+    beginCDV3 = function(events, bytes, workers, flags)
+        historyInteger(events, 65536, 'event limit'); historyInteger(bytes, 8388608, 'byte limit')
+        historyInteger(workers, 65536, 'worker event limit'); historyInteger(flags, 3, 'CD flags')
+        assert(C.historyBeginCDV3(events, bytes, workers, flags), 'CD v3 begin refused by native ownership, capacity or environment guards')
+    end,
+    cdWorkerStatus = function()
+        local result = ffi.new('CDWorkerStatus[1]')
+        assert(C.historyCDWorkerStatus(result), 'CD worker status requires a paused owner')
+        return ffi.new('CDWorkerStatus', result[0])
+    end,
+    cdWorkerRecord = function(index)
+        historyInteger(index, 65535, 'worker record index')
+        local result = ffi.new('CDWorkerRecord[1]')
+        assert(C.historyCDWorkerRecord(index, result), 'CD worker record requires a frozen lane and valid index')
+        return ffi.new('CDWorkerRecord', result[0])
+    end,
+    beginCD = function(events, bytes, audio)
+        historyInteger(events, 65536, 'event limit')
+        historyInteger(bytes, 8388608, 'byte limit')
+        assert(type(audio) == 'boolean', 'CD capture requires explicit joined-audio boolean')
+        assert(events > 0 and C.historyBeginCDV3(events, bytes, 0, audio and 1 or 0),
+               'CD begin requires empty recorder, context capacity, idle paused interpreter and active joined Audio')
+    end,
+    begin = function(events, bytes)
+        historyInteger(events, 65536, 'event limit')
+        historyInteger(bytes, 8388608, 'byte limit')
+        assert(events > 0 and C.historyBegin(events, bytes),
+               'history begin requires an empty recorder and paused owner-thread interpreter without MSAN')
+    end,
+    stop = function() assert(C.historyStop(), 'history stop requires a paused active recorder') end,
+    clear = function() assert(C.historyClear(), 'history clear requires a paused inactive recorder') end,
+    status = function()
+        local result = ffi.new('HistoryStatus[1]')
+        assert(C.historyStatus(result), 'history status requires the owner thread')
+        return ffi.new("HistoryStatus", result[0])
+    end,
+    record = function(index)
+        historyInteger(index, 65535, 'record index')
+        local result = ffi.new('HistoryRecord[1]')
+        assert(C.historyRecord(index, result), 'history record requires paused frozen capture and a valid index')
+        return ffi.new("HistoryRecord", result[0])
+    end,
+    bytes = function(offset, length)
+        historyInteger(offset, 8388608, 'payload offset')
+        historyInteger(length, 8388608, 'payload length')
+        local result = ffi.new('uint8_t[?]', math.max(1, length))
+        assert(C.historyBytes(offset, length, result), 'history bytes require paused frozen capture and a valid range')
+        return ffi.string(result, length)
+    end,
+}
 
 local function removeBreakpoint(bp)
     C.removeBreakpoint(ffi.gc(bp._wrapper, nil))
@@ -197,6 +307,12 @@ PCSX = {
     addBreakpoint = addBreakpoint,
     pauseEmulator = function() C.pauseEmulator() end,
     resumeEmulator = function() C.resumeEmulator() end,
+    History = history,
+    Debugger = {
+        stepInto = function()
+            assert(C.debuggerStepInto(), 'step requires a paused, non-quitting interpreter with debugger enabled')
+        end,
+    },
     softResetEmulator = function() C.softResetEmulator() end,
     hardResetEmulator = function() C.hardResetEmulator() end,
     invalidateCache = function() C.invalidateCache() end,
@@ -254,12 +370,30 @@ PCSX = {
     loadSaveState = function(obj)
         if type(obj) ~= 'table' then error('loadSaveState: requires an object as input') end
         if obj._type == 'Slice' then
+            assert(rawget(obj, '_wrapper') ~= nil, 'loadSaveState: closed Slice')
             C.loadSaveStateFromSlice(obj._wrapper)
         elseif obj._type == 'File' then
             C.loadSaveStateFromFile(obj._wrapper)
         else
             error('loadSaveState: requires a Slice or File as input')
         end
+    end,
+    createSaveStateChecked = function()
+        local output = ffi.new("LuaSlice*[1]")
+        stateResult(C.createSaveStateChecked(output))
+        return Support.File._createSliceWrapper(output[0])
+    end,
+    loadSaveStateChecked = function(obj)
+        if type(obj) ~= 'table' then error('loadSaveState: requires an object as input') end
+        if obj._type == 'Slice' then
+            assert(rawget(obj, "_wrapper") ~= nil, "loadSaveState: closed Slice")
+            stateResult(C.loadSaveStateFromSliceChecked(obj._wrapper))
+        elseif obj._type == 'File' then
+            stateResult(C.loadSaveStateFromFileChecked(obj._wrapper))
+        else
+            error('loadSaveState: requires a Slice or File as input')
+        end
+        return true
     end,
     getMemoryAsFile = function() return Support.File._createFileWrapper(C.getMemoryAsFile()) end,
     quit = function(code) C.quit(code or 0) end,

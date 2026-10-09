@@ -23,6 +23,9 @@
 #include <zlib.h>
 
 #include <filesystem>
+#include <array>
+#include <array>
+#include <vector>
 
 #include "cdrom/ppf.h"
 #include "core/psxemulator.h"
@@ -46,9 +49,9 @@ class CDRIso {
         inflateEnd(&m_zstr);
     }
     enum class TrackType { CLOSED = 0, DATA = 1, CDDA = 2 };
-    TrackType getTrackType(unsigned track) { return m_ti[track].type; }
+    TrackType getTrackType(unsigned track);
     const std::filesystem::path& getIsoPath() { return m_isoPath; }
-    uint8_t getTN() { return std::max(m_numtracks, 1U); }
+    uint8_t getTN();
     IEC60908b::MSF getTD(uint8_t track);
     IEC60908b::MSF getLength(uint8_t track);
     IEC60908b::MSF getPregap(uint8_t track);
@@ -56,11 +59,14 @@ class CDRIso {
     unsigned getTrack(const IEC60908b::MSF msf);
 
     bool failed();
+    enum class StateAccess { TrackCount, TrackAddress, Position, DataSector, AudioSector };
+    bool acceptsStateAccess(StateAccess kind, IEC60908b::MSF at, uint8_t track = 0) const noexcept;
 
     /* Probably have to change those */
     bool readTrack(const IEC60908b::MSF time);
     unsigned readSectors(uint32_t lba, void* buffer, unsigned count);
     uint8_t* getBuffer();
+    bool historyBufferDefined() const { return m_historyBufferDefined; }
     const IEC60908b::Sub* getBufferSub();
     bool readCDDA(const IEC60908b::MSF msf, unsigned char* buffer);
     PPF* getPPF() { return &m_ppf; }
@@ -69,11 +75,28 @@ class CDRIso {
     unsigned m_cdrIsoMultidiskSelect;
 
     bool CheckSBI(const uint8_t* time);
+    bool historyPrepare();
+    bool historyValidate();
+    uint32_t historyBytes() const { return m_historyImage.size(); }
+    void history(uint32_t phase);
 
   private:
     CDRIso();
     bool open(IO<File> isoFile);
     void close();
+
+    struct StateReadOwner {
+        IO<File> file;
+        size_t bytes = 0;
+        bool available = false;
+    };
+    std::array<StateReadOwner, 102> m_stateReadOwners;
+    size_t m_stateReadOwnerCount = 0;
+    void clearStateReadOwners() noexcept;
+    void cacheStateReadOwners() noexcept;
+    bool acceptsStateFile(IO<File> file, uint64_t start, uint64_t length) const noexcept;
+    bool acceptsStateSector(IO<File> file, uint32_t base, int64_t sector) const noexcept;
+    bool statePosition(IEC60908b::MSF at, unsigned& track) const noexcept;
 
     std::filesystem::path m_isoPath;
     typedef ssize_t (CDRIso::*read_func_t)(IO<File> f, unsigned int base, void* dest, int sector);
@@ -92,6 +115,7 @@ class CDRIso {
     bool m_isMode1ISO = false;  // TODO: use sector size/mode info from CUE also?
 
     uint8_t m_cdbuffer[2352];
+    bool m_historyBufferDefined = false;
     IEC60908b::Sub m_subbuffer;
 
     bool m_cddaBigEndian = false;
@@ -100,6 +124,7 @@ class CDRIso {
      * not in the CD image, so that cdrom code can fake subchannel data instead.
      * XXX: there could be multiple pregaps but PSX dumps only have one? */
     unsigned int m_pregapOffset;
+    bool m_historyPregapKnown = false;
 
     // compressed image stuff
     struct compr_img_t {
@@ -154,7 +179,19 @@ class CDRIso {
 
     // redump.org SBI files
     uint8_t sbitime[256][3], sbicount;
+    bool m_historySbiKnown = false;
     PPF m_ppf;
+
+    enum HistoryHeaderWord : size_t { HistoryPpfEmpty = 14 };
+    static constexpr size_t HistoryWords = 16 + MAXTRACKS * 7;
+    static constexpr size_t HistoryFiles = 202;
+    std::array<uint32_t, HistoryWords> m_historyGeometry{};
+    std::array<File*, HistoryFiles> m_historyFiles{};
+    std::array<uint32_t, HistoryFiles> m_historyDepths{};
+    uint32_t m_historyFileCount = 0;
+    std::vector<uint8_t> m_historyImage;
+    bool historyGeometry(std::array<uint32_t, HistoryWords>& words);
+    uint32_t historyFile(File* file, uint32_t depth);
 
     void decodeRawSubData();
     bool parsetoc(const char* isofile);

@@ -23,63 +23,102 @@
 #include "core/system.h"
 #include "support/eventbus.h"
 
+#include <exception>
+
 namespace {
 
 template <typename Event>
-void pushEvent(PCSX::Lua L, const Event& e) {
-    L.newtable();
+void pushEvent(lua_State* L, const Event&) { lua_newtable(L); }
+
+template <>
+void pushEvent(lua_State* L, const PCSX::Events::ExecutionFlow::Pause& event) {
+    lua_newtable(L);
+    lua_pushboolean(L, event.exception);
+    lua_setfield(L, -2, "exception");
 }
 
 template <>
-void pushEvent(PCSX::Lua L, const PCSX::Events::ExecutionFlow::Pause& e) {
-    L.newtable();
-    L.push("exception");
-    L.push(e.exception);
-    L.settable();
+void pushEvent(lua_State* L, const PCSX::Events::ExecutionFlow::Reset& event) {
+    lua_newtable(L);
+    lua_pushboolean(L, event.hard);
+    lua_setfield(L, -2, "hard");
 }
 
 template <>
-void pushEvent(PCSX::Lua L, const PCSX::Events::ExecutionFlow::Reset& e) {
-    L.newtable();
-    L.push("hard");
-    L.push(e.hard);
-    L.settable();
+void pushEvent(lua_State* L, const PCSX::Events::GUI::JumpToPC& event) {
+    lua_newtable(L);
+    lua_pushnumber(L, event.pc);
+    lua_setfield(L, -2, "pc");
 }
 
 template <>
-void pushEvent(PCSX::Lua L, const PCSX::Events::GUI::JumpToPC& e) {
-    L.newtable();
-    L.push("pc");
-    L.push(lua_Number(e.pc));
-    L.settable();
+void pushEvent(lua_State* L, const PCSX::Events::GUI::JumpToMemory& event) {
+    lua_newtable(L);
+    lua_pushnumber(L, event.address);
+    lua_setfield(L, -2, "address");
+    lua_pushnumber(L, event.size);
+    lua_setfield(L, -2, "size");
 }
 
 template <>
-void pushEvent(PCSX::Lua L, const PCSX::Events::GUI::JumpToMemory& e) {
-    L.newtable();
-    L.push("address");
-    L.push(lua_Number(e.address));
-    L.settable();
-    L.push("size");
-    L.push(lua_Number(e.size));
-    L.settable();
+void pushEvent(lua_State* L, const PCSX::Events::Keyboard& event) {
+    lua_newtable(L);
+    lua_pushnumber(L, event.key);
+    lua_setfield(L, -2, "key");
+    lua_pushnumber(L, event.scancode);
+    lua_setfield(L, -2, "scancode");
+    lua_pushnumber(L, event.action);
+    lua_setfield(L, -2, "action");
+    lua_pushnumber(L, event.mods);
+    lua_setfield(L, -2, "mods");
 }
 
-template <>
-void pushEvent(PCSX::Lua L, const PCSX::Events::Keyboard& e) {
-    L.newtable();
-    L.push("key");
-    L.push(lua_Number(e.key));
-    L.settable();
-    L.push("scancode");
-    L.push(lua_Number(e.scancode));
-    L.settable();
-    L.push("action");
-    L.push(lua_Number(e.action));
-    L.settable();
-    L.push("mods");
-    L.push(lua_Number(e.mods));
-    L.settable();
+template <typename Event>
+struct EventInvocation {
+    const Event* event;
+    int ref;
+    int status = 0;
+    int displayStatus = 0;
+    std::exception_ptr exception;
+};
+
+template <typename Event>
+int eventBootstrap(lua_State* L) {
+    auto* frame = static_cast<EventInvocation<Event>*>(lua_touserdata(L, 1));
+    lua_settop(L, 0);
+    if (!lua_checkstack(L, 16)) return luaL_error(L, "not enough Lua stack for event listener");
+    lua_getfield(L, LUA_REGISTRYINDEX, "EVENT_LISTENERS");
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, "EVENT_LISTENERS");
+    }
+    lua_pushnumber(L, frame->ref);
+    lua_gettable(L, -2);
+    lua_getfield(L, -1, "callback");
+    pushEvent(L, *frame->event);
+    frame->status = PCSX::Lua::pcallRaw(L, 1, LUA_MULTRET, eventBootstrap<Event>);
+    if (frame->status) {
+        PCSX::Lua::unpackErrorRaw(L);
+        frame->displayStatus = PCSX::Lua::displayStackRaw(L, true, &frame->exception, eventBootstrap<Event>);
+    }
+    return 0;
+}
+
+void logListenerStatus(int status) {
+    switch (status) {
+        case LUA_ERRRUN:
+            PCSX::g_system->log(PCSX::LogClass::LUA, "Error in event listener: Runtime error while running LUA code."); break;
+        case LUA_ERRMEM:
+            PCSX::g_system->log(PCSX::LogClass::LUA, "Error in event listener: Memory allocation error while running LUA code."); break;
+        case LUA_ERRERR:
+            PCSX::g_system->log(PCSX::LogClass::LUA, "Error in event listener: Error in Error function."); break;
+        case LUA_ERRSYNTAX:
+            PCSX::g_system->log(PCSX::LogClass::LUA, "Error in event listener: Syntax error in Lua code."); break;
+        default:
+            PCSX::g_system->log(PCSX::LogClass::LUA, "Error in event listener: Unknow error while running LUA code (err code: %d)", status);
+    }
 }
 
 template <typename Event>
@@ -106,15 +145,21 @@ void createListener(PCSX::Lua L) {
     int ref = L.ref();
 
     auto listener = new PCSX::EventBus::Listener(PCSX::g_system->m_eventBus);
-    listener->listen<Event>([L = t, ref](auto e) mutable {
-        L.getfieldtable("EVENT_LISTENERS", LUA_REGISTRYINDEX);
-        L.getfield(ref, true);
-        L.getfield("callback");
-        pushEvent(L, e);
+    listener->listen<Event>([L = t, ref](const Event& event) mutable {
+        lua_State* state = L.getState();
+        const int top = lua_gettop(state);
+        EventInvocation<Event> frame{&event, ref};
+        const int protectedStatus = lua_cpcall(state, eventBootstrap<Event>, &frame);
+        lua_settop(state, top);
         try {
-            L.pcall(1);
-        } catch (std::exception& e) {
-            PCSX::g_system->log(PCSX::LogClass::LUA, "Error in event listener: %s", e.what());
+            if (frame.exception) std::rethrow_exception(frame.exception);
+            if (protectedStatus || frame.displayStatus) {
+                PCSX::g_system->log(PCSX::LogClass::LUA, "Error while preparing or displaying event listener error.");
+            }
+            const int status = frame.status ? frame.status : (protectedStatus ? protectedStatus : frame.displayStatus);
+            if (status) logListenerStatus(status);
+        } catch (std::exception& exception) {
+            PCSX::g_system->log(PCSX::LogClass::LUA, "Error in event listener: %s", exception.what());
         } catch (...) {
             PCSX::g_system->log(PCSX::LogClass::LUA, "Unknown error in event listener");
         }

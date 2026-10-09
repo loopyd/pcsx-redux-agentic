@@ -183,6 +183,11 @@ void PCSX::SPU::impl::resetAdpcmWalk(int ch) {
 ////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
+    if (m_audioOut.capture().ownerThread()) {
+        m_audioOut.checkCaptureSettings();
+        m_audioOut.capture().event(g_emulator->m_cpu->m_regs.cycle, Capture::Kind::Write,
+                                   reg, val, 16, m_captureParent);
+    } else m_audioOut.capture().fail(Capture::Thread);
     const uint32_t r = reg & 0xfff;
 
     regArea[(r - 0xc00) >> 1] = val;
@@ -618,6 +623,16 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
 ////////////////////////////////////////////////////////////////////////
 
 uint16_t PCSX::SPU::impl::readRegister(uint32_t reg) {
+    const uint16_t value = readRegisterValue(reg);
+    if (m_audioOut.capture().ownerThread()) {
+        m_audioOut.checkCaptureSettings();
+        m_audioOut.capture().event(g_emulator->m_cpu->m_regs.cycle, Capture::Kind::Result,
+                                   reg, value, 16, m_captureParent);
+    } else m_audioOut.capture().fail(Capture::Thread);
+    return value;
+}
+
+uint16_t PCSX::SPU::impl::readRegisterValue(uint32_t reg) {
     const uint32_t r = reg & 0xfff;
 
     if (r >= 0x0c00 && r < 0x0d80) {

@@ -85,5 +85,6 @@ XA audio and audio tracks.)"));
 0 or less = unbounded: run as fast as the host allows.)"));
 
     ImGui::End();
+    if (changed) invalidateCapture();
     return changed;
 }

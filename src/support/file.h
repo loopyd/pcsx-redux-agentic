@@ -67,10 +67,21 @@ class File {
     }
     void close() {
         if (m_closed) return;
-        closeInternal();
+        try {
+            closeInternal();
+        } catch (...) {
+            m_closeFailed = true;
+            throw;
+        }
         m_closed = true;
     }
     virtual bool isClosed() { return false; }
+    enum class RawSnapshotStatus { Ok, Unsupported, TooLarge, Invalid, AllocationFailed };
+    RawSnapshotStatus snapshotRawOwned(size_t maximum, std::string& output) noexcept;
+    RawSnapshotStatus stateReadExtent(size_t& bytes) noexcept;
+    bool stateReadAvailable() noexcept;
+    bool closedForRawAccess() const noexcept { return m_closed || m_closeFailed; }
+    bool explicitlyClosed() const noexcept { return m_closed; }
     virtual ssize_t rSeek(ssize_t pos, int wheel = SEEK_SET) { throw std::runtime_error("Can't seek for reading"); }
     virtual ssize_t rTell() { throw std::runtime_error("Can't seek for reading"); }
     virtual ssize_t wSeek(ssize_t pos, int wheel = SEEK_SET) { throw std::runtime_error("Can't seek for writing"); }
@@ -247,6 +258,16 @@ class File {
     }
 
   protected:
+    enum class RawKind { Unsupported, Buffer, Descriptor, Window };
+    struct RawView {
+        RawKind kind = RawKind::Unsupported;
+        const uint8_t* data = nullptr;
+        size_t extent = 0;
+        int descriptor = -1;
+        File* parent = nullptr;
+        size_t start = 0;
+    };
+    virtual RawView rawView() noexcept { return {}; }
     File(FileType filetype) : m_filetype(filetype) {}
     const FileType m_filetype;
 
@@ -265,6 +286,15 @@ class File {
 
     std::atomic<unsigned> m_refCount = 0;
     bool m_closed = false;
+    bool m_closeFailed = false;
+    struct RawSelection {
+        File* leaf = nullptr;
+        RawView view;
+        size_t start = 0;
+        size_t length = 0;
+        bool fixed = false;
+    };
+    RawSnapshotStatus resolveRawSelection(RawSelection& selection) noexcept;
 };
 
 class IOBase {
@@ -376,6 +406,12 @@ class BufferFile : public File {
 
     Slice borrow(size_t offset = 0);
 
+  protected:
+    RawView rawView() noexcept final override {
+        if (!m_owned || m_size > m_allocSize || (m_size && !m_data)) return {};
+        return {RawKind::Buffer, m_data, m_size};
+    }
+
   private:
     virtual void closeInternal() final override;
     static uint8_t m_internalBuffer;
@@ -390,6 +426,9 @@ class BufferFile : public File {
 
 class PosixFile : public File {
   public:
+    enum class DeferredOpen { ReadOnly, Create };
+    PosixFile(std::filesystem::path filename, DeferredOpen mode);
+    bool openPrepared();
     virtual ssize_t rSeek(ssize_t pos, int wheel) final override;
     virtual ssize_t rTell() final override { return m_ptrR; }
     virtual ssize_t wSeek(ssize_t pos, int wheel) final override;
@@ -442,15 +481,30 @@ class PosixFile : public File {
     PosixFile(const char* filename, FileOps::Create);
     PosixFile(const char* filename, FileOps::ReadWrite);
 
+  protected:
+    RawView rawView() noexcept final override {
+#if defined(__linux__)
+        if (m_filetype != RO_SEEKABLE || !m_handle) return {};
+        const int descriptor = fileno(m_handle);
+        if (descriptor < 0) return {};
+        return {RawKind::Descriptor, nullptr, 0, descriptor};
+#else
+        return {};
+#endif
+    }
+
   private:
     virtual void closeInternal() final override;
     const std::filesystem::path m_filename;
+    std::string m_deferredName;
+    bool m_deferredOpen = false;
     FILE* m_handle = nullptr;
     size_t m_ptrR = 0;
     size_t m_ptrW = 0;
 };
 
 class SubFile : public File {
+    friend class CDRIso;
   public:
     SubFile(IO<File> file, size_t start, ssize_t size = -1)
         : File(file->seekable() ? RO_SEEKABLE : RO_STREAM),
@@ -474,6 +528,12 @@ class SubFile : public File {
     virtual bool eof() final override { return m_ptrR == m_size; }
     virtual File* dup() final override { return new SubFile(m_file, m_start, m_size); }
     virtual bool failed() final override { return m_file->failed(); }
+
+  protected:
+    RawView rawView() noexcept final override {
+        if (!m_file) return {};
+        return {RawKind::Window, nullptr, m_size, -1, m_file.operator->(), m_start};
+    }
 
   private:
     IO<File> m_file;

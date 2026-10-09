@@ -641,3 +641,93 @@ void PCSX::SIO::updateFIFOStatus() {
     }
     g_emulator->m_mem->writeHardwareRegister<0x1044>(m_regs.status);
 }
+
+PCSX::SaveStates::Result PCSX::SIO::saveState(SaveStates::SIO& state) const {
+    using namespace SaveStates;
+    const uint32_t pocket = uint32_t(g_emulator->settings.get<Emulator::SettingMcd1Pocketstation>()) |
+                            (uint32_t(g_emulator->settings.get<Emulator::SettingMcd2Pocketstation>()) << 1);
+    const uint32_t effective = uint32_t(m_memoryCard[0].m_pocketstationEnabled) |
+                              (uint32_t(m_memoryCard[1].m_pocketstationEnabled) << 1);
+    if (pocket != effective) return Result::TopologyMismatch;
+    state.get<SIOMCD1Data>().value.assign(m_memoryCard[0].m_mcdData, c_cardSize);
+    state.get<SIOMCD2Data>().value.assign(m_memoryCard[1].m_mcdData, c_cardSize);
+    state.get<SIOMCD1SPDR>().value = m_memoryCard[0].m_spdr;
+    state.get<SIOMCD2SPDR>().value = m_memoryCard[1].m_spdr;
+    state.get<SIOMCD1DirectoryIndex>().value = m_memoryCard[0].m_directoryIndex;
+    state.get<SIOMCD2DirectoryIndex>().value = m_memoryCard[1].m_directoryIndex;
+    auto fifo = m_rxFIFO.snapshot();
+    auto& bytes = state.get<SIORxFIFO>().value;
+    while (!fifo.empty()) {
+        bytes.push_back(static_cast<char>(fifo.front()));
+        fifo.pop();
+    }
+    state.get<SIORxFIFOCountPlusOne>().value = bytes.size() + 1;
+    state.get<SIOPocketstationMaskPlusOne>().value = pocket + 1;
+    state.get<SIOInsertedMaskPlusOne>().value = 1 + uint32_t(g_emulator->settings.get<Emulator::SettingMcd1Inserted>()) +
+                                             (uint32_t(g_emulator->settings.get<Emulator::SettingMcd2Inserted>()) << 1);
+    state.get<SIODataReg>().value = m_regs.data;
+    return Result::Ok;
+}
+
+PCSX::SaveStates::Result PCSX::SIO::prepareRestore(const SaveStates::SIO& state,
+                                                 PreparedRestore& prepared) const {
+    using namespace SaveStates;
+    const auto& first = state.get<SIOMCD1Data>().value;
+    const auto& second = state.get<SIOMCD2Data>().value;
+    const auto count = state.get<SIORxFIFOCountPlusOne>().value;
+    const auto& fifo = state.get<SIORxFIFO>().value;
+    const auto pocket = state.get<SIOPocketstationMaskPlusOne>().value;
+    const auto inserted = state.get<SIOInsertedMaskPlusOne>().value;
+    if (first.size() != c_cardSize || second.size() != c_cardSize ||
+        state.get<SIOMCD1SPDR>().value > UINT8_MAX || state.get<SIOMCD2SPDR>().value > UINT8_MAX ||
+        state.get<SIOMCD1DirectoryIndex>().value > UINT16_MAX ||
+        state.get<SIOMCD2DirectoryIndex>().value > UINT16_MAX || state.get<SIODataReg>().value > UINT8_MAX ||
+        count < 1 || count > 9 || fifo.size() != count - 1 ||
+        bool(state.get<SIOStatusReg>().decodedValue() & StatusFlags::RX_FIFONOTEMPTY) != !fifo.empty() ||
+        state.get<SIOBufferIndex>().decodedValue() >= c_padBufferSize ||
+        state.get<SIOBufferMaxIndex>().decodedValue() >= c_padBufferSize) return Result::InvalidMemoryCard;
+    const auto progressValid = [](uint8_t command, uint16_t ticks, uint16_t sector, uint32_t offset) {
+        if (command == MemoryCard::Commands::Read && sector < 1024 && ticks >= 8 && ticks <= 135)
+            return offset < c_cardSize && 136u - ticks <= c_cardSize - offset;
+        if (command == MemoryCard::Commands::Write) {
+            if (ticks >= 5 && ticks <= 132) return offset < c_sectorSize && 133u - ticks <= c_sectorSize - offset;
+            if (ticks == 134 || ticks == 135) return sector < 1024;
+        }
+        return true;
+    };
+    if (!progressValid(state.get<SIOMCD1CurrentCommand>().decodedValue(),
+                       state.get<SIOMCD1CommandTicks>().decodedValue(), state.get<SIOMCD1Sector>().decodedValue(),
+                       state.get<SIOMCD1DataOffset>().decodedValue()) ||
+        !progressValid(state.get<SIOMCD2CurrentCommand>().decodedValue(),
+                       state.get<SIOMCD2CommandTicks>().decodedValue(), state.get<SIOMCD2Sector>().decodedValue(),
+                       state.get<SIOMCD2DataOffset>().decodedValue())) return Result::InvalidMemoryCard;
+    if (pocket < 1 || pocket > 4 || inserted < 1 || inserted > 4) return Result::InvalidMemoryCard;
+    const uint32_t configured = uint32_t(g_emulator->settings.get<Emulator::SettingMcd1Pocketstation>()) |
+                                (uint32_t(g_emulator->settings.get<Emulator::SettingMcd2Pocketstation>()) << 1);
+    const uint32_t effective = uint32_t(m_memoryCard[0].m_pocketstationEnabled) |
+                              (uint32_t(m_memoryCard[1].m_pocketstationEnabled) << 1);
+    const uint32_t configuredInserted = uint32_t(g_emulator->settings.get<Emulator::SettingMcd1Inserted>()) |
+                                        (uint32_t(g_emulator->settings.get<Emulator::SettingMcd2Inserted>()) << 1);
+    if (pocket - 1 != configured || pocket - 1 != effective || inserted - 1 != configuredInserted)
+        return Result::TopologyMismatch;
+    prepared.images = {first, second};
+    prepared.replies = {static_cast<uint8_t>(state.get<SIOMCD1SPDR>().value),
+                        static_cast<uint8_t>(state.get<SIOMCD2SPDR>().value)};
+    prepared.directoryIndices = {static_cast<uint16_t>(state.get<SIOMCD1DirectoryIndex>().value),
+                                 static_cast<uint16_t>(state.get<SIOMCD2DirectoryIndex>().value)};
+    prepared.data = state.get<SIODataReg>().value;
+    for (unsigned char value : fifo) prepared.rxFIFO.push(value);
+    return Result::Ok;
+}
+
+void PCSX::SIO::restorePrepared(PreparedRestore& prepared) noexcept {
+    for (unsigned slot = 0; slot < c_cardCount; ++slot) {
+        auto& card = m_memoryCard[slot];
+        memcpy(card.m_mcdData, prepared.images[slot].data(), c_cardSize);
+        card.m_spdr = prepared.replies[slot];
+        card.m_directoryIndex = prepared.directoryIndices[slot];
+        card.m_savedToDisk = false;
+    }
+    m_regs.data = prepared.data;
+    m_rxFIFO.swap(prepared.rxFIFO);
+}

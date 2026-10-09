@@ -97,7 +97,12 @@ PCSX::Memory::Memory() : m_listener(g_system->m_eventBus) {
     });
 }
 
+PCSX::Memory::~Memory() noexcept {
+    if (m_memoryAsFile) m_memoryAsFile->invalidateOwner();
+}
+
 int PCSX::Memory::init() {
+    if (m_memoryAsFile) m_memoryAsFile->invalidateOwner();
     m_readLUT = (uint8_t **)calloc(0x10000, sizeof(void *));
     m_writeLUT = (uint8_t **)calloc(0x10000, sizeof(void *));
 
@@ -273,6 +278,7 @@ void PCSX::Memory::reset() {
 }
 
 void PCSX::Memory::shutdown() {
+    if (m_memoryAsFile) m_memoryAsFile->invalidateOwner();
     free(m_exp1);
     free(m_hard);
     free(m_bios);
@@ -761,13 +767,15 @@ const void *PCSX::Memory::pointerWrite(uint32_t address, int size) {
     }
 }
 
-void PCSX::Memory::setLuts() {
+void PCSX::Memory::setLuts() { applyRamLuts(isiCacheEnabled()); }
+
+void PCSX::Memory::applyRamLuts(bool writes) {
     int max = (m_hard[0x1061] & 0x1) ? 0x80 : 0x20;
     if (!g_emulator->settings.get<Emulator::Setting8MB>()) max = 0x20;
     for (int i = 0; i < 0x80; i++) m_readLUT[i + 0x0000] = (uint8_t *)&m_wram[(i & (max - 1)) << 16];
     memcpy(m_readLUT + 0x8000, m_readLUT, 0x80 * sizeof(void *));
     memcpy(m_readLUT + 0xa000, m_readLUT, 0x80 * sizeof(void *));
-    if (isiCacheEnabled()) {
+    if (writes) {
         memcpy(m_writeLUT + 0x0000, m_readLUT, 0x80 * sizeof(void *));
         memcpy(m_writeLUT + 0x8000, m_readLUT, 0x80 * sizeof(void *));
         memcpy(m_writeLUT + 0xa000, m_readLUT, 0x80 * sizeof(void *));
@@ -818,7 +826,7 @@ ssize_t PCSX::Memory::MemoryAsFile::wSeek(ssize_t pos, int wheel) {
 }
 
 ssize_t PCSX::Memory::MemoryAsFile::readAt(void *dest, size_t size, size_t ptr) {
-    if (ptr >= c_size) return 0;
+    if (!m_memory || ptr >= c_size) return 0;
     size_t ret = size = cappedSize(size, ptr);
     while (size) {
         auto blockSize = std::min(size, c_blockSize - (ptr % c_blockSize));
@@ -831,7 +839,7 @@ ssize_t PCSX::Memory::MemoryAsFile::readAt(void *dest, size_t size, size_t ptr) 
 }
 
 ssize_t PCSX::Memory::MemoryAsFile::writeAt(const void *src, size_t size, size_t ptr) {
-    if (ptr >= c_size) return 0;
+    if (!m_memory || ptr >= c_size) return 0;
     size_t ret = size = cappedSize(size, ptr);
     while (size) {
         auto blockSize = std::min(size, c_blockSize - (ptr % c_blockSize));
@@ -880,9 +888,13 @@ void PCSX::Memory::MemoryAsFile::writeBlock(const void *src_, size_t size, size_
         if ((page == 0x1f80) || (page == 0x9f80) || (page == 0xbf80)) {
             if (offset < c_scratchpadSize) {
                 memcpy(m_memory->m_hard + offset, src, std::min<size_t>(size, c_scratchpadSize - offset));
+                History::CD::dmaReceipt(ptr, size, src, std::min<size_t>(size, c_scratchpadSize-offset), 4, offset);
+            } else {
+                History::CD::dmaReceipt(ptr, size, src, 0, 4, offset);
             }
             return;
         }
+        History::CD::dmaReceipt(ptr, size, src, 0, 0, 0);
         if (m_memory->msanInitialized()) {
             for (size_t i = 0; i < size; ++i) {
                 size_t msanPtr = ptr + i;
@@ -895,6 +907,20 @@ void PCSX::Memory::MemoryAsFile::writeBlock(const void *src_, size_t size, size_
     }
     auto toCopy = std::min(size, c_blockSize - offset);
     memcpy(block + offset, src, toCopy);
+    if (History::CD::dmaActive()) {
+        const uintptr_t destination = reinterpret_cast<uintptr_t>(block) + offset;
+        const std::array<std::pair<const uint8_t*, uint32_t>, 5> regions{{{m_memory->m_wram, 0x800000},
+            {m_memory->m_exp1, 0x800000}, {m_memory->m_bios, 0x80000}, {m_memory->m_hard, 0x10000}, {m_memory->m_sram, 0x200000}}};
+        uint32_t kind = 0, destinationOffset = 0;
+        for (unsigned n = 0; n < regions.size(); ++n) {
+            const uintptr_t first = reinterpret_cast<uintptr_t>(regions[n].first);
+            if (first && destination >= first && destination-first <= regions[n].second && toCopy <= regions[n].second-(destination-first)) {
+                kind = n+1; destinationOffset = destination-first; break;
+            }
+        }
+        if (!kind && History::CD::active()) History::fail(History::Failure::Bounds);
+        History::CD::dmaReceipt(ptr, size, src, toCopy, kind, destinationOffset);
+    }
 }
 
 void PCSX::Memory::initMsan(bool reset) {
@@ -1042,4 +1068,48 @@ uint32_t PCSX::Memory::msanGetChainPtr(uint32_t headerAddr) const {
         return 0xffffffff;
     }
     return it->second;
+}
+
+bool PCSX::Memory::captureRamState(RamState& state) const noexcept {
+    if (!m_wram || !m_hard || !m_readLUT || !m_writeLUT) return false;
+    const bool capacity = g_emulator->settings.get<Emulator::Setting8MB>().value;
+    const unsigned pages = (capacity && (m_hard[0x1061] & 1)) ? 0x80 : 0x20;
+    const bool writes = m_writeLUT[0] != nullptr;
+    for (const unsigned alias : {0x0000u, 0x8000u, 0xa000u}) {
+        for (unsigned page = 0; page < 0x80; ++page) {
+            const auto expected = m_wram + ((page & (pages - 1)) << 16);
+            if (m_readLUT[alias + page] != expected ||
+                m_writeLUT[alias + page] != (writes ? expected : nullptr)) return false;
+        }
+    }
+    state = {m_BIU, writes, capacity};
+    return true;
+}
+
+void PCSX::Memory::restoreRamState(const RamState& state) {
+    m_BIU = state.biu;
+    applyRamLuts(state.writes);
+}
+
+bool PCSX::Memory::acceptsStateDma(uint32_t address, uint64_t bytes, const RamState& state,
+                                  const uint8_t* hardware) const noexcept {
+    if (!hardware || !m_readLUT) return false;
+    const uint32_t page = address >> 16;
+    uintptr_t pointer = 0;
+    if (page < 0x80 || (page >= 0x8000 && page < 0x8080) || (page >= 0xa000 && page < 0xa080)) {
+        const uint32_t mask = state.setting8MB && (hardware[0x1061] & 1) ? 0x7fffff : 0x1fffff;
+        pointer = reinterpret_cast<uintptr_t>(m_wram) + (address & mask);
+    } else {
+        if (!m_readLUT[page]) return false;
+        const uintptr_t base = reinterpret_cast<uintptr_t>(m_readLUT[page]);
+        if (base > UINTPTR_MAX - (address & 0xffff)) return false;
+        pointer = base + (address & 0xffff);
+    }
+    const auto inside = [pointer, bytes](const uint8_t* base, size_t capacity) {
+        if (!base) return false;
+        const uintptr_t begin = reinterpret_cast<uintptr_t>(base);
+        return pointer >= begin && pointer - begin < capacity && bytes <= capacity - (pointer - begin);
+    };
+    return inside(m_wram, 0x800000) || inside(m_bios, 0x80000) || inside(m_exp1, 0x800000) ||
+           inside(m_hard, 0x10000) || inside(m_sram, 0x200000);
 }

@@ -26,6 +26,13 @@ SOFTWARE.
 
 #include "support/file.h"
 
+#include <cerrno>
+#include <limits>
+#if defined(__linux__)
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 
 #include "support/slice.h"
@@ -213,6 +220,24 @@ PCSX::PosixFile::PosixFile(const char *filename, FileOps::ReadWrite) : File(RW_S
 }
 #endif
 
+PCSX::PosixFile::PosixFile(std::filesystem::path filename, DeferredOpen mode)
+    : File(mode == DeferredOpen::Create ? RW_SEEKABLE : RO_SEEKABLE),
+      m_filename(std::move(filename)), m_deferredOpen(true) {
+    const auto encoded = m_filename.u8string();
+    m_deferredName.assign(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+}
+
+bool PCSX::PosixFile::openPrepared() {
+    if (!m_deferredOpen || m_handle || closedForRawAccess()) return false;
+    m_deferredOpen = false;
+#if defined(_WIN32) && defined(UNICODE)
+    m_handle = openwrapper(m_deferredName.c_str(), writable() ? L"ab+" : L"rb");
+#else
+    m_handle = fopen(m_deferredName.c_str(), writable() ? "ab+" : "rb");
+#endif
+    return m_handle != nullptr;
+}
+
 ssize_t PCSX::PosixFile::rSeek(ssize_t pos, int wheel) {
     if (failed()) throw std::runtime_error("Invalid file");
     ssize_t ret = 0;
@@ -371,4 +396,137 @@ ssize_t PCSX::Fifo::read(void *dest_, size_t size) {
     }
 
     return ret;
+}
+
+PCSX::File::RawSnapshotStatus PCSX::File::resolveRawSelection(RawSelection& selection) noexcept {
+    File* current = this;
+    size_t previousStart = 0, previousLength = 0;
+    bool previousWindow = false;
+    selection = {};
+    for (;;) {
+        if (current->closedForRawAccess()) return RawSnapshotStatus::Unsupported;
+        auto view = current->rawView();
+        if (view.kind == RawKind::Unsupported) return RawSnapshotStatus::Unsupported;
+        if (view.kind == RawKind::Descriptor) {
+#if defined(__linux__)
+            struct stat metadata;
+            int status;
+            do { status = fstat(view.descriptor, &metadata); } while (status < 0 && errno == EINTR);
+            if (status < 0) return errno == ENOMEM ? RawSnapshotStatus::AllocationFailed : RawSnapshotStatus::Invalid;
+            if (!S_ISREG(metadata.st_mode)) return RawSnapshotStatus::Unsupported;
+            if (metadata.st_size < 0 || uintmax_t(metadata.st_size) > std::numeric_limits<size_t>::max())
+                return RawSnapshotStatus::Invalid;
+            view.extent = static_cast<size_t>(metadata.st_size);
+#else
+            return RawSnapshotStatus::Unsupported;
+#endif
+        }
+        if (previousWindow && (previousStart > view.extent || previousLength > view.extent - previousStart))
+            return RawSnapshotStatus::Unsupported;
+        if (view.kind != RawKind::Window) {
+            selection.leaf = current;
+            selection.view = view;
+            if (!selection.fixed) selection.length = view.extent;
+            if (selection.start > view.extent || selection.length > view.extent - selection.start)
+                return RawSnapshotStatus::Unsupported;
+            return RawSnapshotStatus::Ok;
+        }
+        if (!view.parent || view.start > std::numeric_limits<size_t>::max() - selection.start)
+            return RawSnapshotStatus::Unsupported;
+        if (!selection.fixed) {
+            selection.fixed = true;
+            selection.length = view.extent;
+        }
+        selection.start += view.start;
+        previousStart = view.start;
+        previousLength = view.extent;
+        previousWindow = true;
+        current = view.parent;
+    }
+}
+
+PCSX::File::RawSnapshotStatus PCSX::File::stateReadExtent(size_t& bytes) noexcept {
+    RawSelection selection;
+    const auto status = resolveRawSelection(selection);
+    if (status == RawSnapshotStatus::Ok) bytes = selection.length;
+    return status;
+}
+
+bool PCSX::File::stateReadAvailable() noexcept {
+    File* current = this;
+    size_t start = 0;
+    for (;;) {
+        if (current->closedForRawAccess()) return false;
+        const auto view = current->rawView();
+        if (view.kind == RawKind::Unsupported) return false;
+        if (view.kind != RawKind::Window) return true;
+        if (!view.parent || view.start > std::numeric_limits<size_t>::max() - start) return false;
+        start += view.start;
+        current = view.parent;
+    }
+}
+
+PCSX::File::RawSnapshotStatus PCSX::File::snapshotRawOwned(size_t maximum, std::string& output) noexcept {
+    output.clear();
+    try {
+        IO<File> owner(this);
+        RawSelection selection;
+        auto status = resolveRawSelection(selection);
+        if (status != RawSnapshotStatus::Ok) return status;
+        if (maximum == std::numeric_limits<size_t>::max()) return RawSnapshotStatus::Invalid;
+        const size_t budget = maximum + 1;
+        std::string bytes;
+        if (selection.view.kind == RawKind::Buffer) {
+            if (selection.length > maximum) return RawSnapshotStatus::TooLarge;
+            if (selection.length) bytes.assign(reinterpret_cast<const char*>(selection.view.data + selection.start), selection.length);
+        } else {
+#if defined(__linux__)
+            constexpr size_t chunk = 65536;
+            const auto largestOffset = uintmax_t(std::numeric_limits<off_t>::max());
+            if (uintmax_t(selection.start) > largestOffset) return RawSnapshotStatus::Invalid;
+            if (selection.fixed && selection.length > maximum) return RawSnapshotStatus::TooLarge;
+            while (!selection.fixed || bytes.size() < selection.length) {
+                if (bytes.size() == budget) return RawSnapshotStatus::TooLarge;
+                size_t count = std::min(chunk, budget - bytes.size());
+                if (selection.fixed) count = std::min(count, selection.length - bytes.size());
+                if (bytes.size() > std::numeric_limits<size_t>::max() - selection.start)
+                    return RawSnapshotStatus::Invalid;
+                const size_t offset = selection.start + bytes.size();
+                if (uintmax_t(offset) > largestOffset || uintmax_t(count) > largestOffset - offset ||
+                    count > size_t(std::numeric_limits<ssize_t>::max())) return RawSnapshotStatus::Invalid;
+                const size_t received = bytes.size();
+                bytes.resize(received + count);
+                ssize_t readCount;
+                do {
+                    readCount = pread(selection.view.descriptor, bytes.data() + received, count, static_cast<off_t>(offset));
+                } while (readCount < 0 && errno == EINTR);
+                if (readCount < 0) return errno == ENOMEM ? RawSnapshotStatus::AllocationFailed : RawSnapshotStatus::Invalid;
+                if (size_t(readCount) > count) return RawSnapshotStatus::Invalid;
+                bytes.resize(received + size_t(readCount));
+                if (!readCount) {
+                    if (selection.fixed && bytes.size() != selection.length) return RawSnapshotStatus::Invalid;
+                    break;
+                }
+                if (bytes.size() > maximum) return RawSnapshotStatus::TooLarge;
+            }
+#else
+            return RawSnapshotStatus::Unsupported;
+#endif
+        }
+        RawSelection after;
+        status = resolveRawSelection(after);
+        if (status != RawSnapshotStatus::Ok) return status;
+        if (after.leaf != selection.leaf || after.view.kind != selection.view.kind ||
+            after.view.data != selection.view.data || after.view.descriptor != selection.view.descriptor ||
+            after.start != selection.start || after.fixed != selection.fixed ||
+            (selection.fixed && after.length != selection.length) ||
+            (selection.view.kind == RawKind::Buffer && after.length != selection.length))
+            return RawSnapshotStatus::Unsupported;
+        output.swap(bytes);
+        return RawSnapshotStatus::Ok;
+    } catch (const std::bad_alloc&) {
+        return RawSnapshotStatus::AllocationFailed;
+    } catch (...) {
+        return RawSnapshotStatus::Invalid;
+    }
 }

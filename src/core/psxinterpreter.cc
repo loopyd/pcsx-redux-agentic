@@ -774,7 +774,7 @@ void InterpretedCPU::psxBREAK(uint32_t code) {
     m_regs.pc -= 4;
     exception(Exception::Break, m_inDelaySlot);
     if (m_inDelaySlot) {
-        auto &delayedLoad = m_delayedLoadInfo[m_currentDelayedLoad];
+        auto &delayedLoad = m_delayedLoadInfo[m_currentDelayedLoad ^ 1];
         if (!delayedLoad.pcActive) abort();
         delayedLoad.pcActive = false;
     }
@@ -784,7 +784,7 @@ void InterpretedCPU::psxSYSCALL(uint32_t code) {
     m_regs.pc -= 4;
     exception(Exception::Syscall, m_inDelaySlot);
     if (m_inDelaySlot) {
-        auto &delayedLoad = m_delayedLoadInfo[m_currentDelayedLoad];
+        auto &delayedLoad = m_delayedLoadInfo[m_currentDelayedLoad ^ 1];
         if (!delayedLoad.pcActive) abort();
         delayedLoad.pcActive = false;
     }

@@ -21,6 +21,7 @@
  * R3000A CPU functions.
  */
 
+#include "core/history.h"
 #include "core/r3000a.h"
 
 #include <magic_enum/magic_enum_all.hpp>
@@ -300,6 +301,41 @@ void PCSX::R3000Acpu::exception(uint32_t code, bool bd, bool cop0) {
     m_regs.CP0.n.Status = (m_regs.CP0.n.Status & ~0x3f) | ((m_regs.CP0.n.Status & 0xf) << 2);
 }
 
+std::unique_ptr<PCSX::R3000Acpu::PreparedPCdrv> PCSX::R3000Acpu::preparePCdrv(
+    const std::vector<PCdrvRestore>& files) {
+    auto prepared = std::make_unique<PreparedPCdrv>();
+    prepared->entries.reserve(files.size());
+    for (unsigned i = 0; i < 65536; ++i) prepared->availableFDs.push_back(i);
+    const auto& debugSettings = g_emulator->settings.get<Emulator::SettingDebugSettings>();
+    const std::filesystem::path basepath = debugSettings.get<Emulator::DebugSettings::PCdrvBase>();
+    for (const auto& file : files) {
+        IO<PosixFile> native(new PosixFile(basepath / file.filename,
+            file.create ? PosixFile::DeferredOpen::Create : PosixFile::DeferredOpen::ReadOnly));
+        auto* raw = native.operator->();
+        auto node = std::make_unique<PCdrvFile>(std::move(native));
+        prepared->entries.push_back({file.fd, file.create, raw, std::move(node)});
+    }
+    return prepared;
+}
+
+bool PCSX::R3000Acpu::commitPCdrv(PreparedPCdrv& prepared) {
+    m_pcdrvFiles.destroyAll();
+    m_availableFDs.clear();
+    m_availableFDs.swap(prepared.availableFDs);
+    for (auto& entry : prepared.entries) {
+        if (!entry.file->openPrepared()) return false;
+        if (entry.create) entry.file->wSeek(0, SEEK_END);
+        m_pcdrvFiles.insert(entry.fd, entry.node.release());
+        for (auto fd = m_availableFDs.begin(); fd != m_availableFDs.end(); ++fd) {
+            if (*fd == entry.fd) {
+                m_availableFDs.erase(fd);
+                break;
+            }
+        }
+    }
+    return true;
+}
+
 void PCSX::R3000Acpu::restorePCdrvFile(const std::filesystem::path& filename, uint16_t fd) {
     auto& emuSettings = g_emulator->settings;
     auto& debugSettings = emuSettings.get<Emulator::SettingDebugSettings>();
@@ -333,9 +369,10 @@ void PCSX::R3000Acpu::branchTest() {
 
     if (cycle >= g_emulator->m_counters->m_psxNextCounter) g_emulator->m_counters->update();
 
-    if (m_regs.spuInterrupt.exchange(false)) g_emulator->m_spu->interrupt();
+    if (History::CD::takeSpuInterrupt(m_regs.spuInterrupt)) g_emulator->m_spu->interrupt();
 
     const uint32_t scheduleMask = m_regs.scheduleMask;
+    History::CD::schedulerPass(scheduleMask, m_regs.lowestTarget);
 
     int32_t lowestDistance = std::numeric_limits<int64_t>::max();
     uint64_t lowestTarget = cycle;
@@ -349,6 +386,7 @@ void PCSX::R3000Acpu::branchTest() {
         if ((scheduleMask & mask) != 0) {                             \
             uint64_t target = targets[irq];                           \
             int64_t dist = target - cycle;                            \
+            History::CD::schedulerTest(irq, scheduleMask, m_regs.scheduleMask, target, dist <= 0); \
             if (dist > 0) {                                           \
                 if (lowestDistance > dist) {                          \
                     lowestDistance = dist;                            \
@@ -357,7 +395,7 @@ void PCSX::R3000Acpu::branchTest() {
             } else {                                                  \
                 m_regs.scheduleMask &= ~mask;                         \
                 PSXIRQ_LOG("Calling scheduled callback %08x\n", irq); \
-                act();                                                \
+                History::Dispatch historyDispatch(irq, target);                       act();                                                \
             }                                                         \
         }                                                             \
     }
@@ -389,6 +427,7 @@ void PCSX::R3000Acpu::branchTest() {
         }
 
         PSXIRQ_LOG("Interrupt: %x %x\n", istat, imask);
+        History::emit(History::Kind::IRQAccept, 0, {istat, imask, m_regs.CP0.n.Status, m_regs.pc});
         exception(0x400, 0);
     }
 }

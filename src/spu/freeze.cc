@@ -21,8 +21,21 @@
 #include "spu/interface.h"
 #include "spu/registers.h"
 
+#include <stdexcept>
+
 void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
-    RemoveThread();
+    if (!beginStateAccess()) throw std::runtime_error("SPU state access unavailable");
+    try {
+        saveStopped(spu);
+    } catch (...) {
+        endStateAccess();
+        throw;
+    }
+    endStateAccess();
+}
+
+void PCSX::SPU::impl::saveStopped(SaveStates::SPU &spu) {
+    if (!m_stateAccess || hMainThread.joinable()) throw std::runtime_error("SPU mixer is not stopped");
 
     // Capture buffer.
     spu.get<SaveStates::CBCDLeft>().copyFrom(reinterpret_cast<uint8_t *>(captureBuffer.CDCapLeft));
@@ -49,7 +62,13 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
         xa.get<SaveStates::XAPCM>().copyFrom(reinterpret_cast<uint8_t *>(xapGlobal->pcm));
     }
     spu.get<SaveStates::SPUIrq>().value = spuIrq;
-    if (irqAddress) spu.get<SaveStates::SPUIrqPtr>().value = uintptr_t(irqAddress - spuRamBase);
+    spu.get<SaveStates::SPUIrqPtr>().value = 0;
+    if (irqAddress) {
+        const uintptr_t base = reinterpret_cast<uintptr_t>(spuRamBase);
+        const uintptr_t irq = reinterpret_cast<uintptr_t>(irqAddress);
+        if (irq < base || irq - base >= 0x80000) throw std::runtime_error("Invalid SPU IRQ address");
+        spu.get<SaveStates::SPUIrqPtr>().value = irq - base + 1;
+    }
 
     for (unsigned i = 0; i < MAXCHAN; i++) {
         auto &channel = spu.get<SaveStates::Channels>().value[i];
@@ -75,12 +94,21 @@ void PCSX::SPU::impl::save(SaveStates::SPU &spu) {
     m_noise.saveTo(spu.get<SaveStates::SPUNoiseClock>(), spu.get<SaveStates::SPUNoiseCount>(),
                    spu.get<SaveStates::SPUNoiseVal>());
 
-    SetupThread();
 }
 
 void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
-    // Processing is stopped while the state is restored.
-    RemoveThread();
+    if (!beginStateAccess()) throw std::runtime_error("SPU state access unavailable");
+    try {
+        loadStopped(spu);
+    } catch (...) {
+        endStateAccess();
+        throw;
+    }
+    endStateAccess();
+}
+
+void PCSX::SPU::impl::loadStopped(const SaveStates::SPU &spu) {
+    if (!m_stateAccess || hMainThread.joinable()) throw std::runtime_error("SPU mixer is not stopped");
 
     spu.get<SaveStates::CBCDLeft>().copyTo(reinterpret_cast<uint8_t *>(captureBuffer.CDCapLeft));
     spu.get<SaveStates::CBCDRight>().copyTo(reinterpret_cast<uint8_t *>(captureBuffer.CDCapRight));
@@ -102,7 +130,7 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
 
     spuIrq = spu.get<SaveStates::SPUIrq>().value;
     const auto &pSpuIrqIn = spu.get<SaveStates::SPUIrqPtr>().value;
-    irqAddress = pSpuIrqIn ? pSpuIrqIn + spuRamBase : nullptr;
+    irqAddress = pSpuIrqIn ? pSpuIrqIn - 1 + spuRamBase : nullptr;
 
     for (unsigned i = 0; i < MAXCHAN; i++) {
         const auto &channel = spu.get<SaveStates::Channels>().value[i];
@@ -153,6 +181,73 @@ void PCSX::SPU::impl::load(const SaveStates::SPU &spu) {
         }
     }
 
-    // Start sound processing again.
-    SetupThread();
+
+}
+
+bool PCSX::SPU::impl::acceptsPreparedState(const SaveStates::SPU& spu) const noexcept {
+    using namespace SaveStates;
+    const auto in = [](int64_t v, int64_t lo, int64_t hi) { return v >= lo && v <= hi; };
+    const auto numeric = [](int32_t v) { return v >= 0 && v <= 0x7fff0 && !(v & 15); };
+    if (spu.get<Channels>().count != 24 || !in(spu.get<CBStartIndex>().value, 0, 16383) ||
+        !in(spu.get<CBEndIndex>().value, 0, 16383) || !in(spu.get<CBCurrIndex>().value, 0, 511) ||
+        !in(spu.get<CBVoiceIndex>().value, 0, 511) || spu.get<SPUIrq>().value > 65535 ||
+        spu.get<SPUNoiseClock>().value > 63 || spu.get<SPUEndx>().value > 0xffffff) return false;
+    const auto irq = spu.get<SPUIrqPtr>().value;
+    if (irq && (irq > 0x7fff9 || ((irq - 1) & 7))) return false;
+    const auto address = spu.get<SPUAddr>().value;
+    if (address != UINT32_MAX && (address > 0x7fffe || (address & 1))) return false;
+    const auto& xa = spu.get<XAField>();
+    if (!in(xa.get<XAFrequency>().value, 0, 44100) ||
+        !in(xa.get<XANSamples>().value, 0, xa.get<XAStereo>().value ? 8192 : 16384) ||
+        (xa.get<XANBits>().value != 0 && xa.get<XANBits>().value != 4 && xa.get<XANBits>().value != 8 && xa.get<XANBits>().value != 16)) return false;
+    for (const auto& channel : spu.get<Channels>().value) {
+        const auto& data = channel.get<Data>();
+        const auto& adsr = channel.get<ADSRInfoEx>();
+        const auto start = data.get<Chan::StartPtr>().value;
+        const auto current = data.get<Chan::CurrPtr>().value;
+        const auto loop = data.get<Chan::LoopPtr>().value;
+        const bool isNew = data.get<Chan::New>().value;
+        const bool on = data.get<Chan::On>().value;
+        const auto step = data.get<Chan::sinc>().value;
+        const auto position = data.get<Chan::spos>().value;
+        if ((!numeric(start) && start != AdpcmDecoder::kStoppedOffset) ||
+            (!numeric(loop) && loop != AdpcmDecoder::kNullOffset) ||
+            (!numeric(current) && current != AdpcmDecoder::kStoppedOffset &&
+             !(current == AdpcmDecoder::kNullOffset &&
+               (isNew || (!on && step == 0 && position < 65536)))) ||
+            data.get<Chan::SB>().count != 64 || !in(data.get<Chan::SBPos>().value, 0, 28) ||
+            !in(step, 0, 262128) || !in(position, 0, 327663) ||
+            !in(data.get<Chan::RawPitch>().value, 0, 16383) ||
+            !in(data.get<Chan::ActFreq>().value, 0, 176389) ||
+            !in(data.get<Chan::UsedFreq>().value, 0, 176389) || !in(data.get<Chan::FMod>().value, 0, 2) ||
+            !in(data.get<Chan::LeftVolRaw>().value, -32768, 32767) ||
+            !in(data.get<Chan::RightVolRaw>().value, -32768, 32767) ||
+            !in(data.get<Chan::LeftVolume>().value, -16384, 16383) ||
+            !in(data.get<Chan::RightVolume>().value, -16384, 16383) ||
+            !in(adsr.get<exState>().value, 0, 4) || !in(adsr.get<exAttackModeExp>().value, 0, 1) ||
+            !in(adsr.get<exAttackRate>().value, 0, 127) || !in(adsr.get<exDecayRate>().value, 0, 15) ||
+            !in(adsr.get<exSustainLevel>().value, 0, 15) || !in(adsr.get<exSustainModeExp>().value, 0, 1) ||
+            !in(adsr.get<exSustainIncrease>().value, 0, 1) || !in(adsr.get<exSustainRate>().value, 0, 127) ||
+            !in(adsr.get<exReleaseModeExp>().value, 0, 1) || !in(adsr.get<exReleaseRate>().value, 0, 31) ||
+            !in(adsr.get<exEnvelopeVol>().value, 0, 32767) || !in(adsr.get<exEnvelopeVolF>().value, 0, 1048575) ||
+            !in(adsr.get<exVolume>().value, 0, 1023)) return false;
+        const auto& sb = data.get<Chan::SB>().value;
+        if (!in(sb[32].value, 0, 2)) return false;
+        if (settings.get<Interpolation>() != 1 || (!on && !isNew) || data.get<Chan::Noise>().value ||
+            data.get<Chan::FMod>().value == 2 || step != 0 ||
+            data.get<Chan::ActFreq>().value != data.get<Chan::UsedFreq>().value) continue;
+        if (isNew) {
+            if (start == AdpcmDecoder::kStoppedOffset) continue;
+            return false;
+        }
+        if (position >= 65536) {
+            if (current == AdpcmDecoder::kStoppedOffset && data.get<Chan::SBPos>().value >= 28) continue;
+            return false;
+        }
+        const int64_t id1 = int64_t(sb[30].value) - sb[29].value;
+        const int64_t id2 = int64_t(sb[31].value) - sb[30].value;
+        if (sb[32].value == 2 || (sb[32].value == 1 &&
+            ((id1 > 0 && id2 < id1) || (id1 <= 0 && id2 > id1)))) return false;
+    }
+    return true;
 }

@@ -17,6 +17,14 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <new>
+
+#include "core/history.h"
+#include "core/transactions.h"
 #include "core/pcsxlua.h"
 
 #include "core/debug.h"
@@ -35,6 +43,270 @@ namespace {
 struct LuaBreakpoint {
     PCSX::Debug::BreakpointUserListType wrapper;
 };
+
+struct ByteInput {
+    const uint8_t* data;
+    uint32_t size;
+};
+
+struct ByteRange {
+    uint32_t offset;
+    uint32_t length;
+};
+
+struct RangeCursor {
+    ByteInput before;
+    ByteInput after;
+    uint32_t position = 0;
+    uint32_t changedBytes = 0;
+    uint32_t first = 0;
+    bool open = false;
+
+    bool next(ByteRange& range) noexcept {
+        const uint32_t count = std::max(before.size, after.size);
+        const uint32_t common = std::min(before.size, after.size);
+        while (position < count) {
+            if (position >= common) {
+                if (!open) {
+                    first = position;
+                    open = true;
+                }
+                changedBytes += count - position;
+                position = count;
+                break;
+            }
+            const uint32_t finish = std::min(position + 4096 - position % 4096, common);
+            if (std::memcmp(before.data + position, after.data + position, finish - position) == 0) {
+                const uint32_t last = position;
+                position = finish;
+                if (open) {
+                    range = {first, last - first};
+                    open = false;
+                    return true;
+                }
+                continue;
+            }
+            while (position < finish) {
+                if (before.data[position] != after.data[position]) {
+                    if (!open) {
+                        first = position;
+                        open = true;
+                    }
+                    ++changedBytes;
+                    ++position;
+                    continue;
+                }
+                const uint32_t last = position++;
+                if (open) {
+                    range = {first, last - first};
+                    open = false;
+                    return true;
+                }
+            }
+        }
+        if (!open) return false;
+        range = {first, count - first};
+        open = false;
+        return true;
+    }
+};
+
+struct ScanSummary {
+    uint32_t changedBytes = 0;
+    uint32_t ranges = 0;
+    bool limitExceeded = false;
+};
+
+ScanSummary summarizeByteRanges(ByteInput before, ByteInput after, uint32_t allowance) noexcept {
+    ScanSummary summary;
+    RangeCursor cursor{before, after};
+    ByteRange range;
+    while (cursor.next(range)) {
+        if (summary.ranges == allowance) {
+            summary.limitExceeded = true;
+            return summary;
+        }
+        ++summary.ranges;
+    }
+    summary.changedBytes = cursor.changedBytes;
+    return summary;
+}
+
+int scanByteRanges(lua_State* state) {
+    if (lua_gettop(state) != 3 || lua_type(state, 1) != LUA_TSTRING ||
+        lua_type(state, 2) != LUA_TSTRING || lua_type(state, 3) != LUA_TNUMBER)
+        return luaL_error(state, "invalid byte scanner arguments");
+    size_t beforeSize;
+    size_t afterSize;
+    const auto* beforeData = reinterpret_cast<const uint8_t*>(lua_tolstring(state, 1, &beforeSize));
+    const auto* afterData = reinterpret_cast<const uint8_t*>(lua_tolstring(state, 2, &afterSize));
+    const lua_Number allowance = lua_tonumber(state, 3);
+    if (beforeSize > 67108864 || afterSize > 67108864 || !std::isfinite(allowance) ||
+        allowance < 0 || allowance > 65536 || std::floor(allowance) != allowance)
+        return luaL_error(state, "invalid byte scanner arguments");
+    const ByteInput before{beforeData, static_cast<uint32_t>(beforeSize)};
+    const ByteInput after{afterData, static_cast<uint32_t>(afterSize)};
+    const ScanSummary summary = summarizeByteRanges(before, after, static_cast<uint32_t>(allowance));
+    if (summary.limitExceeded) {
+        lua_pushnil(state);
+        lua_pushliteral(state, "limit");
+        return 2;
+    }
+    lua_createtable(state, 0, 2);
+    lua_pushliteral(state, "changed_bytes");
+    lua_pushnumber(state, summary.changedBytes);
+    lua_rawset(state, -3);
+    lua_pushliteral(state, "ranges");
+    lua_createtable(state, summary.ranges, 0);
+    if (summary.ranges != 0) {
+        RangeCursor cursor{before, after};
+        ByteRange range;
+        uint32_t index = 1;
+        while (cursor.next(range)) {
+            lua_createtable(state, 0, 2);
+            lua_pushliteral(state, "offset");
+            lua_pushnumber(state, range.offset);
+            lua_rawset(state, -3);
+            lua_pushliteral(state, "length");
+            lua_pushnumber(state, range.length);
+            lua_rawset(state, -3);
+            lua_rawseti(state, -2, index++);
+        }
+        if (index - 1 != summary.ranges || cursor.changedBytes != summary.changedBytes)
+            return luaL_error(state, "invalid byte scanner result");
+    }
+    lua_rawset(state, -3);
+    return 1;
+}
+
+struct VRAMRectangle {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t bpp;
+    uint32_t cx;
+    uint32_t cy;
+    size_t rowBytes;
+    size_t rawSize;
+    size_t pixels;
+    size_t rgbSize;
+    size_t outputSize;
+};
+
+bool vramProduct(size_t left, size_t right, size_t& output) noexcept {
+    if (right != 0 && left > std::numeric_limits<size_t>::max() / right) return false;
+    output = left * right;
+    return true;
+}
+
+bool vramSum(size_t left, size_t right, size_t& output) noexcept {
+    if (left > std::numeric_limits<size_t>::max() - right) return false;
+    output = left + right;
+    return true;
+}
+
+bool sizeVRAMRectangle(VRAMRectangle& rectangle) noexcept {
+    size_t rowBits;
+    size_t roundedBits;
+    size_t rawAndRGB;
+    if (!vramProduct(rectangle.width, rectangle.bpp, rowBits) || !vramSum(rowBits, 7, roundedBits))
+        return false;
+    rectangle.rowBytes = roundedBits / 8;
+    if (!vramProduct(rectangle.rowBytes, rectangle.height, rectangle.rawSize) ||
+        !vramProduct(rectangle.width, rectangle.height, rectangle.pixels) ||
+        !vramProduct(rectangle.pixels, 3, rectangle.rgbSize) ||
+        !vramSum(rectangle.rawSize, rectangle.rgbSize, rawAndRGB) ||
+        !vramSum(rawAndRGB, rectangle.pixels, rectangle.outputSize))
+        return false;
+    return rectangle.outputSize <= 9437184;
+}
+
+void convertVRAMBytes(const uint8_t* input, const VRAMRectangle& rectangle, uint8_t* output) noexcept {
+    uint8_t* rgb = output + rectangle.rawSize;
+    uint8_t* masks = rgb + rectangle.rgbSize;
+    const size_t palette = size_t(rectangle.cy) * 2048 + size_t(rectangle.cx) * 2;
+    for (uint32_t row = 0; row < rectangle.height; ++row) {
+        const size_t start = size_t(rectangle.y + row) * 2048 + size_t(rectangle.x) * 2;
+        std::memcpy(output + size_t(row) * rectangle.rowBytes, input + start, rectangle.rowBytes);
+        for (uint32_t column = 0; column < rectangle.width; ++column) {
+            size_t offset = start + size_t(column) * 2;
+            if (rectangle.bpp != 16) {
+                const uint32_t bits = column * rectangle.bpp;
+                const uint32_t packed = input[start + bits / 8];
+                const uint32_t index = (packed >> (bits % 8)) & ((1u << rectangle.bpp) - 1);
+                offset = palette + size_t(index) * 2;
+            }
+            const uint32_t pixel = uint32_t(input[offset]) | (uint32_t(input[offset + 1]) << 8);
+            const size_t position = size_t(row) * rectangle.width + column;
+            rgb[position * 3] = ((pixel & 31) * 255 + 15) / 31;
+            rgb[position * 3 + 1] = (((pixel >> 5) & 31) * 255 + 15) / 31;
+            rgb[position * 3 + 2] = (((pixel >> 10) & 31) * 255 + 15) / 31;
+            masks[position] = pixel >> 15;
+        }
+    }
+}
+
+int convertVRAM(lua_State* state) {
+    if (lua_gettop(state) != 8) return luaL_error(state, "convertVRAM: expected 8 arguments");
+    if (lua_type(state, 1) != LUA_TSTRING) return luaL_error(state, "convertVRAM: bytes must be a string");
+    size_t inputSize;
+    const auto* input = reinterpret_cast<const uint8_t*>(lua_tolstring(state, 1, &inputSize));
+    if (inputSize != 1048576) return luaL_error(state, "convertVRAM: bytes must contain 1048576 bytes");
+    const char* names[] = {"x", "y", "width", "height", "bpp", "cx", "cy"};
+    lua_Number numbers[7] = {};
+    for (int index = 0; index < 5; ++index) {
+        if (lua_type(state, index + 2) != LUA_TNUMBER)
+            return luaL_error(state, "convertVRAM: %s must be a finite integer", names[index]);
+        numbers[index] = lua_tonumber(state, index + 2);
+        if (!std::isfinite(numbers[index]) || std::floor(numbers[index]) != numbers[index])
+            return luaL_error(state, "convertVRAM: %s must be a finite integer", names[index]);
+    }
+    if (numbers[4] != 4 && numbers[4] != 8 && numbers[4] != 16)
+        return luaL_error(state, "convertVRAM: bpp must be 4, 8, or 16");
+    if (numbers[0] < 0 || numbers[0] > 1023) return luaL_error(state, "convertVRAM: x out of range");
+    if (numbers[1] < 0 || numbers[1] > 511) return luaL_error(state, "convertVRAM: y out of range");
+    if (numbers[2] < 1 || numbers[2] > (1024 - numbers[0]) * 16 / numbers[4])
+        return luaL_error(state, "convertVRAM: width out of range");
+    if (numbers[3] < 1 || numbers[3] > 512 - numbers[1])
+        return luaL_error(state, "convertVRAM: height out of range");
+    for (int index = 5; index < 7; ++index) {
+        if (numbers[4] == 16) {
+            if (lua_type(state, index + 2) != LUA_TNIL)
+                return luaL_error(state, "convertVRAM: %s must be nil at 16 bpp", names[index]);
+            continue;
+        }
+        if (lua_type(state, index + 2) != LUA_TNUMBER)
+            return luaL_error(state, "convertVRAM: %s must be a finite integer", names[index]);
+        numbers[index] = lua_tonumber(state, index + 2);
+        if (!std::isfinite(numbers[index]) || std::floor(numbers[index]) != numbers[index])
+            return luaL_error(state, "convertVRAM: %s must be a finite integer", names[index]);
+    }
+    if (numbers[4] != 16) {
+        if (numbers[5] < 0 || numbers[5] > 1024 - (1u << static_cast<uint32_t>(numbers[4])))
+            return luaL_error(state, "convertVRAM: cx out of range");
+        if (numbers[6] < 0 || numbers[6] > 511) return luaL_error(state, "convertVRAM: cy out of range");
+    }
+    VRAMRectangle rectangle{static_cast<uint32_t>(numbers[0]), static_cast<uint32_t>(numbers[1]),
+                            static_cast<uint32_t>(numbers[2]), static_cast<uint32_t>(numbers[3]),
+                            static_cast<uint32_t>(numbers[4]), static_cast<uint32_t>(numbers[5]),
+                            static_cast<uint32_t>(numbers[6]), 0, 0, 0, 0, 0};
+    if (!sizeVRAMRectangle(rectangle)) return luaL_error(state, "convertVRAM: output size out of range");
+    const size_t sourceEnd = size_t(rectangle.y + rectangle.height - 1) * 2048 + size_t(rectangle.x) * 2 +
+                             rectangle.rowBytes;
+    if (sourceEnd > inputSize) return luaL_error(state, "convertVRAM: rectangle out of range");
+    if (rectangle.bpp != 16 &&
+        size_t(rectangle.cy) * 2048 + size_t(rectangle.cx + (1u << rectangle.bpp)) * 2 > inputSize)
+        return luaL_error(state, "convertVRAM: palette out of range");
+    luaL_checkstack(state, 4, "convertVRAM: insufficient stack");
+    auto* output = static_cast<uint8_t*>(lua_newuserdata(state, rectangle.outputSize));
+    convertVRAMBytes(input, rectangle, output);
+    lua_pushlstring(state, reinterpret_cast<const char*>(output), rectangle.rawSize);
+    lua_pushlstring(state, reinterpret_cast<const char*>(output + rectangle.rawSize), rectangle.rgbSize);
+    lua_pushlstring(state, reinterpret_cast<const char*>(output + rectangle.rawSize + rectangle.rgbSize),
+                    rectangle.pixels);
+    return 3;
+}
 
 uint64_t getCPUCycles() { return PCSX::g_emulator->m_cpu->m_regs.cycle; }
 void* getMemPtr() { return PCSX::g_emulator->m_mem->m_wram; }
@@ -81,6 +353,33 @@ void removeBreakpoint(LuaBreakpoint* wrapper) {
 }
 void pauseEmulator() { PCSX::g_system->pause(); }
 void resumeEmulator() { PCSX::g_system->resume(); }
+bool debuggerStepInto() {
+    if (PCSX::g_system->running() || PCSX::g_system->quitting()) return false;
+    if (PCSX::g_emulator->m_cpu->isDynarec()) return false;
+    if (!PCSX::g_emulator->settings.get<PCSX::Emulator::SettingDebugSettings>()
+             .get<PCSX::Emulator::DebugSettings::Debug>()) return false;
+    PCSX::g_emulator->m_debug->stepIn();
+    return true;
+}
+bool historyBegin(uint32_t events, uint32_t bytes) { return PCSX::History::begin(events, bytes); }
+bool historyBeginCD(uint32_t events, uint32_t bytes, bool audio) { return PCSX::History::beginCD(events, bytes, audio); }
+bool historyCDLimits(uint32_t flags, PCSX::History::CD::Limits* out) noexcept {
+    try { return PCSX::History::CD::limits(flags, out); } catch (...) { return false; }
+}
+bool historyBeginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, uint32_t flags) noexcept {
+    try { return PCSX::History::beginCDV3(events, bytes, workerEvents, flags); } catch (...) { return false; }
+}
+bool historyCDWorkerStatus(PCSX::History::CD::WorkerStatus* out) noexcept {
+    try { return PCSX::History::CD::workerStatus(out); } catch (...) { return false; }
+}
+bool historyCDWorkerRecord(uint32_t index, PCSX::History::CD::WorkerRecord* out) noexcept {
+    try { return PCSX::History::CD::workerRecord(index, out); } catch (...) { return false; }
+}
+bool historyStop() { return PCSX::History::stop(); }
+bool historyClear() { return PCSX::History::clear(); }
+bool historyStatus(PCSX::History::Status* status) { return PCSX::History::status(status); }
+bool historyRecord(uint32_t index, PCSX::History::Record* record) { return PCSX::History::record(index, record); }
+bool historyBytes(uint32_t offset, uint32_t length, void* output) { return PCSX::History::bytes(offset, length, output); }
 void softResetEmulator() { PCSX::g_system->softReset(); }
 void hardResetEmulator() { PCSX::g_system->hardReset(); }
 void luaMessage(const char* msg, bool error) { PCSX::g_system->luaMessage(msg, error); }
@@ -139,6 +438,56 @@ void loadSaveStateFromFile(PCSX::LuaFFI::LuaFile* file) {
     PCSX::SaveStates::loadSafe(std::string(data.asStringView()));
 }
 
+uint32_t createSaveStateChecked(PCSX::Slice** output) noexcept {
+    using namespace PCSX::SaveStates;
+    const auto guard = context();
+    if (output) *output = nullptr;
+    if (guard != Result::Ok) return static_cast<uint32_t>(guard);
+    if (!output) return static_cast<uint32_t>(Result::InvalidState);
+    try {
+        std::string bytes;
+        const auto result = saveChecked(bytes);
+        if (result != Result::Ok) return static_cast<uint32_t>(result);
+        *output = new PCSX::Slice(std::move(bytes));
+        return static_cast<uint32_t>(Result::Ok);
+    } catch (const std::bad_alloc&) {
+        return static_cast<uint32_t>(Result::AllocationFailed);
+    } catch (...) {
+        return static_cast<uint32_t>(Result::InvalidState);
+    }
+}
+
+uint32_t loadSaveStateFromSliceChecked(PCSX::Slice* data) noexcept {
+    using namespace PCSX::SaveStates;
+    const auto guard = context();
+    if (guard != Result::Ok) return static_cast<uint32_t>(guard);
+    if (!data || (data->size() && !data->data<uint8_t>())) return static_cast<uint32_t>(Result::InvalidState);
+    try { return static_cast<uint32_t>(loadChecked(data->asStringView())); }
+    catch (...) { return static_cast<uint32_t>(Result::Malformed); }
+}
+
+uint32_t loadSaveStateFromFileChecked(PCSX::LuaFFI::LuaFile* wrapper) noexcept {
+    using namespace PCSX::SaveStates;
+    const auto guard = context();
+    if (guard != Result::Ok) return static_cast<uint32_t>(guard);
+    if (!wrapper || !wrapper->file) return static_cast<uint32_t>(Result::InvalidState);
+    std::string bytes;
+    PCSX::File::RawSnapshotStatus copied;
+    {
+        PCSX::IO<PCSX::File> owner = wrapper->file;
+        copied = owner->snapshotRawOwned(MaxSize, bytes);
+    }
+    using Raw = PCSX::File::RawSnapshotStatus;
+    switch (copied) {
+        case Raw::Ok: return static_cast<uint32_t>(loadChecked(bytes));
+        case Raw::Unsupported: return static_cast<uint32_t>(Result::InvalidState);
+        case Raw::TooLarge: return static_cast<uint32_t>(Result::TooLarge);
+        case Raw::Invalid: return static_cast<uint32_t>(Result::Malformed);
+        case Raw::AllocationFailed: return static_cast<uint32_t>(Result::AllocationFailed);
+    }
+    return static_cast<uint32_t>(Result::InvalidState);
+}
+
 PCSX::LuaFFI::LuaFile* getMemoryAsFile() {
     return new PCSX::LuaFFI::LuaFile(PCSX::g_emulator->m_mem->getMemoryAsFile());
 }
@@ -175,6 +524,19 @@ static void registerAllSymbols(PCSX::Lua L) {
     REGISTER(L, removeBreakpoint);
     REGISTER(L, pauseEmulator);
     REGISTER(L, resumeEmulator);
+    REGISTER(L, debuggerStepInto);
+    REGISTER(L, historyBegin);
+    REGISTER(L, historyBeginCD);
+    REGISTER(L, historyCDLimits);
+    REGISTER(L, historyBeginCDV3);
+    REGISTER(L, historyCDWorkerStatus);
+    REGISTER(L, historyCDWorkerRecord);
+    REGISTER(L, historyStop);
+    REGISTER(L, historyClear);
+    REGISTER(L, historyStatus);
+    REGISTER(L, historyRecord);
+    REGISTER(L, historyBytes);
+
     REGISTER(L, softResetEmulator);
     REGISTER(L, hardResetEmulator);
     REGISTER(L, luaMessage);
@@ -199,6 +561,9 @@ static void registerAllSymbols(PCSX::Lua L) {
     REGISTER(L, createSaveState);
     REGISTER(L, loadSaveStateFromSlice);
     REGISTER(L, loadSaveStateFromFile);
+    REGISTER(L, createSaveStateChecked);
+    REGISTER(L, loadSaveStateFromSliceChecked);
+    REGISTER(L, loadSaveStateFromFileChecked);
     REGISTER(L, getMemoryAsFile);
     REGISTER(L, quit);
     L.settable();
@@ -206,6 +571,7 @@ static void registerAllSymbols(PCSX::Lua L) {
 }
 
 void PCSX::LuaFFI::open_pcsx(Lua L) {
+    History::initialize();
     static int lualoader = 1;
     static const char* pcsxFFI = (
 #include "core/pcsxffi.lua"
@@ -213,9 +579,21 @@ void PCSX::LuaFFI::open_pcsx(Lua L) {
     registerAllSymbols(L);
     L.load(pcsxFFI, "src:core/pcsxffi.lua");
     L.getfieldtable("PCSX", LUA_GLOBALSINDEX);
+    L.declareFunc("scanByteRanges", scanByteRanges, -1);
+    L.declareFunc("convertVRAM", convertVRAM, -1);
     L.push("execSlots");
     L.newtable();
     L.settable();
+    L.declareFunc("getSaveStateInfo", [](lua_State* state) -> int {
+        lua_newtable(state);
+        lua_pushnumber(state, SaveStates::Format::Version);
+        lua_setfield(state, -2, "version");
+        lua_pushstring(state, SaveStates::Format::VersionString);
+        lua_setfield(state, -2, "versionString");
+        lua_pushnumber(state, SaveStates::Format::MaxSize);
+        lua_setfield(state, -2, "maxSize");
+        return 1;
+    }, -1);
     L.declareFunc(
         "getSaveStateProtoSchema",
         [](lua_State* L_) -> int {

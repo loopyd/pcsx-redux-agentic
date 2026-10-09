@@ -219,6 +219,7 @@ void DrawTableGeneralMute(SPU_CHANNELS_INFO channels, const size_t channel, cons
     auto& mute = GetChannelMute(channels, channel);
     auto& solo = GetChannelSolo(channels, channel);
     if (DrawMuteSoloButton(channel, button, mute)) {
+        PCSX::g_emulator->m_spu->invalidateCapture();
         HandleChannelMute(channels, mute, solo);
     }
 }
@@ -227,6 +228,7 @@ void DrawTableGeneralSolo(SPU_CHANNELS_INFO channels, const size_t channel, cons
     auto& mute = GetChannelMute(channels, channel);
     auto& solo = GetChannelSolo(channels, channel);
     if (DrawMuteSoloButton(channel, button, solo)) {
+        PCSX::g_emulator->m_spu->invalidateCapture();
         HandleChannelSolo(channels, channel, mute, solo);
     }
 }

@@ -38,6 +38,7 @@
 #include "gui/gui.h"
 #include "lua/extra.h"
 #include "lua/luawrapper.h"
+#include "lua/missions.h"
 #include "main/terminalui.h"
 #include "main/textui.h"
 #include "spu/interface.h"
@@ -246,6 +247,33 @@ int pcsxMain(int argc, char **argv) {
         }
     }
 #endif
+
+    const PCSX::Missions::Resource* mission = nullptr;
+    try {
+        const auto missionCount = args.options().count("mission");
+        const auto catalogCount = args.options().count("mission-catalog");
+        const bool externalCode = args.options().count("dofile") || args.options().count("archive") || args.options().count("exec");
+        if (catalogCount) {
+            if (catalogCount != 1 || missionCount || externalCode || !args.values("mission-catalog").empty()) {
+                throw std::invalid_argument("Mission catalogue cannot be combined with execution");
+            }
+            for (auto flag : {"bios", "exe", "loadexe", "iso", "loadiso", "disk", "run", "dumpproto", "version"}) {
+                if (args.options().count(flag)) throw std::invalid_argument("Mission catalogue cannot be combined with run options");
+            }
+            PCSX::Missions::catalogue(std::cout);
+            return 0;
+        }
+        if (missionCount) {
+            const auto names = args.values("mission");
+            if (missionCount != 1 || names.size() != 1 || externalCode || args.options().count("dumpproto") || args.options().count("version")) {
+                throw std::invalid_argument("Select exactly one builtin mission without external code");
+            }
+            mission = PCSX::Missions::select(names.front());
+        }
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
 
     // This is an easy early-out.
     if (args.get<bool>("dumpproto")) {
@@ -497,6 +525,9 @@ runner.init({
         });
         try {
             auto &L = emulator->m_lua;
+            if (mission || !args.values("dofile").empty() || !args.values("exec").empty() || !args.values("archive").empty()) {
+                PCSX::Missions::installModules(*L);
+            }
             // Before going into the main loop, let's first load all of the Lua files
             // from the command-line specified using the -dofile switch.
             auto archives = args.values("archive");
@@ -521,6 +552,11 @@ runner.init({
             // Then run all of the Lua "exec" commands.
             for (auto &luaexec : luaexecs) {
                 L->load(std::string(luaexec), "cmdline:");
+            }
+
+            if (mission) {
+                PCSX::System::setCrashReportTag("builtin_mission", mission->name);
+                PCSX::Missions::run(*L, *mission);
             }
 
             system->m_inStartup = false;

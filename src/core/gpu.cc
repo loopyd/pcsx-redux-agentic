@@ -19,6 +19,7 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 
+#include "core/history.h"
 #include "core/gpu.h"
 
 #include <magic_enum/magic_enum_all.hpp>
@@ -351,8 +352,8 @@ uint32_t PCSX::GPU::gpuDmaChainSize(uint32_t addr) {
             header = SWAP_LEu32(*g_emulator->m_mem->getPointer<uint32_t>(addr));
         }
 
-        if (DMACommandCounter++ > 2000000) break;
-        if (CheckForEndlessLoop(addr)) break;
+        if (DMACommandCounter++ > 2000000) { History::fail(History::Failure::Bounds); break; }
+        if (CheckForEndlessLoop(addr)) { History::fail(History::Failure::Bounds); break; }
 
         // # 32-bit blocks to transfer
         size += (header >> 24) + 1;
@@ -466,7 +467,44 @@ void PCSX::GPU::gpuInterrupt() {
     mem->dmaInterrupt<2>();
 }
 
-void PCSX::GPU::writeStatus(uint32_t value) {
+std::array<uint32_t, 8> PCSX::GPU::historyState() {
+    uint32_t processor = UINT32_MAX;
+    if (m_processor == &m_defaultProcessor) processor = 0;
+    else if (m_processor == &m_fastFill) processor = 2;
+    else if (m_processor == &m_blitVramVram) processor = 0x80;
+    else if (m_processor == &m_blitRamVram) processor = 0xa0;
+    else if (m_processor == &m_blitVramRam) processor = 0xc0;
+    else {
+        for (unsigned n = 0; n < 32; ++n) {
+            if (m_processor == m_polygons[n]) { processor = 0x20 + n; break; }
+            if (m_processor == m_lines[n]) { processor = 0x40 + n; break; }
+            if (m_processor == m_rects[n]) { processor = 0x60 + n; break; }
+        }
+    }
+    const auto size = m_readFifo->size();
+    if (size > UINT32_MAX || processor == UINT32_MAX) History::fail(History::Failure::Bounds);
+    bool ready = m_processor == &m_defaultProcessor && m_fastFill.historyReady() &&
+        m_blitVramVram.historyReady() && m_blitRamVram.historyReady() && m_blitVramRam.historyReady();
+    for (unsigned n = 0; n < 32 && ready; ++n) {
+        ready = m_polygons[n]->historyReady() && m_lines[n]->historyReady() && m_rects[n]->historyReady();
+    }
+    return {processor, uint32_t(std::min<uint64_t>(size, UINT32_MAX)), m_dataRet,
+            g_emulator->getRamMask<4>(), m_historyKnown, uint32_t(ready), 0, 0};
+}
+
+void PCSX::GPU::history(uint32_t phase) {
+    if (!History::active()) return;
+    History::emit(History::Kind::GpuContext, phase, historyState());
+    History::emit(History::Kind::GpuEnvironment, phase,
+        {(m_historyKnown & 1) ? m_lastTPage.raw : 0,
+         (m_historyKnown & 2) ? m_lastTWindow.raw : 0,
+         (m_historyKnown & 4) ? m_lastOffset.raw : 0,
+         m_textureWindowRaw, m_drawingStartRaw, m_drawingEndRaw, m_drawingOffsetRaw, 0});
+}
+
+void PCSX::GPU::writeStatus(uint32_t value, uint32_t address) {
+    History::Gpu observation(*this, address ? History::GpuSource::GP1 : History::GpuSource::HostGP1,
+                             address, 1, value);
     uint32_t cmd = (value >> 24) & 0xff;
     bool gotUnknown = false;
 
@@ -543,12 +581,13 @@ void PCSX::GPU::writeStatus(uint32_t value) {
     }
 }
 
-uint32_t PCSX::GPU::readData() {
+uint32_t PCSX::GPU::readData(uint32_t address) {
+    History::Gpu observation(*this, address ? History::GpuSource::ReadGP0 : History::GpuSource::HostRead,
+                             address, 1);
     if (m_dumper) m_dumper->read(1);
-    if (m_readFifo->size() == 0) {
-        return m_dataRet;
-    }
-    return m_readFifo.asA<File>()->read<uint32_t>();
+    const uint32_t value = m_readFifo->size() == 0 ? m_dataRet : m_readFifo.asA<File>()->read<uint32_t>();
+    observation.result(value);
+    return value;
 }
 
 void PCSX::GPU::write1(CtrlQuery *ctrl) {
@@ -568,13 +607,17 @@ void PCSX::GPU::write1(CtrlQuery *ctrl) {
     }
 }
 
-void PCSX::GPU::writeData(uint32_t value) {
+void PCSX::GPU::writeData(uint32_t value, uint32_t address) {
+    History::Gpu observation(*this, address ? History::GpuSource::GP0 : History::GpuSource::HostGP0,
+                             address, 1, value);
     if (m_dumper) m_dumper->gp0(value);
     Buffer buf(value);
     m_processor->processWrite(buf, Logged::Origin::DATAWRITE, value, 1);
 }
 
 void PCSX::GPU::directDMAWrite(const uint32_t *feed, int transferSize, uint32_t hwAddr) {
+    History::Gpu observation(*this, History::GpuSource::Direct, hwAddr, uint32_t(transferSize));
+    History::span(2, hwAddr, feed, uint32_t(transferSize) * 4, 1);
     if (m_dumper) m_dumper->gp0LE(feed, transferSize);
     Buffer buf(feed, transferSize);
     while (!buf.isEmpty()) {
@@ -583,6 +626,9 @@ void PCSX::GPU::directDMAWrite(const uint32_t *feed, int transferSize, uint32_t 
 }
 
 void PCSX::GPU::directDMARead(uint32_t *dest, int transferSize, uint32_t hwAddr) {
+    History::Gpu observation(*this, History::GpuSource::ReadDMA, hwAddr, uint32_t(transferSize));
+    uint32_t *historyDestination = dest;
+    int historySize = transferSize;
     if (m_dumper) m_dumper->read(transferSize);
     auto size = m_readFifo->size();
     m_readFifo->read(dest, transferSize * 4);
@@ -592,6 +638,7 @@ void PCSX::GPU::directDMARead(uint32_t *dest, int transferSize, uint32_t hwAddr)
         *dest++ = m_dataRet;
         transferSize--;
     }
+    History::span(2, hwAddr, historyDestination, uint32_t(historySize) * 4, 0);
 }
 
 void PCSX::GPU::chainedDMAWrite(const uint32_t *memory, uint32_t hwAddr) {
@@ -628,11 +675,14 @@ void PCSX::GPU::chainedDMAWrite(const uint32_t *memory, uint32_t hwAddr) {
             feed = memory + addr / 4 + 1;
         }
 
-        if (DMACommandCounter++ > 2000000) break;
-        if (CheckForEndlessLoop(addr)) break;
+        if (DMACommandCounter++ > 2000000) { History::fail(History::Failure::Bounds); break; }
+        if (CheckForEndlessLoop(addr)) { History::fail(History::Failure::Bounds); break; }
 
         // # 32-bit blocks to transfer
         uint32_t transferWords = header >> 24;
+        History::emit(History::Kind::DmaHeader, 2, {addr, header, transferWords});
+        History::Gpu observation(*this, History::GpuSource::Chain, addr, transferWords);
+        History::span(2, addr + 4, feed, transferWords * 4, 1);
         if (m_dumper && transferWords) m_dumper->gp0LE(feed, transferWords);
         Buffer buf(feed, transferWords);
         while (!buf.isEmpty()) {
@@ -647,6 +697,7 @@ void PCSX::GPU::chainedDMAWrite(const uint32_t *memory, uint32_t hwAddr) {
         }
         addr = nextAddr;
     } while (!(addr & 0x800000));  // contrary to some documentation, the end-of-linked-list marker is not actually
+    History::emit(History::Kind::DmaEnd, 2, {addr});
 }  // 0xFF'FFFF any pointer with bit 23 set will do.
 
 void PCSX::GPU::Command::processWrite(Buffer &buf, Logged::Origin origin, uint32_t originValue, uint32_t length) {
@@ -709,12 +760,14 @@ void PCSX::GPU::Command::processWrite(Buffer &buf, Logged::Origin origin, uint32
                     case 1: {  // tpage
                         TPage prim(packetInfo);
                         m_gpu->m_lastTPage = TPage(packetInfo);
+                        m_gpu->m_historyKnown |= 1;
                         m_gpu->m_logger->addNode(prim, origin, originValue, length);
                         m_gpu->write0(&prim);
                     } break;
                     case 2: {  // twindow
                         TWindow prim(packetInfo);
                         m_gpu->m_lastTWindow = TWindow(packetInfo);
+                        m_gpu->m_historyKnown |= 2;
                         m_gpu->m_logger->addNode(prim, origin, originValue, length);
                         m_gpu->write0(&prim);
                         m_gpu->m_textureWindowRaw = packetInfo & 0xfffff;
@@ -734,6 +787,7 @@ void PCSX::GPU::Command::processWrite(Buffer &buf, Logged::Origin origin, uint32
                     case 5: {  // drawing offset
                         DrawingOffset prim(packetInfo);
                         m_gpu->m_lastOffset = DrawingOffset(packetInfo);
+                        m_gpu->m_historyKnown |= 4;
                         m_gpu->m_logger->addNode(prim, origin, originValue, length);
                         m_gpu->write0(&prim);
                         m_gpu->m_drawingOffsetRaw = packetInfo & 0x3fffff;

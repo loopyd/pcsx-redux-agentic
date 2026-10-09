@@ -92,8 +92,24 @@ class impl final : public SPUInterface {
 
     void save(SaveStates::SPU &) final;
     void load(const SaveStates::SPU &) final;
+    bool stateAccessAvailable() const noexcept final;
+    bool acceptsPreparedState(const SaveStates::SPU&) const noexcept final;
+    bool beginStateAccess() final;
+    void endStateAccess() final;
+    void saveStopped(SaveStates::SPU&) final;
+    void loadStopped(const SaveStates::SPU&) final;
 
     virtual void setLua(Lua L) override;
+    uint64_t captureAccess(uint32_t, uint32_t, uint32_t, bool) final;
+    void captureEnd(uint64_t parent) final {
+        if (m_audioOut.capture().ownerThread()) m_captureParent = parent;
+        else m_audioOut.capture().fail(Capture::Thread);
+    }
+    void captureReturn(uint32_t, uint32_t, uint32_t) final;
+    void invalidateCapture() final;
+    std::array<uint64_t, 2> captureIdentity() final { return m_audioOut.capture().identity(); }
+    bool captureEnvironment(Environment& value) final { return m_audioOut.captureEnvironment(value); }
+    bool checkEnvironment(const Environment& value) final { return m_audioOut.checkEnvironment(value); }
 
     void playCDDAchannel(int16_t *, int) final;
     void registerCDDAVolume(void (*CDDAVcallback)(uint16_t, uint16_t));
@@ -117,6 +133,7 @@ class impl final : public SPUInterface {
     bool configure() final;
     json getCfg() final { return settings.serialize(); }
     void setCfg(const json &j) final {
+        invalidateCapture();
         if (j.count("SPU") && j["SPU"].is_object()) {
             settings.deserialize(j["SPU"]);
         } else {
@@ -127,6 +144,12 @@ class impl final : public SPUInterface {
     void waitForGoal(uint32_t goal) override { m_audioOut.waitForGoal(goal); }
 
   private:
+    bool m_stateAccess = false;
+    bool m_stateRestart = false;
+    bool m_stateRestartFailed = false;
+    uint64_t m_captureParent = 0;
+    uint16_t readRegisterValue(uint32_t);
+    std::array<uint32_t, 2> captureInfluences() const;
     struct ADSRFlags {
         enum : uint16_t {
             AttackMode = 1 << 15,      // 15 0=Linear, 1=Exponential
@@ -194,7 +217,7 @@ class impl final : public SPUInterface {
     // loop/stop flag handling that hang off the block boundary. Returns false when the
     // voice has run past the end of its sample and must stop being synthesized.
     bool decodeNextBlock(int ch, SPUCHAN *voice);
-    void triggerIrq();
+    void triggerIrq(uint32_t kind, uint32_t channel);
     void walkSilentVoice(int ch, SPUCHAN *voice);
     void captureVoiceSilence(int ch, int32_t &capVoice1Index, int32_t &capVoice3Index, int fromSample);
     void captureVoiceSample(int ch, int32_t &capVoice1Index, int32_t &capVoice3Index, int sample);

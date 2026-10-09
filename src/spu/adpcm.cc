@@ -18,6 +18,7 @@
  ***************************************************************************/
 
 #include "spu/adpcm.h"
+#include <stdexcept>
 
 void PCSX::SPU::AdpcmDecoder::saveTo(Protobuf::Int32 &history1, Protobuf::Int32 &history2, Protobuf::Int32 &startOffset,
                                      Protobuf::Int32 &currOffset, Protobuf::Int32 &loopOffset, uint8_t *ramBase,
@@ -30,7 +31,11 @@ void PCSX::SPU::AdpcmDecoder::saveTo(Protobuf::Int32 &history1, Protobuf::Int32 
         } else if (ptr == kStopped) {
             offset.value = kStoppedOffset;
         } else {
-            offset.value = ptr - ramBase;
+            const uintptr_t base = reinterpret_cast<uintptr_t>(ramBase);
+            const uintptr_t address = reinterpret_cast<uintptr_t>(ptr);
+            if (address < base || address - base >= kRamSize || ((address - base) & 15))
+                throw std::runtime_error("Invalid SPU ADPCM cursor");
+            offset.value = static_cast<int32_t>(address - base);
         }
     };
     storeOffset(m_start, startOffset);

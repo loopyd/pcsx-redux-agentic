@@ -29,6 +29,19 @@ namespace PCSX {
 
 namespace SaveStates {
 
+namespace Format {
+inline constexpr uint32_t Version = 6;
+inline constexpr char VersionString[] = "PCSX-Redux Agentic SaveState v6";
+inline constexpr size_t MaxSize = 67108864;
+}
+inline constexpr size_t MaxSize = Format::MaxSize;
+
+enum class Result : uint32_t {
+    Ok, UnavailableContext, Running, Quitting, RecorderActive, Busy, TooLarge,
+    Malformed, UnsupportedVersion, InvalidState, InvalidMemoryCard, TopologyMismatch,
+    AllocationFailed, CommitFailed
+};
+
 typedef Protobuf::Field<Protobuf::String, TYPESTRING("version_string"), 1> VersionString;
 typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("version"), 2> Version;
 typedef Protobuf::Message<TYPESTRING("SaveStateInfo"), VersionString, Version> SaveStateInfo;
@@ -47,7 +60,9 @@ typedef Protobuf::FieldPtr<Protobuf::FixedBytes<0x00080000>, TYPESTRING("rom"), 
 typedef Protobuf::FieldPtr<Protobuf::FixedBytes<0x00800000>, TYPESTRING("exp1"), 3> EXP1;
 typedef Protobuf::FieldPtr<Protobuf::FixedBytes<0x00010000>, TYPESTRING("hardware"), 4> HardwareMemory;
 typedef Protobuf::FieldPtr<Protobuf::FixedBytes<0x00200000>, TYPESTRING("sram"), 5> SRAM;
-typedef Protobuf::Message<TYPESTRING("Memory"), RAM, ROM, EXP1, HardwareMemory, SRAM> Memory;
+typedef Protobuf::Field<Protobuf::UInt64, TYPESTRING("biu_plus_one"), 6> BIUPlusOne;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("ram_mapping_plus_one"), 7> RamMappingPlusOne;
+typedef Protobuf::Message<TYPESTRING("Memory"), RAM, ROM, EXP1, HardwareMemory, SRAM, BIUPlusOne, RamMappingPlusOne> Memory;
 typedef Protobuf::MessageField<Memory, TYPESTRING("memory"), 3> MemoryField;
 
 typedef Protobuf::RepeatedFieldRef<Protobuf::UInt32, 34, TYPESTRING("gpr"), 1> GPR;
@@ -174,12 +189,27 @@ typedef Protobuf::FieldRef<Protobuf::UInt8, TYPESTRING("mcd2_currentcommand"), 2
 typedef Protobuf::FieldRef<Protobuf::UInt16, TYPESTRING("mcd2_sector"), 30> SIOMCD2Sector;
 typedef Protobuf::FieldRef<Protobuf::UInt32, TYPESTRING("mcd2_dataoffset"), 31> SIOMCD2DataOffset;
 
+typedef Protobuf::Field<Protobuf::Bytes, TYPESTRING("mcd1_data"), 32> SIOMCD1Data;
+typedef Protobuf::Field<Protobuf::Bytes, TYPESTRING("mcd2_data"), 33> SIOMCD2Data;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("mcd1_spdr"), 34> SIOMCD1SPDR;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("mcd2_spdr"), 35> SIOMCD2SPDR;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("mcd1_directoryindex"), 36> SIOMCD1DirectoryIndex;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("mcd2_directoryindex"), 37> SIOMCD2DirectoryIndex;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("rx_fifo_count_plus_one"), 38> SIORxFIFOCountPlusOne;
+typedef Protobuf::Field<Protobuf::Bytes, TYPESTRING("rx_fifo"), 39> SIORxFIFO;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("pocketstation_mask_plus_one"), 40> SIOPocketstationMaskPlusOne;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("inserted_mask_plus_one"), 41> SIOInsertedMaskPlusOne;
+typedef Protobuf::Field<Protobuf::UInt32, TYPESTRING("data_reg"), 42> SIODataReg;
+
 typedef Protobuf::Message<TYPESTRING("SIO"), SIOBuffer, SIOStatusReg, SIOModeReg, SIOCtrlReg, SIOBaudReg,
                           SIOBufferMaxIndex, SIOBufferIndex, SIOPadState, SIOCurrentDevice, SIOMCD1TempBuffer,
                           SIOMCD1DirectoryFlag, SIOMCD1ChecksumIn, SIOMCD1ChecksumOut, SIOMCD1CommandTicks,
                           SIOMCD1CurrentCommand, SIOMCD1Sector, SIOMCD1DataOffset, SIOMCD2TempBuffer,
                           SIOMCD2DirectoryFlag, SIOMCD2ChecksumIn, SIOMCD2ChecksumOut, SIOMCD2CommandTicks,
-                          SIOMCD2CurrentCommand, SIOMCD2Sector, SIOMCD2DataOffset>
+                          SIOMCD2CurrentCommand, SIOMCD2Sector, SIOMCD2DataOffset, SIOMCD1Data, SIOMCD2Data,
+                          SIOMCD1SPDR, SIOMCD2SPDR, SIOMCD1DirectoryIndex, SIOMCD2DirectoryIndex,
+                          SIORxFIFOCountPlusOne, SIORxFIFO, SIOPocketstationMaskPlusOne,
+                          SIOInsertedMaskPlusOne, SIODataReg>
     SIO;
 typedef Protobuf::MessageField<SIO, TYPESTRING("sio"), 7> SIOField;
 // skip id 8
@@ -348,6 +378,9 @@ typedef Protobuf::ProtoFile<SaveStateInfo, Thumbnail, Memory, DelaySlotInfo, Reg
     ProtoFile;
 
 SaveState constructSaveState();
+Result context() noexcept;
+Result saveChecked(std::string& output) noexcept;
+Result loadChecked(std::string_view data) noexcept;
 
 std::string save();
 // Replaces the emulator state right now. Only safe with nothing of the

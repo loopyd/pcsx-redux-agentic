@@ -21,6 +21,7 @@
  * Internal PSX counters.
  */
 
+#include "core/history.h"
 #include "core/psxcounters.h"
 
 #include "core/debug.h"
@@ -62,6 +63,7 @@ inline void PCSX::Counters::writeCounterInternal(uint32_t index, uint32_t value)
         m_rcnts[index].counterState = CountToOverflow;
     }
     verboseLog(5, "[RCNT %i] scount: %x\n", index, value);
+    observe(index, History::Kind::TimerWrite, value);
 }
 
 inline uint32_t PCSX::Counters::readCounterInternal(uint32_t index) {
@@ -99,7 +101,18 @@ void PCSX::Counters::set() {
     m_psxNextCounter += next;
 }
 
+void PCSX::Counters::history() {
+    for (uint32_t index = 0; index < 4; ++index) observe(index, History::Kind::TimerInitial);
+}
+
+void PCSX::Counters::observe(uint32_t index, History::Kind kind, uint32_t reason) {
+    const auto &r = m_rcnts[index];
+    History::emit(kind, index, {r.mode, r.target, r.rate, r.irq, r.counterState,
+                               r.irqState, r.gateStarted, reason}, r.cycleStart);
+}
+
 void PCSX::Counters::reset(uint32_t index) {
+    observe(index, History::Kind::TimerBefore);
     uint64_t count;
 
     if (m_rcnts[index].counterState == CountToTarget) {
@@ -153,6 +166,7 @@ void PCSX::Counters::reset(uint32_t index) {
     }
 
     set();
+    observe(index, History::Kind::TimerAfter);
 }
 
 void PCSX::Counters::update() {
@@ -205,6 +219,7 @@ void PCSX::Counters::update() {
 
         // Counter 0 gate: triggered by Hblank
         if (isGateEnabled(0, m_rcnts[0].mode)) {
+            observe(0, History::Kind::TimerGate, 1);
             switch (gateSyncMode(m_rcnts[0].mode)) {
                 case 1:  // Reset at Hblank
                 case 2:  // Reset at Hblank + pause outside
@@ -233,6 +248,7 @@ void PCSX::Counters::update() {
 
             // Counter 1 gate: triggered by VBlank start
             if (isGateEnabled(1, m_rcnts[1].mode)) {
+            observe(1, History::Kind::TimerGate, 2);
                 switch (gateSyncMode(m_rcnts[1].mode)) {
                     case 1:  // Reset at VBlank
                     case 2:  // Reset at VBlank + pause outside
@@ -310,6 +326,7 @@ void PCSX::Counters::recalculateRate(uint32_t index) {
             }
             break;
     }
+    observe(index, History::Kind::TimerRate);
 }
 
 void PCSX::Counters::writeMode(uint32_t index, uint32_t value) {
@@ -381,6 +398,7 @@ uint32_t PCSX::Counters::readCounter(uint32_t index) {
     }
 
     verboseLog(2, "[RCNT %i] rcount: %x\n", index, count);
+    History::timerRead(index, 0, count, m_rcnts[index].mode);
     return count;
 }
 
@@ -389,6 +407,7 @@ uint32_t PCSX::Counters::readMode(uint32_t index) {
 
     uint16_t mode = m_rcnts[index].mode;
     m_rcnts[index].mode &= 0xe7ff;
+    History::timerRead(index, 4, mode, m_rcnts[index].mode);
 
     verboseLog(2, "[RCNT %i] rmode: %x\n", index, mode);
     return mode;
@@ -396,6 +415,7 @@ uint32_t PCSX::Counters::readMode(uint32_t index) {
 
 uint32_t PCSX::Counters::readTarget(uint32_t index) {
     verboseLog(2, "[RCNT %i] rtarget: %x\n", index, m_rcnts[index].target);
+    History::timerRead(index, 8, m_rcnts[index].target);
     return m_rcnts[index].target;
 }
 

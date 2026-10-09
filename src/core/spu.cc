@@ -20,6 +20,9 @@
 #include "core/spu.h"
 
 #include "core/r3000a.h"
+#include "core/transactions.h"
 
 void PCSX::SPUInterface::interrupt() { g_emulator->m_mem->setIRQ(0x200); }
-void PCSX::SPUInterface::scheduleInterrupt() { g_emulator->m_cpu->m_regs.spuInterrupt = true; }
+void PCSX::SPUInterface::scheduleInterrupt(uint32_t kind, uint32_t channel, uint32_t address, uint32_t control, uint32_t status) {
+    History::CD::publishSpuInterrupt(g_emulator->m_cpu->m_regs.spuInterrupt, kind, channel, address, control, status);
+}
