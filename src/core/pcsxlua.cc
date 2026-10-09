@@ -441,9 +441,9 @@ void loadSaveStateFromFile(PCSX::LuaFFI::LuaFile* file) {
 uint32_t createSaveStateChecked(PCSX::Slice** output) noexcept {
     using namespace PCSX::SaveStates;
     const auto guard = context();
-    if (output) *output = nullptr;
     if (guard != Result::Ok) return static_cast<uint32_t>(guard);
     if (!output) return static_cast<uint32_t>(Result::InvalidState);
+    *output = nullptr;
     try {
         std::string bytes;
         const auto result = saveChecked(bytes);
