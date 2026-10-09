@@ -202,7 +202,7 @@ bool PCSX::SPU::impl::acceptsPreparedState(const SaveStates::SPU& spu) const noe
         (xa.get<XANBits>().value != 0 && xa.get<XANBits>().value != 4 && xa.get<XANBits>().value != 8 && xa.get<XANBits>().value != 16)) return false;
     for (const auto& channel : spu.get<Channels>().value) {
         const auto& data = channel.get<Data>();
-        const auto& adsr = channel.get<ADSRInfoEx>();
+        const auto& adsr = channel.get<SaveStates::ADSRInfoEx>();
         const auto start = data.get<Chan::StartPtr>().value;
         const auto current = data.get<Chan::CurrPtr>().value;
         const auto loop = data.get<Chan::LoopPtr>().value;

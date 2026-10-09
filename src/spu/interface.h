@@ -252,6 +252,8 @@ class impl final : public SPUInterface {
 
     // XA.
     void FeedXA(xa_decode_t *xap);
+    void observeCDFeed(uint32_t reason, const xa_decode_t* xap, uint32_t frames = 0,
+                       bool cdda = false, uint64_t event = 0);
 
     int spuIsOpen;
 
