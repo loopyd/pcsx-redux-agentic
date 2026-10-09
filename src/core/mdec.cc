@@ -340,6 +340,14 @@ bool PCSX::MDEC::rl2blk(int *blk, unsigned short *&mdec_rl) {
         }
         return true;
     };
+    const auto readRl = [&](int &value) {
+        if (!canRead()) return false;
+        value = SWAP_LE16(*mdec_rl);
+        History::inputScalar(uint32_t(reinterpret_cast<uintptr_t>(mdec_rl) -
+                             reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)), uint16_t(value));
+        mdec_rl++;
+        return true;
+    };
 
     memset(blk, 0, 6 * DSIZE2 * sizeof(int));
     iqtab = iq_uv;
@@ -356,18 +364,14 @@ bool PCSX::MDEC::rl2blk(int *blk, unsigned short *&mdec_rl) {
             // to signed 11 bits per psx-spx's rl_decode_block, and the full matrix
             // multiply afterwards. Slower by construction; only taken when
             // something has actually uploaded a non-standard matrix.
-            if (!canRead()) return false;
-            rl = SWAP_LE16(*mdec_rl);
-            mdec_rl++;
+            if (!readRl(rl)) return false;
             q_scale = RLE_RUN(rl);
             // The q_scale == 0 clauses bind here too, and their absence is why
             // running this mode through the general path scored no better than
             // through the fast one - both were wrong about the same two things.
             blk[0] = std::clamp(q_scale == 0 ? RLE_VAL(rl) * 2 : RLE_VAL(rl) * qtab[0], -0x400, 0x3ff);
             for (k = 0;;) {
-                if (!canRead()) return false;
-                rl = SWAP_LE16(*mdec_rl);
-                mdec_rl++;
+                if (!readRl(rl)) return false;
                 if (rl == MDEC_END_OF_DATA) break;
                 k += RLE_RUN(rl) + 1;
                 if (k > 63) break;
@@ -379,11 +383,7 @@ bool PCSX::MDEC::rl2blk(int *blk, unsigned short *&mdec_rl) {
             continue;
         }
 
-        if (!canRead()) return false;
-        rl = SWAP_LE16(*mdec_rl);
-        History::inputScalar(uint32_t(reinterpret_cast<uintptr_t>(mdec_rl) -
-                             reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)), uint16_t(rl));
-        mdec_rl++;
+        if (!readRl(rl)) return false;
         q_scale = RLE_RUN(rl);
         {
             // psx-spx's DC term. Every clause here is MEASURED ON SILICON rather
@@ -411,11 +411,7 @@ bool PCSX::MDEC::rl2blk(int *blk, unsigned short *&mdec_rl) {
                          : SCALER(sat * SCALER(aanscales[0], AAN_PRESCALE_SCALE), AAN_EXTRA - 3);
         }
         for (k = 0, used_col = 0;;) {
-            if (!canRead()) return false;
-            rl = SWAP_LE16(*mdec_rl);
-        History::inputScalar(uint32_t(reinterpret_cast<uintptr_t>(mdec_rl) -
-                             reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram)), uint16_t(rl));
-            mdec_rl++;
+            if (!readRl(rl)) return false;
             if (rl == MDEC_END_OF_DATA) break;
             k += RLE_RUN(rl) + 1;  // skip zero-coefficients
 
