@@ -274,6 +274,35 @@ int PCSX::Lua::pcall(int nargs) {
     }
 }
 
+void PCSX::Lua::settable(int i, bool raw) {
+    if (raw) {
+        lua_rawset(L, i);
+    } else {
+        lua_settable(L, i);
+    }
+}
+
+void PCSX::Lua::gettable(int i, bool raw) {
+    if (raw) {
+        lua_rawget(L, i);
+    } else {
+        lua_gettable(L, i);
+    }
+}
+
+void PCSX::Lua::getfieldtable(std::string_view name, int tableIdx, bool raw) {
+    tableIdx = getabsolute(tableIdx);
+    push(name);
+    gettable(tableIdx, raw);
+    if (!isnil()) return;
+
+    pop();
+    newtable();
+    push(name);
+    copy(-2);
+    settable(tableIdx, raw);
+}
+
 void PCSX::Lua::getfieldtable(int idx, int tableIdx, bool raw) {
     tableIdx = getabsolute(tableIdx);
     push(lua_Number(idx));
