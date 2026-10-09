@@ -343,7 +343,8 @@ Result validateRestore(ValidatedRestore& prepared) {
         cd.get<CDDataFIFOIndex>().decodedValue() > cd.get<CDDataFIFOSize>().decodedValue() ||
         cd.get<CDDataFIFOSize>().decodedValue() > 2352 || cd.get<CDDataFIFOPending>().decodedValue() > 2352)
         return Result::InvalidState;
-    for (const auto* history : {&cd.get<CDXALeft>(), &cd.get<CDXARight>()}) {
+    const CDADPCM* const histories[] = {&cd.get<CDXALeft>(), &cd.get<CDXARight>()};
+    for (const auto* history : histories) {
         const auto y0 = history->get<CDADPCMY0>().decodedValue();
         const auto y1 = history->get<CDADPCMY1>().decodedValue();
         if (y0 < -32768 || y0 > 32767 || y1 < -32768 || y1 > 32767) return Result::InvalidState;
