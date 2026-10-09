@@ -30,19 +30,16 @@ uint32_t integer(PCSX::Lua L, int index, uint32_t maximum) {
     }
     return uint32_t(value);
 }
-void number(PCSX::Lua L, const char* key, uint32_t value) { L.push(key); L.push(lua_Number(value)); L.settable(); }
+void number(PCSX::Lua L, const char* key, int64_t value) { L.push(key); L.push(lua_Number(value)); L.settable(); }
 void wide(PCSX::Lua L, const char* key, uint64_t value) { L.push(key); L.push(std::to_string(value)); L.settable(); }
 void string(PCSX::Lua L, const char* key, std::string_view value) { L.push(key); L.push(value); L.settable(); }
-const char* const settingNames[] = {"volume", "interpolation", "reverb", "mute", "mono", "streaming",
-    "null_sync", "irq_wait", "decode_irq", "scaler", "forced_irq", "voice_mute", "voice_solo", "xa"};
 }
 
 std::array<int64_t, 14> PCSX::SPU::SDLAudio::captureSettings() const {
     const auto voices = m_influences ? m_influences() : std::array<uint32_t, 2>{};
-    return {m_settings.get<Volume>().value, m_settings.get<Interpolation>().value, m_settings.get<Reverb>().value,
+    return {m_settings.get<Volume>().value, m_settings.get<Interpolation>().value, m_settings.get<KeyOnDelay>().value,
         m_settings.get<Mute>().value, m_settings.get<Mono>().value, m_settings.get<Streaming>().value,
-        m_settings.get<NullSync>().value, m_settings.get<SPUIRQWait>().value, m_settings.get<DBufIRQ>().value,
-        g_emulator->settings.get<Emulator::SettingScaler>().value,
+        m_settings.get<NullSync>().value, Environment::SETTINGS_VERSION, 0, m_settings.get<Speed>().value,
         g_emulator->settings.get<Emulator::SettingSpuIrq>().value, voices[0], voices[1],
         g_emulator->settings.get<Emulator::SettingXa>().value};
 }
@@ -53,8 +50,8 @@ bool PCSX::SPU::SDLAudio::captureEnvironment(Environment& value) {
     const auto& device = m_settings.get<Device>().value;
     if (backend.size() > 1024 || device.size() > 1024) return false;
     const auto settings = captureSettings();
-    if (settings[0] < 0 || settings[0] > 3 || settings[1] < 0 || settings[1] > 3 ||
-        settings[2] < 0 || settings[2] > 2 || settings[9] <= 0) return false;
+    if (settings[Environment::Volume] < 0 || settings[Environment::Volume] > 3 ||
+        settings[Environment::Interpolation] < 0 || settings[Environment::Interpolation] > 3) return false;
     value = {settings, backend, device, m_audioInitialized, m_stream != nullptr};
     return true;
 }
@@ -91,8 +88,8 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
         if (!frames || !blocks || !events || !paused(m_capture) || !m_stream || !m_audioInitialized ||
             g_emulator->m_cpu->isDynarec() || g_emulator->m_mem->msanInitialized()) return L.error("audio begin requires paused interpreter, initialized stream and positive limits without MSAN");
         const auto settings = captureSettings();
-        if (settings[0] < 0 || settings[0] > 3 || settings[1] < 0 || settings[1] > 3 ||
-            settings[2] < 0 || settings[2] > 2 || settings[9] <= 0) return L.error("unsupported mixer settings");
+        if (settings[Environment::Volume] < 0 || settings[Environment::Volume] > 3 ||
+            settings[Environment::Interpolation] < 0 || settings[Environment::Interpolation] > 3) return L.error("unsupported mixer settings");
         bool okay = false;
         {
             StreamGuard lock(m_stream);
@@ -164,7 +161,7 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
                 number(L, "final_voice_queue", m_captureFinal[0]); number(L, "final_disc_queue", m_captureFinal[1]);
             }
             L.push("settings"); L.newtable();
-            for (unsigned n = 0; n < m_captureSettings.size(); ++n) number(L, settingNames[n], m_captureSettings[n]);
+            for (unsigned n = 0; n < m_captureSettings.size(); ++n) number(L, Environment::settingNames[n], m_captureSettings[n]);
             string(L, "configured_backend", m_captureBackend); string(L, "configured_device", m_captureDevice);
             string(L, "active_driver", m_captureDriver);
             L.settable();

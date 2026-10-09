@@ -34,7 +34,10 @@ Media query/backend/image records expose native outcomes, owning file extents an
 literal declared track identities. Backend zero fill, short/failure outcomes and
 native CDDA/XA feed counts remain distinct observations.
 
-Audio joined capture requires the native audio recorder and exact environment.
+Audio joined capture requires native Audio ABI 2 and the exact revision-2
+14-slot settings environment described in [Audio](audio.md); legacy setting
+meanings reject. The CD envelope, context wire version 3, eleven scheduler scales
+and offsets remain unchanged.
 Decoded capture also requires bounded worker capacity. Worker records carry batch,
 sequence, epoch, last published CPU cycle, native predicates and publication
 lineage. CPU handoff joins exact publication sequence ranges. These observations

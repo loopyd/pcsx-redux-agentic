@@ -29,8 +29,8 @@ m.begin('', function()
     m.write('seed.pbuf', m.stateBytes())
     local failures = {}
     local settings = assert(PCSX.settings.spu)
-    for _, name in ipairs({'Mute', 'Mono', 'Streaming', 'UseNullSync', 'IRQWait', 'DBufIRQ',
-        'Volume', 'Interp', 'Reverb', 'Backend', 'Device'}) do
+    for _, name in ipairs({'Mute', 'Mono', 'Streaming', 'UseNullSync', 'Speed', 'KeyOnDelay',
+        'Volume', 'Interp', 'Backend', 'Device'}) do
         local original, changed = settings[name], nil
         assert(original ~= nil, 'missing setting ' .. name)
         if type(original) == 'boolean' then changed = not original end

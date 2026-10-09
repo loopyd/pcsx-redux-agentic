@@ -105,9 +105,9 @@ function M.new(status)
         closed=nil
         if kind==34 then
             if phase==2 then
-                assert(not environment and not first and #stack==0 and d[1]==3 and d[3]==14 and d[4]==11 and #payload==156+d[5]+d[6],
+                assert(not environment and not first and #stack==0 and d[1]==3 and d[3]==14 and d[4]==11 and #payload==156+d[5]+d[6] and m.u64le(payload,56)==2 and m.u64le(payload,64)==0,
                     'invalid native CD environment')
-                environment=M.reference(row);environment.clock_hz=d[2];environment.scale_bits=m.array()
+                environment=M.reference(row);environment.clock_hz=d[2];environment.settings_version=2;environment.scale_bits=m.array()
                 for i=0,10 do environment.scale_bits[i+1]=m.u32le(payload,112+i*4) end
             else
                 assert((phase==0 and not first and not final) or (phase==1 and first and not final),'invalid CD context boundary')

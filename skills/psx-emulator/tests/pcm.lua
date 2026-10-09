@@ -11,9 +11,10 @@ local clock = '9007199254740993'
 local function reset()
     files, reports, fault, bytes, m.captures = {}, {}, nil, sample, {}
     local settings = {configured_backend = '', configured_device = '', active_driver = 'fixture'}
-    for _, k in ipairs({'volume','interpolation','reverb','mute','mono','streaming','null_sync',
-        'irq_wait','decode_irq','scaler','forced_irq','voice_mute','voice_solo','xa'}) do settings[k] = 0 end
-    status = {version=1, state=2, rate=44100, channels=2, format='f32le',
+    for _, k in ipairs({'volume','interpolation','key_on_delay','mute','mono','streaming','null_sync',
+        'schema_version','reserved','speed','forced_irq','voice_mute','voice_solo','xa'}) do settings[k] = 0 end
+    settings.schema_version = 2
+    status = {version=2, state=2, rate=44100, channels=2, format='f32le',
         stage='post-mixer-mute-mono/pre-SDL-conversion', frames=2, blocks=1, events=2,
         frame_limit=2646000, block_limit=65536, event_limit=65536, failures=0, first_failure=0,
         dropped_events=0, begin_cycle=clock, end_cycle='9007199254740999',
@@ -64,7 +65,7 @@ reset(); bytes = ''
 result = pcm.export(); assert(not result.complete and result.export_error:find('short native PCM'))
 reset(); status.dropped_frames = '1'
 result = pcm.export(); assert(not result.complete and result.export_error:find('loss without failure'))
-reset(); status.version = 2
+reset(); status.version = 1
 result = pcm.export(); assert(not result.complete and result.export_error:find('ABI'))
 reset(); fault = 'audio.wav'
 result = pcm.export(); assert(not result.complete and result.export_error and files['audio.f32'] == sample)

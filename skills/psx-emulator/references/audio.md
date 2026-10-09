@@ -59,6 +59,20 @@ requires owner thread, not pause.
 | `samples(offset, frames)` | Frozen capture, at most 65536 stereo frames per call, copied binary string |
 | `clear()` | Release inactive capture explicitly before another begin |
 
+Native Audio ABI and `psx.native-audio` report version: 2. The 14 signed 64-bit
+CD environment slots remain at the same offsets: `volume`, `interpolation`,
+`key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
+`reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
+`speed` is the configured signed SPU sink multiplier; nonpositive values or values
+above 1024 use the native unbounded cap of 1024. It is not a CPU cycle scaler.
+`key_on_delay` is the configured signed startup sample count; the native voice
+producer treats negative values as zero. Retain configured values without
+normalizing them. Legacy `reverb`, `irq_wait`, `decode_irq` and `scaler` setting
+names have no equivalent in this fork and are omitted. Revision markers reject
+old Audio and CD environment receipts. The CPU clock is exposed separately as
+`PCSX.CONSTS.CPU.CLOCKSPEED` (33868800); all 11 scheduler scale bits are captured
+by the CD recorder. These settings do not prove DSP or hardware fidelity.
+
 States: empty=0, active=1, frozen=2. Keep uint64 fields as canonical decimal strings,
 never doubles. Failure bits: frames=1, blocks=2, events=4, thread=8, bounds=16,
 clock=32, discontinuity=64, streaming-loss=128, output=256. Failures are sticky,

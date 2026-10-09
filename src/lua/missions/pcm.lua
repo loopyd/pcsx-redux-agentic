@@ -46,7 +46,7 @@ end
 function M.export()
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v1', native = status, complete = false,
+    local result = {schema = 'psx.native-audio/v2', native = status, complete = false,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
@@ -54,7 +54,7 @@ function M.export()
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 1 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 2 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -73,9 +73,14 @@ function M.export()
             integer(status[key], 0, 4294967295, key)
         end
         assert(type(status.settings) == 'table', 'missing native mixer settings')
-        for _, key in ipairs({'volume', 'interpolation', 'reverb', 'mute', 'mono', 'streaming',
-            'null_sync', 'irq_wait', 'decode_irq', 'scaler', 'forced_irq', 'voice_mute', 'voice_solo', 'xa'}) do
+        integer(status.settings.schema_version, 2, 2, 'setting schema version')
+        integer(status.settings.reserved, 0, 0, 'reserved setting')
+        for _, key in ipairs({'volume', 'interpolation', 'mute', 'mono', 'streaming',
+            'null_sync', 'forced_irq', 'voice_mute', 'voice_solo', 'xa'}) do
             integer(status.settings[key], 0, 4294967295, 'setting ' .. key)
+        end
+        for _, key in ipairs({'key_on_delay', 'speed'}) do
+            integer(status.settings[key], -2147483648, 2147483647, 'setting ' .. key)
         end
         for _, key in ipairs({'configured_backend', 'configured_device', 'active_driver'}) do
             assert(type(status.settings[key]) == 'string', 'missing native ' .. key)

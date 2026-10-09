@@ -45,7 +45,7 @@ function M.journal(body,options)
         j.rows[#j.rows+1]=row;return row
     end
     local settings={};for i=1,14 do settings[i]=M.u64((i==6 or i==14) and 1 or 0) end
-    settings[6]=M.u64(1);settings[14]=M.u64(1)
+    settings[6]=M.u64(1);settings[8]=M.u64(2);settings[14]=M.u64(1)
     local scales={};for i=1,11 do scales[i]=M.u32(0x3f800000) end
     j.emit(34,2,{3,33868800,14,11,0,0,1,1},0,0,table.concat(settings)..table.concat(scales))
     j.emit(47,0,{3,716,0,100},1,0,M.image(0))

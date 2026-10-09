@@ -1,7 +1,7 @@
 -- lualoader, R"EOF(--
 local ffi,c,m = require 'ffi',require 'controller',require 'support'
 local M={}
-local settings={'volume','interpolation','reverb','mute','mono','streaming','null_sync','irq_wait','decode_irq','scaler',
+local settings={'volume','interpolation','key_on_delay','mute','mono','streaming','null_sync','schema_version','reserved','speed',
     'forced_irq','voice_mute','voice_solo','xa'}
 function M.new(controller,audio)
     local pending,environment,native,joined,epoch;local seen,joins={},{}
@@ -11,7 +11,7 @@ function M.new(controller,audio)
         assert(joined==(audio~=nil),'Audio export differs from native CD profile')
         if not joined then return end
         native=assert(audio.report and audio.report.native,'missing joined native Audio report')
-        assert(audio.report.complete and type(audio.event)=='function' and native.version==1 and native.state==2 and
+        assert(audio.report.complete and type(audio.event)=='function' and native.version==2 and native.state==2 and
             native.failures==0 and native.dropped_events==0 and native.dropped_frames=='0' and native.streaming_dropped=='0' and
             native.epoch==epoch and m.uint64(native.begin_cycle)<=row.cycle,'joined Audio lifecycle mismatch')
         for i,name in ipairs(settings) do assert(ffi.cast('int64_t',m.u64le(environment,i*8-8))==native.settings[name],
@@ -20,7 +20,8 @@ function M.new(controller,audio)
     function tracker.push(row,payload)
         local kind,phase,d=tonumber(row.kind),tonumber(row.device),c.data(row)
         if kind==34 and phase==2 then
-            assert(not environment and #payload==156+d[5]+d[6],'invalid joined environment');environment=payload
+            assert(not environment and #payload==156+d[5]+d[6] and m.u64le(payload,56)==2 and m.u64le(payload,64)==0,
+                'invalid joined environment');environment=payload
             if audio then
                 local value=assert(audio.report and audio.report.native,'missing joined Audio report')
                 assert(value.settings.configured_backend==payload:sub(157,156+d[5]) and
