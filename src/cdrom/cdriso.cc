@@ -520,7 +520,8 @@ bool PCSX::CDRIso::readTrack(const IEC60908b::MSF time) {
     if (History::CD::active()) History::CD::predicate(History::CD::Predicate::SubchannelState,
         {1, uint32_t(bool(m_subHandle)), uint32_t(m_subChanMixed), uint32_t(m_subChanMissing)});
 
-    ret = (*this.*m_cdimg_read_func)(m_cdHandle, 0, m_cdbuffer, sector);
+    const read_func_t backend = m_cdimg_read_func;
+    ret = (*this.*backend)(m_cdHandle, 0, m_cdbuffer, sector);
     if (ret < 0) {
         if (History::CD::active()) History::CD::mediaOutcome(6, ret, 0, 0, uint32_t(sector),
             12 | (m_useCompressed ? 1 : 0) | (m_isMode1ISO ? 16 : 0) | (m_subChanMixed ? 32 : 0));
@@ -535,6 +536,12 @@ bool PCSX::CDRIso::readTrack(const IEC60908b::MSF time) {
     }
 
     m_ppf.maybePatchSector(m_cdbuffer, time);
+
+    if (!m_useCompressed &&
+        ((backend == &CDRIso::cdread_normal && ret == IEC60908b::FRAMESIZE_RAW) ||
+         (backend == &CDRIso::cdread_2048 && ret == 2048))) {
+        m_historyBufferDefined = true;
+    }
 
     if (History::CD::active()) History::CD::mediaOutcome(7, ret, 0, 0, uint32_t(sector),
         12 | (m_useCompressed ? 1 : 0) | (m_isMode1ISO ? 16 : 0) | (m_subChanMixed ? 32 : 0));
