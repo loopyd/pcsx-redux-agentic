@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [watch.lua](../../../src/lua/missions/watch.lua) for selected Exec/Read/Write hits, optionally
+Use [watch.lua](../../../../src/lua/missions/watch.lua) for selected Exec/Read/Write hits, optionally
 with a finite Exec boundary window.
 
 ## Procedure

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [frames.lua](../../../src/lua/missions/frames.lua) for a counted Vsync interval with optional
+Use [frames.lua](../../../../src/lua/missions/frames.lua) for a counted Vsync interval with optional
 digital input/display capture. Use [Replay](replay.md) for press/release schedules,
 state/display comparisons or terminal PC/register/RAM conditions.
 
@@ -26,6 +26,7 @@ the fresh process exits afterward.
 
 `screen.bin` holds pixels; `screen.json` records size/format/availability.
 A nonempty display also yields P6 RGB `screen.ppm`. Pixels are little-endian
-BGR555 (16-bit) or RGB24, retaining native row order. Uninitialized display means
+BGR555 (16-bit) or RGB24, retaining native row order. PPM export uses the bounded
+native `PCSX.convertScreenshot` call; Lua keeps the header and file output. Uninitialized display means
 unavailable, zero bytes and no PPM. This is the displayed buffer, not all VRAM
 or GPU command history.

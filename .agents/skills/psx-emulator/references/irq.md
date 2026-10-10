@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [irq.lua](../../../src/lua/missions/irq.lua) for serialized interrupt latches and masks.
+Use [irq.lua](../../../../src/lua/missions/irq.lua) for serialized interrupt latches and masks.
 Use [History](history.md) for ordered latch/delivery observations.
 
 ## Procedure
@@ -18,7 +18,7 @@ Device pending bits do not prove handler execution. Software CP0 bits remain in
 raw banks/masked-pending values. Inspection neither acknowledges nor consumes
 device state; serialized levels do not supply edge order.
 
-Decode follows [devices.lua](../../../src/lua/missions/devices.lua). I_STAT/I_MASK low eleven
+Decode follows [devices.lua](../../../../src/lua/missions/devices.lua). I_STAT/I_MASK low eleven
 bits map in order to Vblank, GPU, CD-ROM, DMA, timer0, timer1, timer2, SIO0, SIO1,
 SPU and lightpen/PIO. `pending_enabled = I_STAT & I_MASK & 0x7ff`.
 CP0 Status bit 0 supplies global enable; Status bit 10 hardware enable; Cause

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [vram.lua](../../../src/lua/missions/vram.lua) for rectangle/palette export or native uploads.
+Use [vram.lua](../../../../src/lua/missions/vram.lua) for rectangle/palette export or native uploads.
 Follow [Runtime](runtime.md#invocation); Canonical `support` and `snapshot` are preloaded.
 
 ## Procedure

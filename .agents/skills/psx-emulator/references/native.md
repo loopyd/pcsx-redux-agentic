@@ -28,16 +28,16 @@ fork's CPU/CD/SPU/MDEC fields and deferred owning-string `loadSafe` lifecycle.
 Postcommit host-file CREATE/open failure returns CommitFailed, pauses and emits no
 Loaded event; no rollback or host filesystem transaction is promised.
 
-Scanner, VRAM, and checked CPU observation APIs perform bulk work from one Lua
-call. `PCSX.captureCPUChecked()` preserves complete checked save serialization,
+Scanner, VRAM, screenshot conversion, and checked CPU observation APIs perform
+bulk work from one Lua call. `PCSX.captureCPUChecked()` preserves complete checked save serialization,
 native readback validation, cards/device predicates, and lease cleanup. It copies
 CPU fields and safe memory words before releasing the lease, then allocates Lua
 values. It avoids decoding the whole state in Lua; it is not a CPU-only admission
 shortcut. Persisted-state validation remains schema-aware and bounded.
 
 Bulk Lua work remains in `src/lua/missions`: `snapshot.lua` and `state.lua` parse
-persisted states, `support.lua` encodes JSON, `frames.lua` converts BGR555
-screenshots, `packets.lua` parses GPU words, `vram.lua` assembles uploads, and
+persisted states, `support.lua` encodes JSON, `packets.lua` parses GPU words,
+`vram.lua` assembles uploads, and
 history/audio modules export individual records. Measure these complete caller
 paths before selecting another native API; acquisition alone does not qualify
 whole-mission performance. Keep semantic correlation and mission composition in

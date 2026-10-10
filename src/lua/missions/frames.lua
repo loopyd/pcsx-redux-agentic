@@ -33,26 +33,19 @@ m.begin('target,frames,buttons,slot,screenshot,savestate', function()
                     local screen = PCSX.GPU.takeScreenShot()
                     local bytes = tostring(screen.data)
                     local bpp = tonumber(screen.bpp)
+                    local width, height = tonumber(screen.width), tonumber(screen.height)
                     assert(bpp == 0 or bpp == 1, 'unsupported screenshot pixel format')
-                    assert(#bytes == screen.width * screen.height * (bpp == 0 and 2 or 3),
+                    assert(width >= 0 and width <= 1024 and height >= 0 and height <= 512,
+                        'native display dimensions exceed bounds')
+                    assert(#bytes == width * height * (bpp == 0 and 2 or 3),
                         'unexpected screenshot storage')
                     m.write('screen.bin', bytes)
-                    m.report('screen.json', {schema = 'psx.runtime-screen/v1', width = screen.width,
-                        height = screen.height, format = bpp == 0 and 'psx-bgr555-le' or 'rgb24',
+                    m.report('screen.json', {schema = 'psx.runtime-screen/v1', width = width,
+                        height = height, format = bpp == 0 and 'psx-bgr555-le' or 'rgb24',
                         bytes = #bytes, available = #bytes > 0})
                     if #bytes > 0 then
-                        local rgb = bytes
-                        if bpp == 0 then
-                            local pixels = {}
-                            for i = 1, #bytes, 2 do
-                                local pixel = bytes:byte(i) + bytes:byte(i + 1) * 256
-                                local function expand(v) return math.floor(v * 255 / 31 + 0.5) end
-                                pixels[#pixels + 1] = string.char(expand(pixel % 32),
-                                    expand(math.floor(pixel / 32) % 32), expand(math.floor(pixel / 1024) % 32))
-                            end
-                            rgb = table.concat(pixels)
-                        end
-                        m.write('screen.ppm', 'P6\n' .. screen.width .. ' ' .. screen.height .. '\n255\n' .. rgb)
+                        local rgb = PCSX.convertScreenshot(bytes, width, height, bpp)
+                        m.write('screen.ppm', 'P6\n' .. width .. ' ' .. height .. '\n255\n' .. rgb)
                     end
                 end
                 m.report('frames.json', {schema = 'psx.runtime-frames/v1', vsyncs = observed,

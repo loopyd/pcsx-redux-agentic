@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [bus.lua](../../../src/lua/missions/bus.lua) for VRAM uploads, SPU writes and CD commands.
+Use [bus.lua](../../../../src/lua/missions/bus.lua) for VRAM uploads, SPU writes and CD commands.
 Debugger memory-file writes bypass handlers; this helper executes MIPS stores.
 Declare `support`, `snapshot` and `bus`.
 

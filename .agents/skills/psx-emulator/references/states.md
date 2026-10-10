@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [state.lua](../../../src/lua/missions/state.lua) with `support`, `snapshot` and
+Use [state.lua](../../../../src/lua/missions/state.lua) with `support`, `snapshot` and
 [Runtime](runtime.md#invocation) to query/export/compare state without loading it.
 Decode with the running build's schema and bundled `pb`/`protoc`; never guess
 offsets or substitute an external parser.

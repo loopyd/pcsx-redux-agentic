@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [gte.lua](../../../src/lua/missions/gte.lua) for COP2 inspection, raw edits or native command
+Use [gte.lua](../../../../src/lua/missions/gte.lua) for COP2 inspection, raw edits or native command
 execution. Follow [Runtime](runtime.md#invocation); Canonical `support` and `snapshot` are preloaded.
 
 ## Procedure

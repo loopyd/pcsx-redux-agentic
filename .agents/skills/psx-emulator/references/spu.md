@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [spu.lua](../../../src/lua/missions/spu.lua) to inspect voices/DSP, export RAM, write ports or
+Use [spu.lua](../../../../src/lua/missions/spu.lua) to inspect voices/DSP, export RAM, write ports or
 sample Vsync state. Follow [Runtime](runtime.md#invocation) with `support`, `snapshot`;
 `action=capture` uses [Audio](audio.md) and its binding requirements.
 

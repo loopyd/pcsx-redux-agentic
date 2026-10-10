@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Capture bounded native mixed PCM and SPU accesses with [spu.lua](../../../src/lua/missions/spu.lua),
+Capture bounded native mixed PCM and SPU accesses with [spu.lua](../../../../src/lua/missions/spu.lua),
 `action=capture`. Follow [Runtime](runtime.md); verify `PCSX.Audio` through
 [Native](native.md). Missing bindings fail; captures do not establish hardware fidelity.
 

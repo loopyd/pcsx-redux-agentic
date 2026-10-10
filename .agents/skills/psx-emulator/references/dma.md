@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [dma.lua](../../../src/lua/missions/dma.lua) for serialized DMA configuration; use
+Use [dma.lua](../../../../src/lua/missions/dma.lua) for serialized DMA configuration; use
 [History](history.md) for actual transfer/completion observations.
 
 ## Procedure
@@ -23,7 +23,7 @@ remaining work, transferred bytes or completion. Stored DICR master state and
 the request derived from flags remain separate. No RAM is dereferenced or aliases
 folded. This action writes nothing; use [MMIO probes](bus.md) for effects.
 
-Decode follows [devices.lua](../../../src/lua/missions/devices.lua):
+Decode follows [devices.lua](../../../../src/lua/missions/devices.lua):
 
 | Field | Serialized interpretation |
 | --- | --- |

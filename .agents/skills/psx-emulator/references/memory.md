@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [memory.lua](../../../src/lua/missions/memory.lua) for physical bytes without triggering MMIO.
+Use [memory.lua](../../../../src/lua/missions/memory.lua) for physical bytes without triggering MMIO.
 Follow [Runtime](runtime.md#invocation).
 
 ## Procedure

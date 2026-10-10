@@ -223,6 +223,12 @@ bool sizeVRAMRectangle(VRAMRectangle& rectangle) noexcept {
     return rectangle.outputSize <= 9437184;
 }
 
+void writeBGR555RGB(uint32_t pixel, uint8_t* output) noexcept {
+    output[0] = ((pixel & 31) * 255 + 15) / 31;
+    output[1] = (((pixel >> 5) & 31) * 255 + 15) / 31;
+    output[2] = (((pixel >> 10) & 31) * 255 + 15) / 31;
+}
+
 void convertVRAMBytes(const uint8_t* input, const VRAMRectangle& rectangle, uint8_t* output) noexcept {
     uint8_t* rgb = output + rectangle.rawSize;
     uint8_t* masks = rgb + rectangle.rgbSize;
@@ -240,9 +246,7 @@ void convertVRAMBytes(const uint8_t* input, const VRAMRectangle& rectangle, uint
             }
             const uint32_t pixel = uint32_t(input[offset]) | (uint32_t(input[offset + 1]) << 8);
             const size_t position = size_t(row) * rectangle.width + column;
-            rgb[position * 3] = ((pixel & 31) * 255 + 15) / 31;
-            rgb[position * 3 + 1] = (((pixel >> 5) & 31) * 255 + 15) / 31;
-            rgb[position * 3 + 2] = (((pixel >> 10) & 31) * 255 + 15) / 31;
+            writeBGR555RGB(pixel, rgb + position * 3);
             masks[position] = pixel >> 15;
         }
     }
@@ -307,6 +311,55 @@ int convertVRAM(lua_State* state) {
     lua_pushlstring(state, reinterpret_cast<const char*>(output + rectangle.rawSize + rectangle.rgbSize),
                     rectangle.pixels);
     return 3;
+}
+
+int convertScreenshot(lua_State* state) {
+    if (lua_gettop(state) != 4) return luaL_error(state, "convertScreenshot: expected 4 arguments");
+    if (lua_type(state, 1) != LUA_TSTRING)
+        return luaL_error(state, "convertScreenshot: bytes must be a string");
+    size_t inputSize;
+    const auto* input = reinterpret_cast<const uint8_t*>(lua_tolstring(state, 1, &inputSize));
+    const char* names[] = {"width", "height", "bpp"};
+    lua_Number numbers[3] = {};
+    for (int index = 0; index < 3; ++index) {
+        if (lua_type(state, index + 2) != LUA_TNUMBER)
+            return luaL_error(state, "convertScreenshot: %s must be a finite integer", names[index]);
+        numbers[index] = lua_tonumber(state, index + 2);
+        if (!std::isfinite(numbers[index]) || std::floor(numbers[index]) != numbers[index])
+            return luaL_error(state, "convertScreenshot: %s must be a finite integer", names[index]);
+    }
+    if (numbers[0] < 0 || numbers[0] > 1024)
+        return luaL_error(state, "convertScreenshot: width out of range");
+    if (numbers[1] < 0 || numbers[1] > 512)
+        return luaL_error(state, "convertScreenshot: height out of range");
+    if (numbers[2] != 0 && numbers[2] != 1)
+        return luaL_error(state, "convertScreenshot: bpp must be 0 or 1");
+    size_t pixels;
+    size_t expectedSize;
+    size_t rgbSize;
+    if (!vramProduct(static_cast<size_t>(numbers[0]), static_cast<size_t>(numbers[1]), pixels) ||
+        !vramProduct(pixels, numbers[2] == 0 ? 2 : 3, expectedSize) ||
+        !vramProduct(pixels, 3, rgbSize))
+        return luaL_error(state, "convertScreenshot: output size out of range");
+    if (inputSize != expectedSize)
+        return luaL_error(state, "convertScreenshot: unexpected screenshot storage");
+    luaL_checkstack(state, 2, "convertScreenshot: insufficient stack");
+    if (pixels == 0) {
+        lua_pushliteral(state, "");
+        return 1;
+    }
+    if (numbers[2] == 1) {
+        lua_pushvalue(state, 1);
+        return 1;
+    }
+    auto* output = static_cast<uint8_t*>(lua_newuserdata(state, rgbSize));
+    for (size_t index = 0; index < pixels; ++index) {
+        const size_t offset = index * 2;
+        const uint32_t pixel = uint32_t(input[offset]) | (uint32_t(input[offset + 1]) << 8);
+        writeBGR555RGB(pixel, output + index * 3);
+    }
+    lua_pushlstring(state, reinterpret_cast<const char*>(output), rgbSize);
+    return 1;
 }
 
 uint64_t getCPUCycles() { return PCSX::g_emulator->m_cpu->m_regs.cycle; }
@@ -699,6 +752,7 @@ void PCSX::LuaFFI::open_pcsx(Lua L) {
     L.getfieldtable("PCSX", LUA_GLOBALSINDEX);
     L.declareFunc("scanByteRanges", scanByteRanges, -1);
     L.declareFunc("convertVRAM", convertVRAM, -1);
+    L.declareFunc("convertScreenshot", convertScreenshot, -1);
     L.push("execSlots");
     L.newtable();
     L.settable();

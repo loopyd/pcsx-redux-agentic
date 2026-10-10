@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [timers.lua](../../../src/lua/missions/timers.lua) for decoded serialized counters.
+Use [timers.lua](../../../../src/lua/missions/timers.lua) for decoded serialized counters.
 Use [History](history.md) for actual reads, transitions and IRQ ordering.
 
 ## Procedure
@@ -23,7 +23,7 @@ counters and may apply jitter; mode reads clear reached/overflow flags. Inspecti
 does neither and cannot predict a later load. Mirrors never replace native state.
 Invalid sizes, counter counts, divisors and integer encodings reject.
 
-Decode follows [devices.lua](../../../src/lua/missions/devices.lua):
+Decode follows [devices.lua](../../../../src/lua/missions/devices.lua):
 
 | Mode bits | Serialized interpretation |
 | --- | --- |

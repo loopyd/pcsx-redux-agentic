@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [target.lua](../../../src/lua/missions/target.lua) to stop and capture a machine boundary.
+Use [target.lua](../../../../src/lua/missions/target.lua) to stop and capture a machine boundary.
 
 ## Procedure
 

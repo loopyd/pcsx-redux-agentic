@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [replay.lua](../../../src/lua/missions/replay.lua) to compare repeated state continuations
+Use [replay.lua](../../../../src/lua/missions/replay.lua) to compare repeated state continuations
 under bounded controller schedules. Follow [Runtime](runtime.md) and
 [comparison semantics](states.md#structured-comparison). This measures selected
 observations' repeatability, not complete determinism or hardware accuracy.

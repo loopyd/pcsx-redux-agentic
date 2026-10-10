@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [call.lua](../../../src/lua/missions/call.lua) for an explicit host-directed function call and
+Use [call.lua](../../../../src/lua/missions/call.lua) for an explicit host-directed function call and
 optional selected-PC observations. Follow [Runtime](runtime.md#invocation).
 
 ## Procedure

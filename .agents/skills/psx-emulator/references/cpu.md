@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [registers.lua](../../../src/lua/missions/registers.lua) to inspect CPU banks or edit GPR/PC
+Use [registers.lua](../../../../src/lua/missions/registers.lua) to inspect CPU banks or edit GPR/PC
 at a stopped context. Follow [Runtime](runtime.md#invocation).
 
 ## Procedure

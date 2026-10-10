@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Check emulator/Lua startup with [smoke.lua](../../../src/lua/missions/smoke.lua).
+Check emulator/Lua startup with [smoke.lua](../../../../src/lua/missions/smoke.lua).
 
 ## Procedure
 

@@ -6,7 +6,7 @@ Contents: [purpose](#purpose), [capture procedure/API](#procedure),
 ## Purpose
 
 Capture bounded native DMA, CPU-visible IRQ and timer activity with
-[history.lua](../../../src/lua/missions/history.lua). For serialized inspection, use [DMA](dma.md),
+[history.lua](../../../../src/lua/missions/history.lua). For serialized inspection, use [DMA](dma.md),
 [IRQ](irq.md) or [Timers](timers.md). Follow [Runtime](runtime.md) and verify
 [native bindings](native.md).
 

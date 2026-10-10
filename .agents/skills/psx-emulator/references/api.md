@@ -60,6 +60,13 @@ the first 2 MiB of RAM, BIOS, or scratch; unavailable words are omitted, while
 zero words remain present. Tables own their values. `execution.capture()` uses
 this call and marks its nearby list for JSON array encoding.
 
+`PCSX.convertScreenshot(bytes, width, height, bpp)` returns packed RGB24 without
+reading live GPU state. Dimensions are integral `0..1024` by `0..512`; `bpp` is
+native screenshot enum `0` (little-endian BGR555) or `1` (RGB24). Storage must fit
+exactly. Zero-area inputs return an empty string; RGB24 returns the input unchanged.
+BGR555 keeps row order, ignores bit 15 and expands each channel with
+`(component * 255 + 15) / 31`. Raw screenshot capture and metadata remain separate.
+
 `MemoryAsFile::writeBlock` bypasses device handlers. [MMIO probes](bus.md) execute
 effects using scratch RAM and advance guest/device time.
 

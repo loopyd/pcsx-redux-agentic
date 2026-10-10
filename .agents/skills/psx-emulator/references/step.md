@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [step.lua](../../../src/lua/missions/step.lua) for bounded native step-into pause transitions.
+Use [step.lua](../../../../src/lua/missions/step.lua) for bounded native step-into pause transitions.
 Follow [Runtime](runtime.md#invocation) and [native limits](native.md); over/out
 are unsupported.
 

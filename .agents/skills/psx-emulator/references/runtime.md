@@ -64,7 +64,7 @@ separate from guest CPU mode. See [API](api.md) for the calling contract.
 For native media association, the harness supplies `PSX_RUNTIME_DIRECTORY` (the
 resolved output directory) and `PSX_RUNTIME_MEDIA`: ordered tab-separated
 `disc:trackNN.bin`, decimal byte count, lowercase SHA-256 rows, each newline-ended.
-No disc means an explicitly empty value. [mount.lua](../../../src/lua/missions/mount.lua) validates
+No disc means an explicitly empty value. [mount.lua](../../../../src/lua/missions/mount.lua) validates
 these literal identities and derives exact staged paths; it never executes data
 or matches basenames. Final passed-receipt/input checks remain authoritative.
 
@@ -78,7 +78,7 @@ cutoff, never renewed. Failure, timeout and overflow trigger cleanup.
 <a id="evidence-contract"></a>
 
 Review Lua's unsandboxed host access. Write captures under the fresh working
-directory. [support.lua](../../../src/lua/missions/support.lua) retains callbacks, guards errors/
+directory. [support.lua](../../../../src/lua/missions/support.lua) retains callbacks, guards errors/
 arguments and writes `completion.json` last before quitting:
 
 ```json

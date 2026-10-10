@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use [gpu.lua](../../../src/lua/missions/gpu.lua) to decode GP0/GP1 bytes, traverse immutable RAM
+Use [gpu.lua](../../../../src/lua/missions/gpu.lua) to decode GP0/GP1 bytes, traverse immutable RAM
 ordering tables, or capture native ingress with surrounding VRAM/display state.
 Follow [Runtime](runtime.md); use [VRAM](vram.md) for individual images.
 
