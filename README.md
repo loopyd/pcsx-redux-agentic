@@ -43,45 +43,33 @@ Those scripts are not supported host build routes in this fork.
 
 Linux Nix packaging remains in `flake.nix` and `pcsx-redux.nix`. Local AppImage
 packaging uses `make appimage` and requires the corresponding Linux packaging tools.
-These are separate from the managed emulator build below.
+These are separate from the native Make build.
 
-## Run agentic missions
+## Embedded missions
 
-In a BOF3 checkout, the `pcsx-redux` component builds this submodule with the
-approved SDL3 prefix and records the binary, source revisions, embedded resources,
-and native state schema:
-
-```sh
-bin/harness setup --component pcsx-redux
-bin/harness runtime status
-bin/harness runtime missions
-bin/harness runtime run --bios inputs/external/bios/scph5501.bin --mission smoke --output out/runtime/smoke --timeout 30
-```
-
-Create the output parent first and use a fresh output directory. Supply your own
-licensed BIOS, executables, and disc images. Keep proprietary inputs and captures
-local. The binary embeds 19 entry missions and 35 shared modules; no loose canonical
-Lua files are required at runtime. `--script` remains available for trusted external
-Lua. Lua runs as host code and is not a sandbox.
-
-The [psx-emulator skill](.agents/skills/psx-emulator/SKILL.md) owns mission selection,
-arguments, runtime bounds, capture interpretation, and native API procedures.
-Install or check its links from an integrating project with:
+The binary embeds 19 entry missions and 35 shared modules. Query their names,
+roles, compiled Lua, and native state schema without starting emulation:
 
 ```sh
-third_party/pcsx-redux-agentic/scripts/manage-psx-emulator-skill.sh install .
-third_party/pcsx-redux-agentic/scripts/manage-psx-emulator-skill.sh check .
+./pcsx-redux -mission-catalog
 ```
 
-The manager links the fork-owned skill at the project's `.pi` location and
-maintains existing `.agents` and `.codex` aliases. It does not install dependencies
-or modify home hooks.
+Select a builtin with `-mission NAME`, or trusted external Lua with `-dofile FILE`.
+Both routes preload the embedded shared modules; no loose canonical Lua files
+are required at runtime. Lua runs as host code without a sandbox.
+
+Host integrations supply per-run settings, staged inputs and arguments, process
+bounds, cleanup, and receipt validation. Supply your own licensed BIOS,
+executables, and disc images, and keep proprietary inputs and captures local.
+The [psx-emulator skill](.agents/skills/psx-emulator/SKILL.md) documents mission
+selection, captures, and native APIs. Harness build and invocation instructions
+belong in the integrating repository.
 
 ## Native APIs
 
 Use native bulk operations for state capture, memory-card readback, byte-range
-comparison, and VRAM conversion. Keep Lua responsible for mission composition and
-reports. Checked v6 save states include both complete memory cards and CPU, CD,
+comparison, VRAM, and screenshot conversion. Keep Lua responsible for mission
+composition and reports. Checked v6 save states include both complete memory cards and CPU, CD,
 SPU, GPU, MDEC, scheduling, and memory state. Load validation precedes mutation;
 a later host-file commit failure is reported and paused, with no filesystem
 rollback promise.
@@ -89,6 +77,19 @@ rollback promise.
 The library still performs substantial bulk work in Lua. See the
 [native execution reference](.agents/skills/psx-emulator/references/native.md) for
 measurement candidates; the mission catalogue is not fully performance-qualified.
+
+`PCSX.convertScreenshot(bytes, width, height, bpp)` converts packed BGR555 pixels
+to RGB24 in one bounded call, sharing the native VRAM colour kernel. RGB24 passes
+through unchanged. The frames mission keeps raw pixels and metadata and uses this
+call for PPM export. Dimensions are limited to 1024×512 with exact input storage.
+
+Seven alternating paired samples on one Linux x86-64 Release build, with host Lua
+JIT disabled, measured PPM conversion, header construction, and file write/close.
+Median times fell from 12.26 to 0.22 ms at 320×240 and from 93.55 to 1.70 ms at
+1024×512, about 55× faster. Synthetic inputs covered all 65,536 BGR555 words;
+output matched the old Lua loop. A live 640×478 BIOS display also matched. These
+timings exclude guest execution and screenshot acquisition and do not establish
+a whole-mission speedup or predict other hosts.
 
 `PCSX.captureCPUChecked()` returns a copied CPU observation in one call. It retains
 full checked-state admission and native validation, while avoiding Lua decoding of

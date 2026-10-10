@@ -27,6 +27,6 @@ the fresh process exits afterward.
 `screen.bin` holds pixels; `screen.json` records size/format/availability.
 A nonempty display also yields P6 RGB `screen.ppm`. Pixels are little-endian
 BGR555 (16-bit) or RGB24, retaining native row order. PPM export uses the bounded
-native `PCSX.convertScreenshot` call; Lua keeps the header and file output. Uninitialized display means
-unavailable, zero bytes and no PPM. This is the displayed buffer, not all VRAM
-or GPU command history.
+native `PCSX.convertScreenshot` call; Lua keeps the header and file output.
+Uninitialized display means unavailable, zero bytes and no PPM. This is the
+displayed buffer, not all VRAM or GPU command history.
