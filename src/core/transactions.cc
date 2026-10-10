@@ -170,13 +170,13 @@ void configure(bool value, uint64_t next, bool audio, uint64_t audioEpoch) {
                       uint32_t(environment.initialized), uint32_t(environment.stream)},
                       0, payload.data(), 156+backend+device, 0);
         g_emulator->m_cdrom->historyReset();
+        boundary(0);
         if (preparedFlags & 2) {
             std::array<uint8_t, 48> status{};
             little(status.data(), next, 8); little(status.data()+24, 3, 4); little(status.data()+28, 1, 4);
             little(status.data()+36, preparedWorkerLimit, 4);
             History::emit(Kind::CdTransition, 16, {}, 0, status.data(), status.size());
         }
-        boundary(0);
     } else {
         disc.reset();
     }
