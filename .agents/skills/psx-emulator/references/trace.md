@@ -1,7 +1,5 @@
 # Execution observations and coverage
 
-## Purpose
-
 Use [stepping](step.md) for pause contexts, [watch](watch.md) for selected
 Exec/Read/Write ranges, or [call](call.md) for host-directed invocation and a
 selected-PC trace. These answer different questions; absence never proves unused code.

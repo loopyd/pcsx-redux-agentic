@@ -1,13 +1,11 @@
 # DMA state
 
-## Purpose
-
-Use [dma.lua](../../../../src/lua/missions/dma.lua) for serialized DMA configuration; use
+Run `--mission dma` ([source](../../../../src/lua/missions/dma.lua)) for DMA configuration; use
 [History](history.md) for actual transfer/completion observations.
 
 ## Procedure
 
-Follow [Runtime](runtime.md#invocation); Canonical `support`, `snapshot` and `devices` are preloaded. State input without target/EXE is inspected offline; other contexts
+State input without target/EXE is inspected offline; other contexts
 pause at the common boundary. Optional `channel=0..6` selects one, otherwise all.
 
 Inspect `dma.json` (`psx.runtime-dma/v1`): MADR/BCR/CHCR, DPCR/DICR,
@@ -37,7 +35,7 @@ Decode follows [devices.lua](../../../../src/lua/missions/devices.lua):
 
 `requested_by_flags` is force IRQ, or master enable with any enabled channel flag.
 Keep it separate from stored master flag and observed IRQ delivery. For native
-transfer semantics inspect pinned `third_party/pcsx-redux-agentic/src/core/psxhw.cc`,
+transfer semantics inspect pinned `src/core/psxhw.cc`,
 `psxmem.h` and `psxdma.cc`; decoded configuration alone is insufficient.
 
 Provenance only: [PSX DMA registers](https://psx-spx.consoledev.net/dmachannels/).

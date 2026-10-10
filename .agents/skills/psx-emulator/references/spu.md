@@ -1,10 +1,8 @@
 # SPU voices and DSP state
 
-## Purpose
-
-Use [spu.lua](../../../../src/lua/missions/spu.lua) to inspect voices/DSP, export RAM, write ports or
-sample Vsync state. Follow [Runtime](runtime.md#invocation) with `support`, `snapshot`;
-`action=capture` uses [Audio](audio.md) and its binding requirements.
+Run `--mission spu` ([source](../../../../src/lua/missions/spu.lua)) for voice/DSP
+inspection, RAM export, port writes or Vsync samples. `action=capture` uses
+[Audio](audio.md) and its binding requirements.
 
 ## Procedure
 
@@ -15,10 +13,10 @@ selects one, default 0 all. Labels are one-based, unlike hardware indices.
 | --- | --- |
 | `inspect` (default) | Control/status/IRQ/noise, port mirror, sample/loop positions, volumes, ADPCM history and ADSR internals |
 | `export` | `offset=0..524288`, `length` (remaining); selected 512 KiB RAM bytes in `spu.bin` |
-| `write` | Aligned `address=0x1f801c00..0x1f801dfe`, `value=0..65535`, `scratch`; preloaded `bus` |
+| `write` | Aligned `address=0x1f801c00..0x1f801dfe`, `value=0..65535`, `scratch` |
 | `trace` | `frames=1..120` (1); initial state plus one voice/DSP observation per Vsync |
 
-Writes follow [BUS](bus.md), retaining halfword-store effects, before/after state
+Writes follow [Bus](bus.md), retaining halfword-store effects, before/after state
 and cycles. Writes/traces accept `savestate=1`; read-only actions reject it.
 Check `spu.json`, bytes and receipt.
 

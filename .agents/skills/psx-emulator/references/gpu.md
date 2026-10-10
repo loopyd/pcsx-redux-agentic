@@ -1,17 +1,14 @@
 # GPU packets and ordering tables
 
-## Purpose
-
-Use [gpu.lua](../../../../src/lua/missions/gpu.lua) to decode GP0/GP1 bytes, traverse immutable RAM
-ordering tables, or capture native ingress with surrounding VRAM/display state.
-Follow [Runtime](runtime.md); use [VRAM](vram.md) for individual images.
+Run `--mission gpu` ([source](../../../../src/lua/missions/gpu.lua)) to decode
+GP0/GP1 bytes, traverse immutable RAM ordering tables or capture native ingress
+with surrounding VRAM/display state. Individual images: [VRAM](vram.md).
 
 ## Procedure
 
-Canonical `support` and `packets` are preloaded. The `gp0`, `gp1` and `chain`
-wrappers each use one bounded native call; ingress correlation remains in Lua.
-Set `identity=LABEL` (1–160 bytes).
-The receipt identifies actual inputs/tools.
+`gp0`, `gp1`, `chain` wrappers each use one bounded native call; ingress
+correlation remains Lua. Required `identity=LABEL`: 1–160 bytes; receipt identifies
+inputs/tools.
 
 | Action | Inputs and arguments |
 | --- | --- |
@@ -20,8 +17,8 @@ The receipt identifies actual inputs/tools.
 | `capture` | State with matching origin receipt, or EXE/target; GPU-capable native [History](history.md) required |
 
 `words=1..1048576` (65536) bounds stream words; `packets=1..65536` (4096) bounds
-packets and chain nodes. Exceeded bounds fail, never truncate success. Use finite
-timeout/fresh output. Offline decode/chain need no execution context or guest writes.
+packets and chain nodes. Exceeded bounds fail, never truncate success. Offline
+decode/chain need no execution context or guest writes.
 
 Chain starts accept physical RAM and cached/uncached aliases/mirrors within 8 MiB.
 Nodes retain original/physical addresses, header, next pointer, payload length and
@@ -35,9 +32,8 @@ retains limits, raw words/byte offsets, decoded fields and chain nodes. Decode
 errors retain raw bytes/failed receipt without completion. Traversal failures
 precede stream publication: inspect original RAM and diagnostics.
 
-Capture uses preloaded `video`, `ingress`, `events`, `snapshot`, `display`
-and `difference`. It probes GPU context support on an empty recorder and fails
-if unavailable. Complete host edits before recording. Bounds/defaults:
+Capture probes GPU context on an empty recorder; missing support fails. Complete
+host edits before recording. Bounds/defaults:
 `frames=1..36000` (1), `seconds=1..300` (20), `events=1..65536` (16384),
 `bytes=0..8388608` (1048576), comparison `limit=1..65536` (1024), plus words/packets
 above. Optional aligned `stop=ADDRESS` must arrive before frame exhaustion.

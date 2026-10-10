@@ -1,19 +1,20 @@
 ---
 name: psx-emulator
-description: Operate, inspect and debug PS1 programs and devices through bounded Linux PCSX-Redux Agentic native missions with reproducible captures.
+description: Run bounded Linux PCSX-Redux Agentic missions for PS1 debugging, state queries, device capture, replay, CD-ROM and memory-card operations. Use for runtime evidence and native Lua API work.
 ---
 
 # PSX emulator
 
-The skill ships with the Linux PCSX-Redux Agentic fork. Use embedded missions through `bin/harness runtime run --mission NAME`. Harness owns
-bounds, cleanup and receipts; requesting project owns semantic acceptance.
+Ships with Linux PCSX-Redux Agentic. Run embedded missions through
+`bin/harness runtime run --mission NAME`. Harness owns bounds, cleanup and
+receipts; requesting project owns semantic acceptance.
 Every mission reads [runtime contract](references/runtime.md), then selected
 reference below. Load only needed branches; [catalog](references/catalog.md)
-retains layer navigation.
+covers discovery and context selection.
 
 ## Select an action
 
-| Mission | Read before work |
+| Task | Read before work |
 | --- | --- |
 | Startup verification | [Startup](references/startup.md) |
 | Stop, capture or restore | [Target](references/target.md) |
@@ -41,19 +42,19 @@ retains layer navigation.
 | Extend Lua action | [API contract](references/api.md) |
 | Native customization | [Native authorization and validation](references/native.md) |
 
-Check prerequisites and preserve dirty work. Select an existing action before
-writing another runner or state parser. Define inputs, observations and a stop
-condition; stage files explicitly and use fresh bounded output. Both launch routes
-preload canonical helpers. External trusted scripts use `--script` and declare only
-noncanonical `--module` inputs. Lua is trusted host code, not a sandbox. Keep proprietary inputs and captures local.
+## Execute
 
-Verify receipts before interpretation. Distinguish native guest execution, host
-edits and serialized state; success alone proves neither behavior nor fidelity.
-Route static analysis to `psx-rizin`, and source promotion to the requesting project.
-The requesting project governs delegated scope; the harness never launches models.
-Update the owning procedure with capability changes and validate affected missions.
-Keep references to purpose, procedure and application; record progress elsewhere.
+1. Check prerequisites; preserve dirty work and failed evidence. Prefer existing
+   missions and state queries over new runners/parsers.
+2. Define inputs, observations, stop condition and budget. Follow Runtime for
+   staging, fresh output, preloaded helpers and trusted external Lua.
+3. Verify receipts, then interpret captures. Distinguish guest execution, host
+   edits and serialized state; success proves neither behavior nor fidelity.
+4. Return input/tool/capture identities, commands, outcome, stop condition,
+   coverage, uncertainties, method and wall time. Parent archives measurements.
 
-Return tool calls, wall time and method with mission result; parent archives
-measurements and supplies relevant prior evidence. Converge reusable findings into
-skill references. User documentation and observation ledgers are not runtime inputs.
+Keep proprietary inputs/captures local. Static analysis -> `psx-rizin`; source
+promotion and delegated scope -> requesting project. Harness never launches models.
+Capability changes require updated procedures and affected-mission validation.
+References hold reusable procedures/contracts; progress and experiment results
+belong in project evidence. User docs and observation ledgers are not runtime inputs.

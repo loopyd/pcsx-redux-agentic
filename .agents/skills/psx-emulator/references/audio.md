@@ -1,16 +1,12 @@
 # Mixed PCM and SPU access capture
 
-## Purpose
-
-Capture bounded native mixed PCM and SPU accesses with [spu.lua](../../../../src/lua/missions/spu.lua),
-`action=capture`. Follow [Runtime](runtime.md); verify `PCSX.Audio` through
-[Native](native.md). Missing bindings fail; captures do not establish hardware fidelity.
+Run `--mission spu --argument action=capture` ([source](../../../../src/lua/missions/spu.lua))
+for bounded mixed PCM/SPU accesses. Missing `PCSX.Audio` fails; no hardware-fidelity claim.
 
 ## Procedure
 
-Declare `support`, `snapshot`, `sound`, `pcm` from `src/lua/missions/`. Supply state
-and matching origin receipt, or executable/target. Set `action=capture` and
-`identity=LABEL` (1–160 bytes); the receipt identifies input/tool hashes.
+Supply state and matching origin receipt, or executable/target. Required
+`identity=LABEL`: 1–160 bytes; receipt identifies input/tool hashes.
 
 | Argument | Meaning / bounds / default |
 | --- | --- |
@@ -75,9 +71,9 @@ CD environment slots remain at the same offsets: `volume`, `interpolation`,
 above 1024 use the native unbounded cap of 1024. It is not a CPU cycle scaler.
 `key_on_delay` is the configured signed startup sample count; the native voice
 producer treats negative values as zero. Retain configured values without
-normalizing them. Legacy `reverb`, `irq_wait`, `decode_irq` and `scaler` setting
-names have no equivalent in this fork and are omitted. Revision markers reject
-old Audio and CD environment receipts. The CPU clock is exposed separately as
+normalizing them. `reverb`, `irq_wait`, `decode_irq` and `scaler` have no equivalent
+in this fork. Revision markers reject incompatible Audio/CD environment receipts.
+CPU clock is exposed separately as
 `PCSX.CONSTS.CPU.CLOCKSPEED` (33868800); all 11 scheduler scale bits are captured
 by the CD recorder. These settings do not prove DSP or hardware fidelity.
 

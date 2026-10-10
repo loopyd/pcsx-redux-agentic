@@ -1,13 +1,15 @@
 # Memory cards
 
-Read [runtime](runtime.md), then use `--mission memcard`. Slots are `1` and `2`.
+Run `--mission memcard` ([source](../../../../src/lua/missions/memcard.lua)).
+Slots: `1`, `2`; `slot` defaults to `1`.
 The default action is `directory`; `icons=1` includes decoded icon frames.
-`read` exports a bounded range to `card.bin`, and `file` exports the save starting
+`read` exports zero-based `offset` (0), `length` (remainder) within the 131072-byte
+image to `card.bin`; `file` exports the save starting
 at `block=1..15` to `save.bin`. Reports use `psx.runtime-memcard/v1`.
 
 `copy` and `move` require `block` and a different `destination` slot. `erase`
-requires `block`. `import` reads an explicit `--input card=PATH`; `format` accepts
-`auto`, `raw`, `vgs` or `dexdrive`. `export` writes a raw `card.mcd`. `flush` writes
+requires `block`. `import` reads explicit `--input card=PATH` with
+`format=auto|raw|vgs|dexdrive` (auto). `export` writes a raw `card.mcd`. `flush` writes
 the slot's configured backing file. Edits and imports mark the live image dirty;
 they do not flush it. Guest card traffic can later trigger the existing automatic
 flush. `savestate=1` captures the resulting full machine state.
@@ -47,6 +49,6 @@ results. Existing destinations refuse unless overwrite is explicit. Export failu
 can leave a partial host file; it does not change live card bytes.
 
 The native owners are `src/core/memorycard.{h,cc}`, `sio.{h,cc}` and
-`memorycardlua.{h,cc}`. Native save-state v6 already includes both images and card
+`memorycardlua.{h,cc}`. Native save-state v6 includes both images and card
 protocol progress. Host edits and extraction establish bytes and filesystem
 structure, not guest save success, PocketStation execution or hardware fidelity.

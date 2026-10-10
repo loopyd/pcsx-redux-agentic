@@ -1,20 +1,13 @@
 # Native device histories
 
-Contents: [purpose](#purpose), [capture procedure/API](#procedure),
-[interpretation and validation](#application).
-
-## Purpose
-
-Capture bounded native DMA, CPU-visible IRQ and timer activity with
-[history.lua](../../../../src/lua/missions/history.lua). For serialized inspection, use [DMA](dma.md),
-[IRQ](irq.md) or [Timers](timers.md). Follow [Runtime](runtime.md) and verify
-[native bindings](native.md).
+Run `--mission history` ([source](../../../../src/lua/missions/history.lua)) for
+bounded DMA, CPU-visible IRQ and timer activity. Serialized inspection:
+[DMA](dma.md), [IRQ](irq.md), [Timers](timers.md).
 
 ## Procedure
 
-Declare `support`, `snapshot`, `events`; supply a state with matching origin
-receipt, or executable/target. Required `identity=LABEL` is 1–160 bytes; the
-receipt identifies actual inputs/tools. Use the [common invocation](runtime.md#invocation).
+Supply state with matching origin receipt, or executable/target. Required
+`identity=LABEL`: 1–160 bytes; receipt identifies actual inputs/tools.
 
 | Argument | Bounds / default |
 | --- | --- |
@@ -101,7 +94,7 @@ Cyclic lists, bounds failures and lost associations prevent completeness. Compar
 raw records with independent fixture bytes/native state, not merely exporter labels.
 Capture establishes emulator observations, not hardware fidelity, PCM or streaming.
 
-Under `third_party/pcsx-redux-agentic/src/core/`, `history.*` and `journal.h` own
+Under `src/core/`, `history.*` and `journal.h` own
 storage/API; `psxhw.*` register dispatch; `psxmem.h` DMA/IRQ
 transitions; `r3000a.*` scheduling and CPU acceptance; `psxcounters.*` timers;
 `mdec.cc`, `gpu.cc`, `cdrom.cc`, `psxdma.cc` and `../spu/dma.cc` payloads.

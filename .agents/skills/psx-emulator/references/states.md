@@ -1,11 +1,8 @@
 # Saved-state inspection
 
-## Purpose
-
-Use [state.lua](../../../../src/lua/missions/state.lua) with `support`, `snapshot` and
-[Runtime](runtime.md#invocation) to query/export/compare state without loading it.
-Decode with the running build's schema and bundled `pb`/`protoc`; never guess
-offsets or substitute an external parser.
+Run `--mission state` ([source](../../../../src/lua/missions/state.lua)) to
+query/export/compare without loading. Use running-build schema and bundled
+`pb`/`protoc`; no guessed offsets or external parser.
 
 ## Procedure
 
@@ -17,7 +14,7 @@ Validate receipt, schema and input hashes before reusing bytes.
 | `schema` | No state | `state.proto` |
 | `query` (default) | `--input state=PATH`; optional `path`, `depth` | `query.json` |
 | `export` | State, bytes-field `path`; optional `offset`, `length` | `region.bin`, `region.json` |
-| `compare` | State and `--input other=PATH`; optional subtree `path`, `depth`, `limit`; bundled `difference` compares bytes | `comparison.json`, `state.proto` |
+| `compare` | State and `--input other=PATH`; optional subtree `path`, `depth`, `limit`; native byte comparison | `comparison.json`, `state.proto` |
 
 Use fork-owned v6 raw checked states from `savestate=1`; GUI gzip rejects, even renamed.
 Equal versions do not establish build compatibility.
@@ -51,13 +48,13 @@ Before comparison, `PCSX.validateSaveStateWire` rejects unknown fields, incompat
 duplicate singular fields, truncation, overflowing varints/
 narrow integers and non-0/1 booleans. Tags plus scalar elements (including packed)
 cap at 100000. Native wire validation is bounded to 64 MiB and 64 nesting levels;
-Native selection retains only the requested field's wire occurrences; bundled
+Selection retains requested field wire occurrences; bundled
 `pb.decode` supplies presence, defaults and exact uint64 values without decoding
 unrelated state buffers. Empty paths still decode the whole state. Query mode
 retains unknown-field skipping and last singular occurrence behavior; malformed
 known fields elsewhere still reject. Defaults apply only inside present parents.
-Version validation uses a separate small envelope. Wire inspection does not load a state or replace
-checked-restore admission.
+Version validation uses a separate envelope. Wire inspection neither loads state
+nor replaces checked-restore admission.
 
 ## Application
 
@@ -66,7 +63,7 @@ build identity, complete hardware serialization nor repeatability.
 
 <a id="restore-and-branch-an-experiment"></a>
 
-Execution actions validate core memory/register/SPU shapes and restore via
+Execution actions validate full native checked state and restore via
 `snapshot`. Boundary: restored PC without target/EXE, explicit target after
 resumption, or EXE header entry by default. Omit EXE for immediate inspection.
 

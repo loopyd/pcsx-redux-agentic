@@ -1,9 +1,7 @@
 # VRAM and textures
 
-## Purpose
-
-Use [vram.lua](../../../../src/lua/missions/vram.lua) for rectangle/palette export or native uploads.
-Follow [Runtime](runtime.md#invocation); Canonical `support` and `snapshot` are preloaded.
+Run `--mission vram` ([source](../../../../src/lua/missions/vram.lua)) for
+rectangle/palette export or native uploads.
 
 ## Procedure
 
@@ -21,7 +19,7 @@ For a 4-bit texture, place these arguments on one command:
 --argument bpp=4 --argument clut_x=0 --argument clut_y=480
 ```
 
-For `action=upload`, follow [BUS](bus.md), use preloaded `bus`, select `scratch`,
+For `action=upload`, follow [Bus](bus.md), select `scratch`,
 `bpp=16` and a bounded rectangle. Stage `--input pixels=PATH` with exactly
 width × height × 2 little-endian BGR555 bytes. Capture the original first if needed.
 The action clears pending GPU FIFO via GP1, sends GP0 CPU-to-VRAM words through

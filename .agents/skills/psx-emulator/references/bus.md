@@ -1,10 +1,8 @@
 # Native device writes
 
-## Purpose
-
-Use [bus.lua](../../../../src/lua/missions/bus.lua) for VRAM uploads, SPU writes and CD commands.
+Use shared [bus.lua](../../../../src/lua/missions/bus.lua) for VRAM uploads, SPU
+writes and CD commands; no standalone mission.
 Debugger memory-file writes bypass handlers; this helper executes MIPS stores.
-Declare `support`, `snapshot` and `bus`.
 
 ## Procedure
 

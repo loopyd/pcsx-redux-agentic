@@ -1,19 +1,14 @@
 # Repeated continuation
 
-## Purpose
-
-Use [replay.lua](../../../../src/lua/missions/replay.lua) to compare repeated state continuations
-under bounded controller schedules. Follow [Runtime](runtime.md) and
-[comparison semantics](states.md#structured-comparison). This measures selected
-observations' repeatability, not complete determinism or hardware accuracy.
+Run `--mission replay` ([source](../../../../src/lua/missions/replay.lua)) for
+bounded scheduled state continuations; use [comparison semantics](states.md#structured-comparison).
+Measures selected observations' repeatability, not full determinism or hardware accuracy.
 
 ## Procedure
 
 Supply successful `--origin`, matching BIOS/disc, `--input state=PATH` and
-`--input schedule=PATH`; omit EXE. Canonical `support`, `snapshot`, `difference` and `timeline` are
-preloaded. Set `runs=2..8` (2), comparison `depth=0..64` (16), per-checkpoint
-`limit=1..65536` (1024), finite timeout and fresh output. Inspect receipt and
-`replay.json`; a successful run can report `equal:false`.
+`--input schedule=PATH`; omit EXE. Set `runs=2..8` (2), comparison `depth=0..64`
+(16), per-checkpoint `limit=1..65536` (1024). Inspect receipt and `replay.json`; a successful run can report `equal:false`.
 
 <a id="schedule-format"></a>
 
@@ -31,10 +26,10 @@ psx.schedule/v1
 | Command | Meaning |
 | --- | --- |
 | `FRAME sample PATH` | Compare subtree; `.` selects the whole state |
-| `FRAME screen` | Compare display metadata/pixels; preloaded `display` |
+| `FRAME screen` | Compare display metadata/pixels |
 | `FRAME buttons SLOT NAMES` | Replace held buttons on slot 1/2; comma-separated native names or `-` to release |
 | `FRAME stop` | Required final command; stop at frame 1–36000 |
-| `FRAME stop CONDITION` | Poll after earlier commands; frame is deadline; preloaded `condition` |
+| `FRAME stop CONDITION` | Poll after earlier commands; frame is deadline |
 
 Frames count GPU Vsyncs after restoration; frame 0 runs paused. Use nondecreasing
 frames 0–36000; same-frame commands retain order. Limits: 512 commands, four

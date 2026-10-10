@@ -64,59 +64,24 @@ belong in the integrating repository.
 
 ## Native APIs
 
-Native bulk APIs handle state capture, memory-card readback, VRAM, decoding, byte
-comparison, upload probe packing, and file export. Lua composes missions and
-correlates observations with their inputs. See the
-[API reference](.agents/skills/psx-emulator/references/api.md) for calls and bounds,
-and [native execution](.agents/skills/psx-emulator/references/native.md) for admission
-and validation rules.
+Lua composes missions; native bulk APIs handle capture, decoding, comparison and
+export. The [API reference](.agents/skills/psx-emulator/references/api.md) owns
+signatures and bounds. The [native guide](.agents/skills/psx-emulator/references/native.md)
+owns build and validation rules.
 
 Checked v6 save states include both complete memory cards and CPU, CD, SPU, GPU,
 MDEC, scheduling, and memory state. The loader validates the input before mutation.
 If a later host-file commit fails, the loader reports the failure and pauses the
 emulator. It does not roll back filesystem changes.
 
-`PCSX.encodeJSON` encodes deterministic reports. `PCSX.jsonArray` marks arrays.
-`support` exposes direct aliases. GPU wrappers adapt their options into one
-`PCSX.decodeGPU` or `PCSX.readGPUChain` call.
-
-Saved-state queries and comparisons use `PCSX.selectSaveStateWire` to validate the
-complete input and decode only the requested envelope with native `pb.decode`.
-Empty paths decode the full state. Checked restore admission remains intact.
-Comparison shares cached schema descriptors and uses native byte scanning.
-
-`History.records` and `History.cdWorkerRecords` copy frozen ranges into zero-based
-arrays that own their data. `Audio.blocks` and `Audio.events` return batches of
-named tables that own their data. `Audio.exportPCM` streams raw PCM and WAV files
-in fixed chunks. Native MMIO and VRAM packers construct complete store probes.
-Lua controls checked admission, guest execution, and scratch and register restoration.
-
-`History.snapshot()` owns one frozen journal with its worker and joined Audio
-records. Native CD correlation reuses that snapshot. `PCSX.CD` supplies checked
-controller observations, bounded response waiting, lid controls and prepared media
-replacement. ISO directory listing returns complete bounded rows in one call.
-
-`PCSX.MemoryCards` supplies owned card snapshots, inventory, save extraction,
-staged copy/move/erase, supported image import, raw export and explicit flush.
-The baked `memcard` mission uses the same native parser as SIO. Failed persistence
-keeps dirty state; live edits and host writes remain separate operations.
-
-`PCSX.convertScreenshot(bytes, width, height, bpp)` converts packed BGR555 pixels
-to RGB24 in one bounded call, sharing the native VRAM colour kernel. RGB24 passes
-through unchanged. The frames mission keeps raw pixels and metadata and uses this
-call for PPM export. Dimensions are limited to 1024×512 with exact input storage.
-
-`PCSX.captureCPUChecked()` returns a copied CPU observation in one call. It retains
-full checked-state admission and native validation without decoding the complete
-state in Lua. It includes GPR and CP0 banks, decimal cycle counts, delay and
-exception context, and safe instruction words from RAM, BIOS, and scratch memory.
-It does not advance the guest or read MMIO. Persisted-state inspection uses
-schema-aware bounded decoding.
-
-`PCSX.nextPause(function)` defers paused mission work until CPU execution and
-event dispatch have unwound. Its native FIFO holds at most 64 callbacks, preserves
-nested work, and rechecks the boundary before each callback. Target, step, GPU,
-history, audio, and CD capture use it while retaining checked-state refusals.
+| Capability | Reference |
+| --- | --- |
+| Schema-aware state queries, export and comparison | [States](.agents/skills/psx-emulator/references/states.md) |
+| GPU packets, ordering tables, VRAM and display | [GPU](.agents/skills/psx-emulator/references/gpu.md), [VRAM](.agents/skills/psx-emulator/references/vram.md), [Frames](.agents/skills/psx-emulator/references/frames.md) |
+| Frozen device journals and streaming PCM/WAV export | [History](.agents/skills/psx-emulator/references/history.md), [Audio](.agents/skills/psx-emulator/references/audio.md) |
+| Checked CD observations, response waits, media controls and ISO listing | [CD-ROM](.agents/skills/psx-emulator/references/cdrom.md) |
+| Owned card snapshots, inventory, extraction, edits, import/export and flush | [Memory cards](.agents/skills/psx-emulator/references/memcard.md) |
+| JSON, probe packing, CPU observations, screenshots and deferred pause work | [API](.agents/skills/psx-emulator/references/api.md) |
 
 Receipts establish the supplied inputs, binary, limits, and captures for a run.
 They do not establish hardware fidelity or deterministic replay. Describe the

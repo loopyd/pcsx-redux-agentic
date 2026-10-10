@@ -1,17 +1,45 @@
 # CD-ROM observation
 
-Use `bin/harness runtime run --mission cdrom` for serialized inspection, command
-submission or bounded native controller capture. Read [runtime](runtime.md)
-first. A capture requires actual mounted media ownership and bounded native
-capacity. Unsupported cached or transformed Filev2 owners refuse admission;
-normal cached gameplay remains unchanged.
+Run `--mission cdrom` ([source](../../../../src/lua/missions/cdrom.lua)) for
+inspection, media reads, controller commands or native capture.
+
+## Procedure
+
+| `action` | Inputs / bounds |
+| --- | --- |
+| `inspect` (default) | State without target/EXE: offline; otherwise checked live controller |
+| `directory` | Mounted `--disc CUE`; ISO `path` (root); at most 4096 entries |
+| `file` | Mounted disc, required `path`; zero-based `offset` (0), `length` (remainder), at most 8 MiB and within file |
+| `sectors` | Mounted disc; `lba=0..449849` (0), `sectors=1..1024` (1), `mode=RAW|M1|M2_RAW|M2_FORM1|M2_FORM2` (RAW) |
+| `command` | `command=0..255`, `params` up to sixteen hex byte pairs, `frames=1..120` (60), bus `scratch`; optional `savestate=1` |
+| `open-lid`, `close-lid`, `schedule-close-lid`, `mount`, `eject` | Checked live boundary; mount needs declared disc input or explicit host path |
+| `capture` | Required `identity=LABEL` (1–160 bytes), mounted media; state input requires matching origin receipt |
+
+Read/inspect actions export `cdrom.json` (`psx.runtime-cdrom/v2`), with
+`file.bin` or `sectors.bin` for byte reads. Sector sizes follow the selected mode;
+short reads fail. Command submission requires ready native queues and executes
+guest MMIO stores. Response wait leaves FIFO unconsumed/unacknowledged.
+`savestate` applies only to commands.
+
+Capture bounds/defaults: `frames=1..36000` (60), `seconds=1..300` (20),
+`events=1..65536` (65536), `bytes=1..8388608` (8388608), correlation
+`mutations=1..65536` (4096), `reads=1..8388608` (8388608).
+Optional aligned `stop` must arrive before frame exhaustion. Leave export time
+before harness timeout. Native capacity floors also apply.
+
+`audio=1` joins PCM with `samples=1..2646000` (441000), `blocks=1..65536`
+(16384), `spuevents=1..65536` (16384). `decoded=1` requires audio and
+`workers=1..65536` (65536); worker arguments otherwise refuse. Audio capacities
+without audio refuse. Capture requires actual media ownership; unsupported
+cached/transformed Filev2 owners refuse admission.
+
+## Capture interpretation
 
 The native envelope is version 1 and CD observation wire version 3. Reports use
 `psx.runtime-cd-capture/v2`, `psx.runtime-cd-transactions/v2` and
 `psx.native-history/v2`, with exact harness binary/source identity. Contexts are
 384 bytes, queues 32 bytes, scheduler projections 48 bytes, worker rows 80 bytes
-and worker status 48 bytes. Native limits own event/payload/worker budgets and
-minimum boundary capacity. Do not reuse old word offsets or old controller names.
+and worker status 48 bytes. Use native layouts and capacity floors.
 
 The context exposes actual register bank, ReadingState/ReadingType, status,
 speed/read span, mask, mode/filter, MSF positions, ATV, LocP/LocL and four queue
@@ -35,18 +63,19 @@ literal declared track identities. Backend zero fill, short/failure outcomes and
 native CDDA/XA feed counts remain distinct observations.
 
 Audio joined capture requires native Audio ABI 2 and the exact revision-2
-14-slot settings environment described in [Audio](audio.md); legacy setting
-meanings reject. The CD envelope, context wire version 3, eleven scheduler scales
-and offsets remain unchanged.
+14-slot settings environment described in [Audio](audio.md); incompatible setting
+meanings reject.
 Decoded capture also requires bounded worker capacity. Worker records carry batch,
 sequence, epoch, last published CPU cycle, native predicates and publication
 lineage. CPU handoff joins exact publication sequence ranges. These observations
 do not establish DSP/hardware fidelity, worker race/deadlock freedom or acceptable
 performance; those require actual native missions and measured controls.
 
-Synthetic rows qualify parser contracts only. Native seed states use the current
-v6 schema and record host edits. Preserve failed captures and run affected
-producer/worker/DMA missions under a verified fork build before claiming behavior.
+Synthetic rows qualify parser contracts only. Native seed states use v6 and record
+host edits. Preserve failed evidence; validate affected producer/worker/DMA behavior
+under a verified build.
+
+## Native calls
 
 `PCSX.History.snapshot()` owns the frozen journal, payload, worker lane and joined
 Audio events. Export and transaction analysis reuse that capture. Its `status`,

@@ -1,20 +1,15 @@
 # Runtime missions
 
-Contents: [purpose](#purpose), [preflight](#procedure), [invocation](#invocation),
-[evidence contract](#evidence-contract), [discovery/extensions](#discovery).
-
-## Purpose
-
 Run bounded Lua [actions](../SKILL.md) through `bin/harness runtime run --mission NAME`.
-The harness owns staging, cleanup and receipts; the requesting project owns
-semantic acceptance. Inspect existing states before rerunning or writing a parser.
+Harness owns staging, cleanup and receipts; requesting project owns semantic
+acceptance. Inspect existing states before rerunning or writing a parser.
 
-## Procedure
+## Preflight
 
 Verify `bin/harness runtime status`; preserve dirty work and failed evidence.
 Follow [Native](native.md) for build customizations and dependency authorization.
 
-<a id="invocation"></a>
+## Invocation
 
 Run `bin/harness runtime missions` to query the verified native catalogue.
 Both launch routes preload helpers from compiled bytes. Builtin selection
@@ -33,8 +28,8 @@ bin/harness runtime run \
 Use fresh output under an existing parent and a 512 KiB BIOS; its hash does not
 infer a model. Acquisition/doctor policies are separate. `--executable` loads a
 PS-X EXE through shell handoff; `--disc` mounts [CUE/BINARY media](cdrom.md).
-Checked save/load accepts only the fork-owned v6 schema and identity. Historical
-wire4 and old card5 inputs refuse; no cross-schema converter is supplied.
+Checked save/load requires fork-owned v6 schema and identity; wire4/card5 inputs
+refuse. No cross-schema converter.
 
 For provenance-bound continuation, including [Replay](replay.md), supply
 `--origin receipt.json` and `--input state=PATH`, without an EXE. Verification
@@ -56,10 +51,9 @@ Environment: `PSX_RUNTIME_ARG_NAME`, `PSX_RUNTIME_ARGUMENT_NAMES` (validation),
 Arguments enter receipts: never include credentials. Numbers accept decimal/`0x`;
 supported `savestate=0|1` defaults to 0.
 
-Maintained actions load `support` before native calls. It disables host Lua JIT
-compilation, clears existing traces and rejects re-enabled mission entry; keep it
-disabled throughout the mission. This controls native callback reentry and is
-separate from guest CPU mode. See [API](api.md) for the calling contract.
+Custom Lua must require `support` before native calls. It disables host Lua JIT,
+clears traces and rejects re-enabled mission entry. Keep it disabled throughout
+the mission for native callback reentry; guest CPU mode is separate.
 
 For native media association, the harness supplies `PSX_RUNTIME_DIRECTORY` (the
 resolved output directory) and `PSX_RUNTIME_MEDIA`: ordered tab-separated
@@ -73,9 +67,7 @@ GDB/web, PCdrv, fastboot and updates are disabled. Timeout: 60 seconds by defaul
 maximum 3600; default log limit: 2 MiB. `--work-deadline` is an absolute monotonic
 cutoff, never renewed. Failure, timeout and overflow trigger cleanup.
 
-## Application
-
-<a id="evidence-contract"></a>
+## Evidence contract
 
 Review Lua's unsandboxed host access. Write captures under the fresh working
 directory. [support.lua](../../../../src/lua/missions/support.lua) retains callbacks, guards errors/
@@ -98,7 +90,7 @@ qualify executable/overlay and `psx-rizin` RAM alias.
 Transport success establishes neither hardware accuracy nor semantic acceptance.
 Keep proprietary inputs/captures outside skill assets.
 
-<a id="discovery"></a>
+## Discovery
 
 The fork owns `.agents/skills/psx-emulator` and `src/lua/missions`. In a host checkout,
 `scripts/manage-psx-emulator-skill.sh install HOST_REPO` links its expected
@@ -108,11 +100,13 @@ unowned directories and unrelated symlinks. `check` and `remove` are explicit
 idempotent operations on those links, with no global installation.
 Follow [API](api.md) for extensions, declaring inputs, observations, stop and exclusions.
 
-Both v2 launch routes bind every physical resource file and its separate compiled
+Both v2 launch routes bind physical resources and separate compiled
 chunk hashes, sorted bundle digest, native schema, source forest, binary and SDL.
 The harness queries immutable catalogue data without guest execution and hashes
 the binary before/after that query. Historical external v1 receipts retain their
 own shape; they cannot become builtin evidence by changing an entry name.
+
+## Checked boundary
 
 Checked capture/load requires a paused, settled native boundary: Running,
 in-Execute, pending load, active recorders/events and Busy ownership refuse before

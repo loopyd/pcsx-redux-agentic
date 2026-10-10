@@ -1,27 +1,20 @@
 # Extending emulator actions
 
-## Purpose
-
-Extend Linux PCSX-Redux Agentic missions using the pinned source and bundled LuaJIT, `pb` and `protoc`.
-Prefer that source over documentation for another revision; do not add a decoder
-or generated Rust runner.
+Extend Linux missions with pinned source and bundled LuaJIT, `pb` and `protoc`.
+Prefer existing bindings; do not add an external decoder or generated Rust runner.
 
 ## Procedure
 
 1. Check [action routing](../SKILL.md#select-an-action) for an existing runner.
 2. Locate the owner below; establish timing, side effects, threads and exclusions.
-3. Load `support` before native calls: it disables host Lua JIT compilation and
-   flushes existing traces for synchronous callback reentry. Never re-enable it
-   during maintained missions. Use its bounds, callback retention and protected
-   completion/failure. Canonical modules are preloaded for both routes; declare
-   only noncanonical external modules and data inputs through the harness.
+3. Require `support` before native calls; retain callbacks and protect completion/
+   failure. Follow [Runtime](runtime.md#invocation) for host JIT, preloading and inputs.
 4. Validate a real mission and bounded failure; update its procedure. Missing
    bindings require [native customization](native.md), specific source
    authorization and independent semantic review.
 
-Bundled rules below govern routine work; URLs retain provenance only. Consult
-external documentation only for explicitly scoped research, then verify against
-pinned source and capture reusable findings here. Source-owner paths follow table.
+Bundled rules govern routine work; URLs retain provenance. Consult external docs
+for scoped research, verify against pinned source, retain reusable findings here.
 
 | Provenance | Bundled calling rule |
 | --- | --- |
@@ -34,7 +27,7 @@ pinned source and capture reusable findings here. Source-owner paths follow tabl
 | [CLI flags](https://pcsx-redux.consoledev.net/cli_flags/) | Portable settings and explicit interpreter/debugger options |
 | [LuaJIT controls](https://luajit.org/ext_jit.html) / [FFI callbacks](https://luajit.org/ext_ffi_semantics.html#callback) | `jit.off()` stops host compilation; `jit.flush()` clears traces. Native event dispatch may synchronously reenter Lua; do not rely on automatic call blacklisting |
 
-Paths below are relative to `third_party/pcsx-redux-agentic/`:
+Source paths relative to fork root:
 
 | Owner | Inspect for |
 | --- | --- |
@@ -52,7 +45,7 @@ Paths below are relative to `third_party/pcsx-redux-agentic/`:
 | `src/core/memorycardlua.cc`, `memorycard.cc`, `sio.cc` | Owned card images, shared directory/chain parsing, staged edits and persistence |
 | `third_party/lua-protobuf/README.md` | Reflection, integer options and decoding behavior |
 
-## Application
+## JSON
 
 `PCSX.encodeJSON(value)` encodes nil, booleans, finite numbers, byte strings,
 arrays and string-keyed objects. Numbers use `%.17g`; object keys sort by bytes.
@@ -62,11 +55,15 @@ nesting beyond 64 levels, more than one million values/keys, and output over 64 
 `PCSX.jsonArray(table?)` tags a contiguous numeric-key table; nil creates an empty
 array. `support.json` and `support.array` alias these bindings.
 
+## GPU decoding
+
 `PCSX.decodeGPU(bytes, port, wordLimit, packetLimit)` parses an immutable GP0 or
 GP1 stream into the existing packet tables. `PCSX.readGPUChain(ram, address,
 wordLimit, nodeLimit)` gathers an immutable physical 2 MiB ordering table. The
 `packets` wrappers supply defaults and adapt options. Both calls retain the
 [GPU](gpu.md) bounds, operands and refusals; neither runs renderer commands.
+
+## State wire selection
 
 `PCSX.validateSaveStateWire(bytes)` checks up to 64 MiB against the native state
 schema without decoding or loading a state. It rejects unknown fields, duplicate
@@ -86,6 +83,8 @@ the last singular occurrence while rejecting malformed known fields anywhere.
 The same size, value-count and nesting bounds apply. Full checked restore admission
 remains separate.
 
+## Guest store probes
+
 `PCSX.packMMIOProbe(scratch, width, operations)` returns an immutable little-endian
 MIPS store program from a contiguous array of `{address, value}` U32 pairs.
 Widths are 8, 16 or 32 bits; 1–262000 stores consume `52 + 8*N` bytes. Scratch is
@@ -95,6 +94,8 @@ program directly from exact BGR555 rectangle bytes, including GPU FIFO reset and
 zero padding for an odd final pixel. Both only pack bytes. The `bus` executor
 retains checked admission, guest stores, and scratch/register restoration.
 
+## CPU observation
+
 `PCSX.captureCPUChecked()` returns copied PC, GPR[34], CP0[32], decimal cycles,
 last executed word, nonempty delay slots, ISR flags, exception context, and nearby memory
 words. Calls retain full checked-state refusals and return the same `savestate:`
@@ -102,6 +103,8 @@ errors as checked saves. Reads are aligned U32 words in segments 0, 4, and 5 fro
 the first 2 MiB of RAM, BIOS, or scratch; unavailable words are omitted, while
 zero words remain present. Tables own their values. `execution.capture()` uses
 this call and marks its nearby list for JSON array encoding.
+
+## Screenshot conversion
 
 `PCSX.convertScreenshot(bytes, width, height, bpp)` returns packed RGB24 without
 reading live GPU state. Dimensions are integral `0..1024` by `0..512`; `bpp` is
@@ -112,6 +115,8 @@ BGR555 keeps row order, ignores bit 15 and expands each channel with
 
 `MemoryAsFile::writeBlock` bypasses device handlers. [MMIO probes](bus.md) execute
 effects using scratch RAM and advance guest/device time.
+
+## Deferred pause work
 
 `PCSX.nextPause(function)` queues up to 64 callbacks for a paused outer-loop
 boundary, after CPU execution and event dispatch unwind and pending loads finish.
@@ -125,6 +130,11 @@ Use `nextPause` for checked capture after a breakpoint or device callback. Follo
 [Step](step.md), [Trace](trace.md), and [Replay](replay.md) boundaries. GPU,
 History, Audio and CD finalizers also queue native pause callbacks; wall-deadline
 timers remain separate.
+
+## Device APIs and limits
+
+[History](history.md), [Audio](audio.md), [CD-ROM](cdrom.md) and
+[Memory cards](memcard.md) own their native signatures, capacities and failure rules.
 
 Save/load can alter scheduling; serialized state does not establish determinism
 or complete hardware coverage. `PCSX.SPU.playAudio` provides host preview, not

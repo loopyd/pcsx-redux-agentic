@@ -1,13 +1,11 @@
 # Timer state
 
-## Purpose
-
-Use [timers.lua](../../../../src/lua/missions/timers.lua) for decoded serialized counters.
+Run `--mission timers` ([source](../../../../src/lua/missions/timers.lua)) for decoded serialized counters.
 Use [History](history.md) for actual reads, transitions and IRQ ordering.
 
 ## Procedure
 
-Follow [Runtime](runtime.md#invocation); Canonical `support`, `snapshot` and `devices` are preloaded. Optional `timer=0..2` selects a hardware timer. State input without
+Optional `timer=0..2` selects a hardware timer. State input without
 target/EXE is offline. Inspect `timers.json` (`psx.runtime-timers/v1`).
 
 Reports retain native mode/target/rate, IRQ/gate state, exact cycles and separate
@@ -36,7 +34,7 @@ Decode follows [devices.lua](../../../../src/lua/missions/devices.lua):
 
 Do not infer synchronization transitions from the mode number alone. Validate
 native gates, updates and scheduling against pinned
-`third_party/pcsx-redux-agentic/src/core/psxcounters.h`, `psxcounters.cc` and `sstate.h`,
+`src/core/psxcounters.h`, `psxcounters.cc` and `sstate.h`,
 with [History](history.md) for observed order. Native timing is reference-emulator
 evidence, not hardware fidelity.
 

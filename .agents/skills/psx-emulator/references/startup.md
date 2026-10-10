@@ -1,15 +1,7 @@
 # Startup check
 
-## Purpose
+Run `--mission smoke` ([source](../../../../src/lua/missions/smoke.lua)) with
+BIOS, fresh output and short timeout. No EXE, modules or action arguments.
 
-Check emulator/Lua startup with [smoke.lua](../../../../src/lua/missions/smoke.lua).
-
-## Procedure
-
-Follow [Runtime](runtime.md#invocation). Supply BIOS, fresh output and a short
-timeout; no EXE, modules or action arguments.
-
-## Application
-
-Require a passing receipt and empty capture list. Startup success does not prove
+Require passing receipt and empty capture list. Startup success does not prove
 guest-program execution.

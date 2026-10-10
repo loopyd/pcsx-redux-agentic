@@ -1,15 +1,13 @@
 # Native debugger stepping
 
-## Purpose
-
-Use [step.lua](../../../../src/lua/missions/step.lua) for bounded native step-into pause transitions.
-Follow [Runtime](runtime.md#invocation) and [native limits](native.md); over/out
-are unsupported.
+Run `--mission step` ([source](../../../../src/lua/missions/step.lua)) for bounded
+native step-into pause transitions. Step-over/out unsupported.
 
 ## Procedure
 
-Declare `support`, `snapshot`, `execution`; choose target, EXE entry or state.
-Required `identity` labels executable/overlay context; the receipt identifies bytes.
+Choose target, EXE entry or state.
+Required `identity=LABEL` (1–160 bytes) labels executable/overlay context;
+receipt identifies bytes.
 
 `steps=1..1024` (1) bounds transitions; `seconds=1..300` (20) bounds acquisition
 plus stepping. Use a longer harness timeout for the cooperative UI timer.
@@ -36,5 +34,5 @@ retain reports/failing receipts; timeouts or aborts may leave only flushed recor
 logs. Missing completion is never success.
 
 Exceptions or breakpoints can interrupt a request; IRQs can cross instructions.
-One row/request does not imply one retired instruction. Apply the
-[native dispatch and exception limits](native.md).
+One row/request does not imply one retired instruction; use the boundary and
+coverage limits above when interpreting results.

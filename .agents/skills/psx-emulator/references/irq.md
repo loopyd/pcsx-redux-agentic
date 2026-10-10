@@ -1,13 +1,11 @@
 # Interrupt state
 
-## Purpose
-
-Use [irq.lua](../../../../src/lua/missions/irq.lua) for serialized interrupt latches and masks.
+Run `--mission irq` ([source](../../../../src/lua/missions/irq.lua)) for interrupt latches/masks.
 Use [History](history.md) for ordered latch/delivery observations.
 
 ## Procedure
 
-Follow [Runtime](runtime.md#invocation); Canonical `support`, `snapshot` and `devices` are preloaded. A state without target/EXE is inspected offline; other contexts use
+State without target/EXE is inspected offline; other contexts use
 the common paused boundary. Check `irq.json` (`psx.runtime-irq/v1`) for I_STAT,
 I_MASK, eleven lines, enabled pending bits and CP0 Status/Cause masks.
 
@@ -26,7 +24,7 @@ bit 10 stored hardware pending. `cpu_masked_pending = Status & Cause & 0xff00`
 includes software bits. Neither expression proves CPU acceptance or handler entry.
 
 Acknowledgment follows each controller's semantics; verify native effects against
-pinned `third_party/pcsx-redux-agentic/src/core/psxhw.cc`, `psxmem.h` and `r3000a.cc`.
+pinned `src/core/psxhw.cc`, `psxmem.h` and `r3000a.cc`.
 [MMIO probes](bus.md) advance time and can alter interrupt state; plain serialized
 inspection does neither.
 
