@@ -211,6 +211,11 @@ PCSX::SaveStates::SaveState PCSX::SaveStates::constructSaveState() {
                 }},
             CDXALeft{CDADPCM{CDADPCMY0{cd->m_xa.left.y0}, CDADPCMY1{cd->m_xa.left.y1}}},
             CDXARight{CDADPCM{CDADPCMY0{cd->m_xa.right.y0}, CDADPCMY1{cd->m_xa.right.y1}}},
+            CDXAFormatReady{cd->m_xaFormatReady},
+            CDXAFrequency{cd->m_xa.freq},
+            CDXANBits{cd->m_xa.nbits},
+            CDXAStereo{cd->m_xa.stereo},
+            CDXANSamples{cd->m_xa.nsamples},
         },
     };
 }

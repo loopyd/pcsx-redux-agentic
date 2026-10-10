@@ -71,3 +71,7 @@ Restoration replaces ROM/program memory; bootstrap BIOS hash does not identify
 embedded ROM. Inputs stay unchanged; `savestate=1` writes a new `state.pbuf`.
 Equality proves neither cycle accuracy, hidden-device restoration nor host
 scheduling/audio replay.
+
+Midstream XA restore requires saved decoder readiness, frequency, bit depth,
+channel mode and sample count. Checked load rejects states missing that format
+when a pending sector needs it. Capture a new state with the current build.

@@ -174,8 +174,8 @@ class CDRom {
     uint8_t m_filterChannel = 0;
     bool m_xaEnded = false;
     bool m_xaFirstSector = true;
-    xa_decode_t m_xa;
-    xa_decode_t m_xaOut;
+    xa_decode_t m_xa{};
+    xa_decode_t m_xaOut{};
     bool m_soundMapEnabled = false;
 
     enum class Cause : uint8_t {

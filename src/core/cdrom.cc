@@ -114,6 +114,15 @@ class CDRomImpl final : public PCSX::CDRom {
                               const std::shared_ptr<PCSX::CDRIso>& iso) const noexcept override {
         using namespace PCSX::SaveStates;
         using Access = PCSX::CDRIso::StateAccess;
+        const bool xaReady = cd.get<CDXAFormatReady>().decodedValue();
+        const auto frequency = cd.get<CDXAFrequency>().decodedValue();
+        const auto nbits = cd.get<CDXANBits>().decodedValue();
+        const auto stereo = cd.get<CDXAStereo>().decodedValue();
+        const auto nsamples = cd.get<CDXANSamples>().decodedValue();
+        const bool validXA = (frequency == 18900 || frequency == 37800) && (nbits == 4 || nbits == 8) &&
+                             (stereo == 0 || stereo == 1) &&
+                             nsamples == 18 * 28 * (nbits == 8 ? 4 : 8) / (stereo ? 2 : 1);
+        if (!validXA && (xaReady || frequency || nbits || stereo || nsamples)) return false;
         const auto msf = [](const auto& field) {
             return MSF{field.template get<CDMSFMinute>().decodedValue(),
                        field.template get<CDMSFSecond>().decodedValue(),
@@ -130,10 +139,7 @@ class CDRomImpl final : public PCSX::CDRom {
             if (track == 0 || iso->getTrackType(track) == PCSX::CDRIso::TrackType::CDDA || resetsXA ||
                 !cd.get<CDRealtime>().decodedValue() || cd.get<CDXAEnded>().decodedValue() ||
                 cd.get<CDXAFirstSector>().decodedValue()) return true;
-            if (!m_xaFormatReady) return false;
-            return (m_xa.freq == 18900 || m_xa.freq == 37800) && (m_xa.nbits == 4 || m_xa.nbits == 8) &&
-                   (m_xa.stereo == 0 || m_xa.stereo == 1) && m_xa.nsamples >= 0 &&
-                   m_xa.nsamples <= (m_xa.stereo ? 2016 : 4032);
+            return xaReady;
         };
         const auto audio = [&](MSF at) {
             if (!access(Access::TrackAddress, at)) return false;
