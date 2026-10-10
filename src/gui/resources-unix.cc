@@ -17,7 +17,6 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
-#ifndef _WIN32
 
 #include "core/system.h"
 #include "gui/resources.h"
@@ -53,5 +52,3 @@ void PCSX::Resources::loadIcon(std::function<void(const uint8_t*, uint32_t)> pro
         process(reinterpret_cast<const uint8_t*>(slice.data()), slice.size());
     }
 }
-
-#endif

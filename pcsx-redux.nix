@@ -205,8 +205,8 @@ in stdenv.mkDerivation {
   enableParallelBuilding = true;
 
   meta = {
-    homepage = "https://pcsx-redux.consoledev.net";
-    description = "PlayStation 1 emulator and debugger";
+    homepage = "https://github.com/loopyd/pcsx-redux-agentic";
+    description = "Linux PlayStation 1 emulator for agentic reverse engineering";
     mainProgram = "pcsx-redux";
     inherit platforms;
   };

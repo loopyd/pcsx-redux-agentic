@@ -30,7 +30,6 @@ ipch/
 *.VC.db
 *.VC.VC.opendb
 
-vsprojects/packages
 
 .Trash-1000/
 
@@ -63,7 +62,6 @@ pcsx.json.tmp
 # FastBuild and msfastbuild stuff
 *.bff
 *.fdb
-fb.bat
 
 # macos files
 .DS_store
@@ -117,7 +115,6 @@ DynarecDisassembly.txt
 sstate.proto
 
 # Sentry Native files
-.sentry-native
 
 # nops' configuration file
 comport.txt

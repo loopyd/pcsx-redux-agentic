@@ -1,34 +1,19 @@
 #!/usr/bin/env python3
-# Generates the splash screen data the emulator displays while nothing is loaded
+# Emit the compressed RGBA8888 data used by src/gui/splash.cc.
 import sys
+import zlib
 from PIL import Image
 
 if len(sys.argv) != 2:
-    print(f"Usage: {sys.argv[0]} <image_file>")
-    sys.exit(1)
+    sys.exit(f"Usage: {sys.argv[0]} <image_file>")
 
-filename = sys.argv[1]
-
-img = Image.open(filename).convert("RGBA")
-width, height = img.size
-pixels = list(img.getdata())
-
-# Convert pixel data to RGBA8888
-data = []
-for r, g, b, a in pixels:
-    val = (a << 24) | (b << 16) | (g << 8) | r
-    data.append(val)
-
-print("// Generated using tools/splash-generator/splash.py")
-
-# First 2 u32s are the splash screen's width and height
-# The rest of the array is the pixel data in little endian RGBA8888
-print("static const uint32_t s_splashImageData[] = {{")
-print(f"    {width}, {height},", end=" ")
-
-for i, val in enumerate(data):
-    sep = "," if i != len(data) - 1 else ""
-    if i % 8 == 0:
-        print("\n    ", end="")
-    print(f"0x{val:08X}{sep}", end=" ")
-print("\n};")
+image = Image.open(sys.argv[1]).convert("RGBA")
+width, height = image.size
+packed = zlib.compress(image.tobytes(), 9)
+print("// Generated using tools/splash-generator/splash.py; zlib-compressed RGBA8888.")
+print(f"static constexpr uint32_t s_splashWidth = {width};")
+print(f"static constexpr uint32_t s_splashHeight = {height};")
+print("static constexpr uint8_t s_splashImageData[] = {")
+for offset in range(0, len(packed), 32):
+    print("    " + ", ".join(f"0x{value:02x}" for value in packed[offset:offset + 32]) + ",")
+print("};")

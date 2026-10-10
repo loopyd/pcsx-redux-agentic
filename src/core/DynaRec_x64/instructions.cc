@@ -1240,11 +1240,7 @@ void DynaRecCPU::recSWL(uint32_t code) {
         allocateReg(_Rs_);
         gen.moveAndAdd(edx, m_gprs[_Rs_].allocatedReg, _Imm_);  // Address in edx again
 
-        if constexpr (isWindows()) {  // On Windows, we'll have to corrupt arg1 (ecx) to do a variable-amount shift
-            gen.mov(arg4, edx);       // So we use arg4 as a temporary (r9d)
-        } else {
-            gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
-        }
+        gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
 
         gen.and_(edx, 3);                             // edx = low 2 bits of address
         gen.lea(rcx, qword[rip + MASKS_AND_SHIFTS]);  // Base to mask and shift lookup table in rcx
@@ -1257,9 +1253,7 @@ void DynaRecCPU::recSWL(uint32_t code) {
         gen.and_(eax, ecx);               // Mask read value
         gen.or_(arg2, eax);
 
-        if constexpr (isWindows()) {
-            gen.mov(arg1, arg4);
-        }
+
 
         call(swlWriteWrapper);
     } else {                                                     // Nothing is constant
@@ -1272,11 +1266,7 @@ void DynaRecCPU::recSWL(uint32_t code) {
         alloc_rt_rs(code);
         gen.moveAndAdd(edx, m_gprs[_Rs_].allocatedReg, _Imm_);  // Address in edx again
 
-        if constexpr (isWindows()) {  // On Windows, we'll have to corrupt arg1 (ecx) to do a variable-amount shift
-            gen.mov(arg4, edx);       // So we use arg4 as a temporary (r9d)
-        } else {
-            gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
-        }
+        gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
 
         gen.and_(edx, 3);                             // edx = low 2 bits of address
         gen.lea(rcx, qword[rip + MASKS_AND_SHIFTS]);  // Base to mask and shift lookup table in rcx
@@ -1289,9 +1279,7 @@ void DynaRecCPU::recSWL(uint32_t code) {
         gen.and_(eax, ecx);                        // Mask read value
         gen.or_(arg2, eax);
 
-        if constexpr (isWindows()) {
-            gen.mov(arg1, arg4);
-        }
+
 
         call(swlWriteWrapper);
     }
@@ -1342,11 +1330,7 @@ void DynaRecCPU::recSWR(uint32_t code) {
         allocateReg(_Rs_);
         gen.moveAndAdd(edx, m_gprs[_Rs_].allocatedReg, _Imm_);  // Address in edx again
 
-        if constexpr (isWindows()) {  // On Windows, we'll have to corrupt arg1 (ecx) to do a variable-amount shift
-            gen.mov(arg4, edx);       // So we use arg4 as a temporary (r9d)
-        } else {
-            gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
-        }
+        gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
 
         gen.and_(edx, 3);                             // edx = low 2 bits of address
         gen.lea(rcx, qword[rip + MASKS_AND_SHIFTS]);  // Base to mask and shift lookup table in rcx
@@ -1359,9 +1343,7 @@ void DynaRecCPU::recSWR(uint32_t code) {
         gen.and_(eax, ecx);               // Mask read value
         gen.or_(arg2, eax);
 
-        if constexpr (isWindows()) {
-            gen.mov(arg1, arg4);
-        }
+
 
         call(swrWriteWrapper);
     } else {                                                     // Nothing is constant
@@ -1374,11 +1356,7 @@ void DynaRecCPU::recSWR(uint32_t code) {
         alloc_rt_rs(code);
         gen.moveAndAdd(edx, m_gprs[_Rs_].allocatedReg, _Imm_);  // Address in edx again
 
-        if constexpr (isWindows()) {  // On Windows, we'll have to corrupt arg1 (ecx) to do a variable-amount shift
-            gen.mov(arg4, edx);       // So we use arg4 as a temporary (r9d)
-        } else {
-            gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
-        }
+        gen.mov(arg1, edx);  // On System V, we can just use arg1 (edi)
 
         gen.and_(edx, 3);                             // edx = low 2 bits of address
         gen.lea(rcx, qword[rip + MASKS_AND_SHIFTS]);  // Base to mask and shift lookup table in rcx
@@ -1391,9 +1369,7 @@ void DynaRecCPU::recSWR(uint32_t code) {
         gen.and_(eax, ecx);                        // Mask read value
         gen.or_(arg2, eax);
 
-        if constexpr (isWindows()) {
-            gen.mov(arg1, arg4);
-        }
+
 
         call(swrWriteWrapper);
     }

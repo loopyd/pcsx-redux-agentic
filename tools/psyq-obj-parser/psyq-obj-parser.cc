@@ -33,7 +33,6 @@
 #include "support/list.h"
 #include "support/tree.h"
 #include "support/slice.h"
-#include "support/windowswrapper.h"
 
 #define SHF_MIPS_GPREL 0x10000000
 
@@ -244,9 +243,6 @@ struct PsyqLnkFile {
     template <typename... Args>
     inline void setElfConversionError(std::string_view formatStr, Args&&... args) {
         elfConversionError = fmt::format(fmt::runtime(formatStr), args...);
-#ifdef _WIN32
-        if (IsDebuggerPresent()) __debugbreak();
-#endif
     }
 
     ~PsyqLnkFile() {

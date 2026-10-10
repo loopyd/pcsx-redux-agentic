@@ -15,6 +15,7 @@
 --   along with this program; if not, write to the
 --   Free Software Foundation, Inc.,
 --   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+local nativeCPU = ...
 ffi.cdef [[
 typedef union {
     struct {
@@ -296,6 +297,11 @@ local function jumpToMemory(address, width)
 end
 
 PCSX = {
+    captureCPUChecked = function()
+        local result, observation = nativeCPU()
+        stateResult(result)
+        return observation
+    end,
     getCPUCycles = function() return C.getCPUCycles() end,
     getMemPtr = function() return C.getMemPtr() end,
     getParPtr = function() return C.getParPtr() end,

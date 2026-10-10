@@ -211,13 +211,6 @@ static bool checkCommandLinePaths(const CommandLine::args &args) {
     };
     for (auto name : {"bios", "iso", "loadiso", "disk", "loadexe", "exe", "archive"}) checkPath(name, false);
     checkPath("pcdrvbase", true);
-#if defined(_WIN32) || defined(_WIN64)
-    // A plain GUI launch (no -stdout / -no-ui / -cli) has no console, so the stderr output above
-    // goes nowhere and the process would otherwise just exit with no visible trace of why.
-    if (!ok && GetConsoleWindow() == NULL) {
-        MessageBoxA(NULL, messages.c_str(), "pcsx-redux", MB_ICONERROR | MB_OK);
-    }
-#endif
     return ok;
 }
 
@@ -238,15 +231,6 @@ int pcsxMain(int argc, char **argv) {
     // The UvFile and UvFifo should work past this point.
     PCSX::UvThreadOp::UvThread uvThread;
 
-#if defined(_WIN32) || defined(_WIN64)
-    if (args.get<bool>("stdout") || args.get<bool>("no-ui") || args.get<bool>("cli") || args.get<bool>("tui")) {
-        if (AllocConsole()) {
-            freopen("CONIN$", "r", stdin);
-            freopen("CONOUT$", "w", stdout);
-            freopen("CONOUT$", "w", stderr);
-        }
-    }
-#endif
 
     const PCSX::Missions::Resource* mission = nullptr;
     try {
@@ -290,9 +274,7 @@ int pcsxMain(int argc, char **argv) {
     PCSX::g_system = system;
     auto sigint = std::signal(SIGINT, handleSignal);
     auto sigterm = std::signal(SIGTERM, handleSignal);
-#ifndef _WIN32
     std::signal(SIGPIPE, SIG_IGN);
-#endif
     const auto &logfileArgOpt = args.get<std::string>("logfile");
     const PCSX::u8string logfileArg = MAKEU8(logfileArgOpt.has_value() ? logfileArgOpt->c_str() : "");
     if (!logfileArg.empty()) system->useLogfile(logfileArg);

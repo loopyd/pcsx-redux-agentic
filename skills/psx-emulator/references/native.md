@@ -1,5 +1,7 @@
 # Native execution and build
 
+Linux is the only maintained host platform. Build and verify locally; hosted CI is retired.
+
 The active host component is `pcsx-redux`, sourced from the committed registered
 `third_party/pcsx-redux-agentic` submodule. Run `bin/harness setup --component
 pcsx-redux`, then `bin/harness runtime status` and `bin/harness runtime missions`.
@@ -26,7 +28,15 @@ fork's CPU/CD/SPU/MDEC fields and deferred owning-string `loadSafe` lifecycle.
 Postcommit host-file CREATE/open failure returns CommitFailed, pauses and emits no
 Loaded event; no rollback or host filesystem transaction is promised.
 
-Scanner and VRAM APIs perform native bulk work from one Lua call. Old-emulator
-proofs are bounded historical evidence. Qualify functionality and whole-operation
-performance again on the current fork binary before retirement of root patches or
-remote delivery. Do not claim DSP/media safety from source inspection alone.
+Scanner, VRAM, and checked CPU observation APIs perform bulk work from one Lua
+call. `PCSX.captureCPUChecked()` preserves complete checked save serialization,
+native readback validation, cards/device predicates, and lease cleanup. It copies
+CPU fields and safe memory words before releasing the lease, then allocates Lua
+values. It avoids decoding the whole state in Lua; it is not a CPU-only admission
+shortcut. Persisted-state validation remains schema-aware and bounded.
+
+Verify changed behavior with the existing local build/checks and a focused runtime
+run. Measure the complete caller operation before claiming performance gains.
+Preserve frozen failed and successful evidence. Do not grow temporary controllers,
+proof/grant frameworks, or recursive inventory campaigns. Source inspection alone
+does not establish DSP/media safety or hardware fidelity.

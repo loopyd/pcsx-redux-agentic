@@ -62,14 +62,10 @@ bool DynaRecCPU::Init() {
         m_recompilerLUT[page + 0xBFC0] = pointer;
     }
 
-#if !defined(__APPLE__)
     if (!gen.setRWX()) {  // Mark code cache as readable/writeable/executable
         PCSX::g_system->message("[Dynarec] Failed to allocate executable memory.\nTry disabling the Dynarec CPU.");
         return false;
     }
-#else
-    gen.setRW();  // M1 wants buffer marked as readable/writable with mprotect before emitting code
-#endif
     emitDispatcher();  // Emit our assembly dispatcher
     uncompileAll();    // Mark all blocks as uncompiled
 
@@ -81,14 +77,6 @@ bool DynaRecCPU::Init() {
     m_currentDelayedLoad = 0;
     m_runtimeLoadDelay.active = false;
 
-#if defined(__APPLE__)
-    // Check to make sure code buffer memory was allocated
-    if (gen.getCode<void*>() == nullptr) {
-        PCSX::g_system->message("[Dynarec] Failed to allocate memory for Dynarec.\nTry disabling the Dynarec CPU.");
-        return false;
-    }
-    gen.setRX();  // Mark code cache as readable/executable before jumping into dispatcher
-#endif
     return true;
 }
 
@@ -370,9 +358,6 @@ DynarecCallback DynaRecCPU::recompile(DynarecCallback* callback, uint32_t pc, bo
     unsigned count = 0;  // How many instructions have we compiled?
     unsigned extra = 0;  // How many instructions from rom?
 
-#if defined(__APPLE__)
-    gen.setRW();  // Mark code cache as readable/writeable before emitting code
-#endif
 
     if (align) {
         gen.align();  // Align next block
@@ -504,9 +489,6 @@ DynarecCallback DynaRecCPU::recompile(DynarecCallback* callback, uint32_t pc, bo
     // Clear stale instruction cache contents.
     __builtin___clear_cache(reinterpret_cast<char*>(blockStart), gen.getCurr<char*>());
     gen.ready();
-#if defined(__APPLE__)
-    gen.setRX();  // Mark code cache as readable/executable before returning to dispatcher
-#endif
     // The block might have been invalidated by handleLinking, so re-read the pointer from *callback
     return *callback;
 }

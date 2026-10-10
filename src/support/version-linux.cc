@@ -24,7 +24,6 @@ SOFTWARE.
 
 */
 
-#ifdef __linux__
 
 #include <stdlib.h>
 
@@ -67,5 +66,3 @@ bool PCSX::Update::applyUpdate(const std::filesystem::path& binDir) {
 
     return true;
 }
-
-#endif

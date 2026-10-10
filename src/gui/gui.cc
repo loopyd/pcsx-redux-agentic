@@ -18,10 +18,6 @@
  ***************************************************************************/
 
 // These need to go first
-#include "support/windowswrapper.h"
-#ifdef _WIN32
-#include <shellapi.h>
-#endif
 
 // And only then we can load the rest
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -146,29 +142,11 @@ void PCSX::GUI::MarkDown::SPAN_CODE(bool e) {
     }
 }
 
-#ifdef _WIN32
-extern "C" {
-__declspec(dllexport) DWORD NvOptimusEnablement = 1;
-__declspec(dllexport) DWORD AmdPowerXpressRequestHighPerformance = 1;
-}
-
-void PCSX::GUI::openUrl(std::string_view url) {
-    std::string storage = std::string(url);
-    ShellExecuteA(0, 0, storage.c_str(), 0, 0, SW_SHOW);
-}
-#elif defined(__APPLE__) && defined(__MACH__)
-#include <stdlib.h>
-void PCSX::GUI::openUrl(std::string_view url) {
-    auto cmd = fmt::format("open {}", url);
-    system(cmd.c_str());
-}
-#else
 #include <stdlib.h>
 void PCSX::GUI::openUrl(std::string_view url) {
     auto cmd = fmt::format("xdg-open {}", url);
     system(cmd.c_str());
 }
-#endif
 
 PCSX::GUI::GUI(std::vector<std::string>& favorites)
     : m_listener(g_system->m_eventBus),
@@ -363,9 +341,6 @@ void PCSX::GUI::glErrorCallback(GLenum source, GLenum type, GLuint id, GLenum se
     if (m_onlyLogGLErrors) {
         m_glErrors.push_back(std::move(fullmessage));
     } else {
-#ifdef _WIN32
-        if (IsDebuggerPresent()) __debugbreak();
-#endif
         g_system->log(LogClass::UI, std::move(fullmessage));
         if (type == GL_DEBUG_TYPE_ERROR) throw std::runtime_error("Got an OpenGL error");
     }
@@ -575,7 +550,7 @@ void PCSX::GUI::init(std::function<void()> applyArguments) {
     m_hasCoreProfile = true;
 
     // SDL_WINDOW_HIGH_PIXEL_DENSITY makes window-coords vs pixel-coords meaningful
-    // on macOS Retina + Windows per-monitor DPI; required for the changeScale path.
+    // for display scaling; required for the changeScale path.
     const SDL_WindowFlags windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     m_window = SDL_CreateWindow("PCSX-Redux", 1280, 800, windowFlags);
     if (m_window) {

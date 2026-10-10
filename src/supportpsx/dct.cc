@@ -37,7 +37,7 @@ SOFTWARE.
 
 #include "support/cpu-features.h"
 
-#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64) || defined(_M_AMD64)
+#if defined(__i386__) || defined(__x86_64)
 #define DCT_X86
 #if defined(__GNUC__) || defined(__clang__)
 #define DCT_AVX2_FUNC [[gnu::target("avx2")]]

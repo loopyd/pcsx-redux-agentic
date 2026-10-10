@@ -349,10 +349,6 @@ class DynaRecCPU final : public PCSX::R3000Acpu {
         void* functionPtr;
         uintptr_t thisPtr = reinterpret_cast<uintptr_t>(thisObject);
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
-        static_assert(sizeof(T) == 8, "[x64 JIT] Invalid size for member function pointer");
-        std::memcpy(&functionPtr, &func, sizeof(T));
-#else
         static_assert(sizeof(T) == 16, "[x64 JIT] Invalid size for member function pointer");
         uintptr_t arr[2];
         std::memcpy(arr, &func, sizeof(T));
@@ -360,7 +356,6 @@ class DynaRecCPU final : public PCSX::R3000Acpu {
         functionPtr = reinterpret_cast<void*>(arr[0]);
         // Next 8 bytes correspond to the "this" pointer adjustment
         thisPtr += arr[1];
-#endif
 
         // Load this pointer to arg1
         if (thisPtr == reinterpret_cast<uintptr_t>(this)) {

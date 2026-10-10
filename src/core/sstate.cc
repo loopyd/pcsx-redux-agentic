@@ -457,7 +457,49 @@ Result loadPrepared(std::string_view input, bool paused) noexcept {
 Result context() noexcept { return boundary(true); }
 Result loadChecked(std::string_view data) noexcept { return loadPrepared(data, true); }
 namespace {
-Result savePrepared(std::string& output, SaveMode mode) noexcept {
+CPUObservation projectCPU(const SaveState& state) {
+    const auto& regs = state.get<RegistersField>();
+    CPUObservation output{};
+    output.pc = regs.get<PC>().decodedValue();
+    output.code = regs.get<Code>().decodedValue();
+    output.cycle = regs.get<Cycle>().decodedValue();
+    output.currentDelayedLoad = regs.get<CurrentDelayedLoad>().decodedValue();
+    output.inISR = regs.get<InISR>().decodedValue();
+    output.nextIsDelaySlot = regs.get<NextIsDelaySlot>().decodedValue();
+    std::copy_n(regs.get<GPR>().copy, output.gpr.size(), output.gpr.begin());
+    std::copy_n(regs.get<CP0>().copy, output.cp0.size(), output.cp0.begin());
+    const auto delay = [](const DelaySlotInfo& info) {
+        return CPUObservation::Delay{info.get<DelaySlotIndex>().decodedValue(),
+            info.get<DelaySlotValue>().decodedValue(), info.get<DelaySlotMask>().decodedValue(),
+            info.get<DelaySlotPcValue>().decodedValue(), info.get<DelaySlotActive>().decodedValue(),
+            info.get<DelaySlotPcActive>().decodedValue(), info.get<DelaySlotFromLink>().decodedValue(), info.hasData()};
+    };
+    output.delays = {delay(regs.get<DelaySlotInfo1>()), delay(regs.get<DelaySlotInfo2>())};
+    const auto& memory = state.get<MemoryField>();
+    const auto word = [&](int64_t address) -> std::optional<uint32_t> {
+        if (address < 0 || address > UINT32_MAX || (address & 3)) return {};
+        const auto segment = uint32_t(address) >> 29;
+        if (segment != 0 && segment != 4 && segment != 5) return {};
+        const uint32_t physical = uint32_t(address) & 0x1fffffffu;
+        const uint8_t* bytes = nullptr;
+        if (physical < 0x200000) bytes = memory.get<RAM>().decodedData() + physical;
+        else if (physical >= 0x1fc00000 && physical < 0x1fc80000)
+            bytes = memory.get<ROM>().decodedData() + physical - 0x1fc00000;
+        else if (physical >= 0x1f800000 && physical < 0x1f800400)
+            bytes = memory.get<HardwareMemory>().decodedData() + physical - 0x1f800000;
+        if (!bytes) return {};
+        return uint32_t(bytes[0]) | uint32_t(bytes[1]) << 8 | uint32_t(bytes[2]) << 16 | uint32_t(bytes[3]) << 24;
+    };
+    output.nextWord = word(output.pc);
+    for (int offset = -8; offset <= 8; offset += 4) {
+        const int64_t address = int64_t(output.pc) + offset;
+        if (const auto value = word(address))
+            output.nearby[output.nearbyCount++] = {uint32_t(address), *value};
+    }
+    return output;
+}
+
+Result savePrepared(std::string& output, SaveMode mode, CPUObservation* cpu = nullptr) noexcept {
     output.clear();
     const auto guard = mode == SaveMode::Checked ? boundary(true) : contextAvailable();
     if (guard != Result::Ok) return guard;
@@ -503,8 +545,9 @@ Result savePrepared(std::string& output, SaveMode mode) noexcept {
             readback.state.deserialize(&check, 0);
             const auto validation = validateRestore(readback);
             if (validation != Result::Ok) return validation;
+            if (cpu) *cpu = projectCPU(readback.state);
         }
-        output.swap(bytes);
+        if (!cpu) output.swap(bytes);
         return Result::Ok;
     } catch (const Protobuf::OutputTooLarge&) { failure = Result::TooLarge; }
     catch (const std::bad_alloc&) { failure = Result::AllocationFailed; }
@@ -517,6 +560,11 @@ Result savePrepared(std::string& output, SaveMode mode) noexcept {
 }
 }
 Result saveChecked(std::string& output) noexcept { return savePrepared(output, SaveMode::Checked); }
+Result captureCPUChecked(CPUObservation& output) noexcept {
+    output = {};
+    std::string bytes;
+    return savePrepared(bytes, SaveMode::Checked, &output);
+}
 }
 
 std::string PCSX::SaveStates::save() {

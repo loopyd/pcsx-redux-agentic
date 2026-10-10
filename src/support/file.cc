@@ -28,15 +28,12 @@ SOFTWARE.
 
 #include <cerrno>
 #include <limits>
-#if defined(__linux__)
 #include <sys/stat.h>
 #include <unistd.h>
-#endif
 
 #include <algorithm>
 
 #include "support/slice.h"
-#include "support/windowswrapper.h"
 
 uint8_t PCSX::BufferFile::m_internalBuffer = 0;
 
@@ -179,33 +176,6 @@ void PCSX::PosixFile::closeInternal() {
     }
 }
 
-#if defined(_WIN32) && defined(UNICODE)
-static FILE *openwrapper(const char *filename, const wchar_t *mode) {
-    int needed = MultiByteToWideChar(CP_UTF8, 0, filename, -1, NULL, 0);
-    if (needed <= 0) return nullptr;
-    LPWSTR str = (LPWSTR)_malloca(needed * sizeof(wchar_t));
-    MultiByteToWideChar(CP_UTF8, 0, filename, -1, str, needed);
-    FILE *ret = _wfopen(str, mode);
-    _freea(str);
-    return ret;
-}
-
-PCSX::PosixFile::PosixFile(const char *filename) : File(RO_SEEKABLE), m_filename(filename) {
-    m_handle = openwrapper(filename, L"rb");
-}
-
-PCSX::PosixFile::PosixFile(const char *filename, FileOps::Create) : File(RW_SEEKABLE), m_filename(filename) {
-    m_handle = openwrapper(filename, L"ab+");
-}
-
-PCSX::PosixFile::PosixFile(const char *filename, FileOps::Truncate) : File(RW_SEEKABLE), m_filename(filename) {
-    m_handle = openwrapper(filename, L"wb+");
-}
-
-PCSX::PosixFile::PosixFile(const char *filename, FileOps::ReadWrite) : File(RW_SEEKABLE), m_filename(filename) {
-    m_handle = openwrapper(filename, L"rb+");
-}
-#else  // !Windows || !UNICODE
 PCSX::PosixFile::PosixFile(const char *filename) : File(RO_SEEKABLE), m_filename(filename) {
     m_handle = fopen(filename, "rb");
 }
@@ -218,7 +188,6 @@ PCSX::PosixFile::PosixFile(const char *filename, FileOps::Truncate) : File(RW_SE
 PCSX::PosixFile::PosixFile(const char *filename, FileOps::ReadWrite) : File(RW_SEEKABLE), m_filename(filename) {
     m_handle = fopen(filename, "rb+");
 }
-#endif
 
 PCSX::PosixFile::PosixFile(std::filesystem::path filename, DeferredOpen mode)
     : File(mode == DeferredOpen::Create ? RW_SEEKABLE : RO_SEEKABLE),
@@ -230,11 +199,7 @@ PCSX::PosixFile::PosixFile(std::filesystem::path filename, DeferredOpen mode)
 bool PCSX::PosixFile::openPrepared() {
     if (!m_deferredOpen || m_handle || closedForRawAccess()) return false;
     m_deferredOpen = false;
-#if defined(_WIN32) && defined(UNICODE)
-    m_handle = openwrapper(m_deferredName.c_str(), writable() ? L"ab+" : L"rb");
-#else
     m_handle = fopen(m_deferredName.c_str(), writable() ? "ab+" : "rb");
-#endif
     return m_handle != nullptr;
 }
 
@@ -408,7 +373,6 @@ PCSX::File::RawSnapshotStatus PCSX::File::resolveRawSelection(RawSelection& sele
         auto view = current->rawView();
         if (view.kind == RawKind::Unsupported) return RawSnapshotStatus::Unsupported;
         if (view.kind == RawKind::Descriptor) {
-#if defined(__linux__)
             struct stat metadata;
             int status;
             do { status = fstat(view.descriptor, &metadata); } while (status < 0 && errno == EINTR);
@@ -417,9 +381,6 @@ PCSX::File::RawSnapshotStatus PCSX::File::resolveRawSelection(RawSelection& sele
             if (metadata.st_size < 0 || uintmax_t(metadata.st_size) > std::numeric_limits<size_t>::max())
                 return RawSnapshotStatus::Invalid;
             view.extent = static_cast<size_t>(metadata.st_size);
-#else
-            return RawSnapshotStatus::Unsupported;
-#endif
         }
         if (previousWindow && (previousStart > view.extent || previousLength > view.extent - previousStart))
             return RawSnapshotStatus::Unsupported;
@@ -480,7 +441,6 @@ PCSX::File::RawSnapshotStatus PCSX::File::snapshotRawOwned(size_t maximum, std::
             if (selection.length > maximum) return RawSnapshotStatus::TooLarge;
             if (selection.length) bytes.assign(reinterpret_cast<const char*>(selection.view.data + selection.start), selection.length);
         } else {
-#if defined(__linux__)
             constexpr size_t chunk = 65536;
             const auto largestOffset = uintmax_t(std::numeric_limits<off_t>::max());
             if (uintmax_t(selection.start) > largestOffset) return RawSnapshotStatus::Invalid;
@@ -509,9 +469,6 @@ PCSX::File::RawSnapshotStatus PCSX::File::snapshotRawOwned(size_t maximum, std::
                 }
                 if (bytes.size() > maximum) return RawSnapshotStatus::TooLarge;
             }
-#else
-            return RawSnapshotStatus::Unsupported;
-#endif
         }
         RawSelection after;
         status = resolveRawSelection(after);

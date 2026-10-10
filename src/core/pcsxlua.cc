@@ -18,6 +18,7 @@
  ***************************************************************************/
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -431,6 +432,75 @@ PCSX::Slice* createSaveState() {
     return new PCSX::Slice(std::move(ss));
 }
 
+int captureCPUChecked(lua_State* state) {
+    using namespace PCSX::SaveStates;
+    CPUObservation observation{};
+    const auto result = lua_gettop(state) == 0 ? captureCPUChecked(observation) : Result::InvalidState;
+    lua_pushnumber(state, static_cast<uint32_t>(result));
+    if (result != Result::Ok) return 1;
+    // The checked state lease and SPU access have ended before any Lua allocation.
+    const auto number = [&](const char* name, uint32_t value) {
+        lua_pushnumber(state, value);
+        lua_setfield(state, -2, name);
+    };
+    const auto boolean = [&](const char* name, bool value) {
+        lua_pushboolean(state, value);
+        lua_setfield(state, -2, name);
+    };
+    lua_createtable(state, 0, 14);
+    number("pc", observation.pc);
+    number("last_executed_word", observation.code);
+    number("current_delayed_load", observation.currentDelayedLoad);
+    boolean("in_isr", observation.inISR);
+    boolean("next_is_delay_slot", observation.nextIsDelaySlot);
+    char cycles[20];
+    const auto decimal = std::to_chars(std::begin(cycles), std::end(cycles), observation.cycle);
+    lua_pushlstring(state, cycles, decimal.ptr - cycles);
+    lua_setfield(state, -2, "cycles");
+    const auto bank = [&](const char* name, const auto& values) {
+        lua_createtable(state, values.size(), 0);
+        for (size_t i = 0; i < values.size(); ++i) {
+            lua_pushnumber(state, values[i]);
+            lua_rawseti(state, -2, i + 1);
+        }
+        lua_setfield(state, -2, name);
+    };
+    bank("gpr", observation.gpr);
+    bank("cp0", observation.cp0);
+    for (unsigned i = 0; i < observation.delays.size(); ++i) {
+        const auto& delay = observation.delays[i];
+        if (!delay.present) continue;
+        lua_createtable(state, 0, 7);
+        number("index", delay.index);
+        number("value", delay.value);
+        number("mask", delay.mask);
+        number("pc_value", delay.pcValue);
+        boolean("active", delay.active);
+        boolean("pc_active", delay.pcActive);
+        boolean("from_link", delay.fromLink);
+        lua_setfield(state, -2, i ? "delay_slot_info_2" : "delay_slot_info_1");
+    }
+    if (observation.nextWord) number("next_memory_word", *observation.nextWord);
+    lua_createtable(state, observation.nearbyCount, 0);
+    for (size_t i = 0; i < observation.nearbyCount; ++i) {
+        lua_createtable(state, 0, 2);
+        number("address", observation.nearby[i].address);
+        number("word", observation.nearby[i].value);
+        lua_rawseti(state, -2, i + 1);
+    }
+    lua_setfield(state, -2, "nearby_memory");
+    const uint32_t cause = observation.cp0[13];
+    lua_createtable(state, 0, 6);
+    number("cause", cause);
+    number("epc", observation.cp0[14]);
+    number("status", observation.cp0[12]);
+    number("badvaddr", observation.cp0[8]);
+    number("code", (cause >> 2) & 31);
+    boolean("branch_delay", (cause & 0x80000000u) != 0);
+    lua_setfield(state, -2, "exception");
+    return 2;
+}
+
 void loadSaveStateFromSlice(PCSX::Slice* data) { PCSX::SaveStates::loadSafe(std::string(data->asStringView())); }
 
 void loadSaveStateFromFile(PCSX::LuaFFI::LuaFile* file) {
@@ -577,7 +647,9 @@ void PCSX::LuaFFI::open_pcsx(Lua L) {
 #include "core/pcsxffi.lua"
     );
     registerAllSymbols(L);
-    L.load(pcsxFFI, "src:core/pcsxffi.lua");
+    L.load(pcsxFFI, "src:core/pcsxffi.lua", false);
+    L.push(lua_CFunction(captureCPUChecked));
+    L.pcall(1);
     L.getfieldtable("PCSX", LUA_GLOBALSINDEX);
     L.declareFunc("scanByteRanges", scanByteRanges, -1);
     L.declareFunc("convertVRAM", convertVRAM, -1);

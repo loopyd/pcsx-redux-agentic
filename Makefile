@@ -3,11 +3,13 @@ BUILD ?= Release
 DESTDIR ?= /usr/local
 
 UNAME_S := $(shell uname -s)
+ifneq ($(UNAME_S),Linux)
+$(error PCSX-Redux Agentic supports Linux hosts only)
+endif
 UNAME_M := $(shell uname -m)
 rwildcard = $(wildcard $1$2) $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2))
 CC_IS_CLANG := $(shell $(CC) --version | grep -q clang && echo true || echo false)
 
-MACOS_MIN_VERSION := 11
 
 PACKAGES := capstone freetype2 libavcodec libavformat libavutil libswresample libcurl libuv sdl3 zlib
 OPTIONAL_PACKAGES := md4c fmt libllhttp libluv liburiparser
@@ -92,20 +94,11 @@ ifeq ($(CC_IS_CLANG),true)
     LUAJIT_CFLAGS = -fno-stack-check
 endif
 
-ifeq ($(UNAME_S),Darwin)
-    CPPFLAGS += -mmacosx-version-min=$(MACOS_MIN_VERSION)
-    CPPFLAGS += -stdlib=libc++
-endif
 
 LUAJIT_LDFLAGS := $(LDFLAGS)
 
-ifeq ($(UNAME_S),Darwin)
-    LDFLAGS += -lc++ -framework GLUT -framework OpenGL -framework CoreFoundation -framework Cocoa
-    LDFLAGS += -mmacosx-version-min=$(MACOS_MIN_VERSION)
-else
     LDFLAGS += -lstdc++fs
     LDFLAGS += -lGL -lX11 -lxcb
-endif
 
 LDFLAGS += third_party/luajit/src/libluajit.a
 LDFLAGS += -ldl
@@ -191,17 +184,8 @@ SRCS += $(wildcard third_party/zep/src/*.cpp)
 SRCS += third_party/zep/src/mcommon/animation/timer.cpp
 SRCS += third_party/zep/src/mcommon/file/path.cpp
 SRCS += third_party/zep/src/mcommon/string/stringutils.cpp
-ifeq ($(UNAME_S),Darwin)
-    SRCS += src/main/complain.mm third_party/clip/clip_osx.mm
-else
     SRCS += third_party/clip/clip_x11.cpp
-endif
 ifeq ($(UNAME_M),aarch64)
-        SRCS += $(VIXL_SRCS)
-        CPPFLAGS += -DVIXL_INCLUDE_TARGET_AARCH64 -DVIXL_CODE_BUFFER_MMAP
-        CPPFLAGS += -Ithird_party/vixl/src -Ithird_party/vixl/src/aarch64
-endif
-ifeq ($(UNAME_M),arm64)
         SRCS += $(VIXL_SRCS)
         CPPFLAGS += -DVIXL_INCLUDE_TARGET_AARCH64 -DVIXL_CODE_BUFFER_MMAP
         CPPFLAGS += -Ithird_party/vixl/src -Ithird_party/vixl/src/aarch64
@@ -329,7 +313,7 @@ appimage:
 	mv PCSX-Redux-`uname -m`.AppImage PCSX-Redux-HEAD-`uname -m`.AppImage
 
 third_party/luajit/src/libluajit.a:
-	$(MAKE) $(MAKEOPTS) -C third_party/luajit/src amalg CC=$(CC) BUILDMODE=static CFLAGS=$(LUAJIT_CFLAGS) LDFLAGS=$(LUAJIT_LDFLAGS) XCFLAGS="-DLUAJIT_ENABLE_GC64 -DLUAJIT_ENABLE_LUA52COMPAT" MACOSX_DEPLOYMENT_TARGET=$(MACOS_MIN_VERSION)
+	$(MAKE) $(MAKEOPTS) -C third_party/luajit/src amalg CC=$(CC) BUILDMODE=static CFLAGS=$(LUAJIT_CFLAGS) LDFLAGS=$(LUAJIT_LDFLAGS) XCFLAGS="-DLUAJIT_ENABLE_GC64 -DLUAJIT_ENABLE_LUA52COMPAT"
 
 bins/$(BUILD)/$(TARGET): $(OBJECTS) $(LIBS)
 	@$(MKDIRP) $(dir $@)
@@ -349,10 +333,6 @@ objs/$(BUILD)/%.o: %.cc
 objs/$(BUILD)/%.o: %.cpp
 	@$(MKDIRP) $(dir $@)
 	$(CXX) -c -o $@ $< $(CPPFLAGS) $(EXTRA_CPPFLAGS) $(CXXFLAGS)
-
-objs/$(BUILD)/%.o: %.mm
-	@$(MKDIRP) $(dir $@)
-	$(CC) -c -o $@ $< $(CPPFLAGS) $(EXTRA_CPPFLAGS) $(CFLAGS)
 
 deps/$(BUILD)/%.dep: third_party/luajit/src/luajit.h %.c
 	@$(MKDIRP) $(dir $@)
@@ -376,11 +356,11 @@ objs/$(BUILD)/gtest_main.o: third_party/googletest/googletest/src/gtest_main.cc
 
 clean:
 	rm -f $(OBJECTS) $(TESTS_OBJECTS) $(TESTS_SRC:.cc=.o) $(TOOLS_OBJECTS) $(TOOLS) $(TARGET) bins/$(BUILD)/$(TARGET) $(addprefix bins/$(BUILD)/,$(TOOLS)) $(DEPS) objs/$(BUILD)/gtest-all.o objs/$(BUILD)/gtest_main.o
-	$(MAKE) -C third_party/luajit clean MACOSX_DEPLOYMENT_TARGET=$(MACOS_MIN_VERSION)
+	$(MAKE) -C third_party/luajit clean
 
 cleanall:
 	rm -rf bins objs deps $(TOOLS) $(TARGET)
-	$(MAKE) -C third_party/luajit clean MACOSX_DEPLOYMENT_TARGET=$(MACOS_MIN_VERSION)
+	$(MAKE) -C third_party/luajit clean
 
 gitclean:
 	git clean -f -d -x

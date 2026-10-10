@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include <array>
+#include <optional>
 #include <string_view>
 
 #include "spu/types.h"
@@ -40,6 +42,23 @@ enum class Result : uint32_t {
     Ok, UnavailableContext, Running, Quitting, RecorderActive, Busy, TooLarge,
     Malformed, UnsupportedVersion, InvalidState, InvalidMemoryCard, TopologyMismatch,
     AllocationFailed, CommitFailed
+};
+
+struct CPUObservation {
+    struct Delay {
+        uint32_t index, value, mask, pcValue;
+        bool active, pcActive, fromLink, present;
+    };
+    struct Word { uint32_t address, value; };
+    uint32_t pc, code, currentDelayedLoad;
+    uint64_t cycle;
+    std::array<uint32_t, 34> gpr;
+    std::array<uint32_t, 32> cp0;
+    bool inISR, nextIsDelaySlot;
+    std::array<Delay, 2> delays;
+    std::optional<uint32_t> nextWord;
+    std::array<Word, 5> nearby;
+    size_t nearbyCount;
 };
 
 typedef Protobuf::Field<Protobuf::String, TYPESTRING("version_string"), 1> VersionString;
@@ -380,6 +399,7 @@ typedef Protobuf::ProtoFile<SaveStateInfo, Thumbnail, Memory, DelaySlotInfo, Reg
 SaveState constructSaveState();
 Result context() noexcept;
 Result saveChecked(std::string& output) noexcept;
+Result captureCPUChecked(CPUObservation& output) noexcept;
 Result loadChecked(std::string_view data) noexcept;
 
 std::string save();

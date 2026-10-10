@@ -8,7 +8,6 @@ set_languages('c++26')
 target('pcsx.support', function()
     set_kind('static')
 
-    if is_plat('windows') then add_cxflags('/bigobj') end
 
     add_packages('fmt', 'zlib')
     add_includedirs(path.join(support_root, 'src'), path.join(support_root, 'third_party'),

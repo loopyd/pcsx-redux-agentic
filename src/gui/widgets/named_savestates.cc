@@ -208,7 +208,7 @@ std::filesystem::path PCSX::Widgets::NamedSaveStates::createSaveStatePath(GUI* g
 }
 
 int PCSX::Widgets::NamedSaveStates::TextFilters::testChar(ImWchar c) {
-    // Filter the core problematic characters for Windows and Linux
+    // Filter characters unsuitable for save filenames
     // Anything remaining outside of [a-zA-Z0-9._-] is also allowed
     switch (c) {
         case '\\':

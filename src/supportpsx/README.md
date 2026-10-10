@@ -1,6 +1,6 @@
-## PCSX-Redux SupportPSX library
+## PCSX-Redux Agentic SupportPSX library
 
-This library contains a few functions that are used by the PCSX-Redux emulator. It is a collections of standalone functions that are not specific to the emulator itself, but are aimed at being used in the context of the PlayStation 1. The library is written in C++ and is meant to be used in a pick-and-choose fashion. The library is not meant to be used as a whole, but rather as a collection of functions that can be used in other projects. Some pieces are header-only, while others require compilation of some C++ files. Usually, if compilation is required, it will be with the same base name as the header file.
+This library contains a few functions that are used by the PCSX-Redux Agentic emulator. It is a collections of standalone functions that are not specific to the emulator itself, but are aimed at being used in the context of the PlayStation 1. The library is written in C++ and is meant to be used in a pick-and-choose fashion. The library is not meant to be used as a whole, but rather as a collection of functions that can be used in other projects. Some pieces are header-only, while others require compilation of some C++ files. Usually, if compilation is required, it will be with the same base name as the header file.
 
 Very little external dependencies are required. They will be documented in a per-file basis below.
 

@@ -29,7 +29,7 @@
 
 #include "imgui.h"
 #include "support/eventbus.h"
-#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64) || defined(_M_AMD64)
+#if defined(__i386__) || defined(__x86_64)
 #define MEMORY_OBSERVER_X86  // Do not include immintrin/xbyak or use avx intrinsics unless we're compiling for x86
 #if defined(__GNUC__) || defined(__clang__)
 #define AVX2_FUNC [[gnu::target("avx2")]]

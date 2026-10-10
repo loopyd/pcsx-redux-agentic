@@ -187,10 +187,6 @@ void DynaRecCPU::emitDispatcher() {
     }
     gen.mov(qword[contextPointer + HOST_REG_CACHE_OFFSET(0)], runningPointer);  // Backup running pointer
 
-    // Allocate shadow stack space on Windows
-    if constexpr (isWindows()) {
-        gen.sub(rsp, 32);
-    }
 
     emitBlockLookup();  // Look up block
 
@@ -213,10 +209,6 @@ void DynaRecCPU::emitDispatcher() {
     // Code for exiting JIT context
     gen.L(done);
 
-    // Deallocate shadow stack space on Windows
-    if constexpr (isWindows()) {
-        gen.add(rsp, 32);
-    }
 
     // Restore all non-volatiles
     for (int i = ALLOCATEABLE_NON_VOLATILE_COUNT - 1; i >= 0; i--) {

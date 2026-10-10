@@ -24,8 +24,6 @@
 
 #pragma once
 
-// Windows include on top
-#include "support/windowswrapper.h"
 
 // Normal includes
 #include <assert.h>
@@ -60,9 +58,7 @@
 #include "core/logger.h"
 #include "core/system.h"
 
-#if defined(__linux__) || defined(__MACOSX__)
 #define strnicmp strncasecmp
-#endif
 
 namespace PCSX {
 

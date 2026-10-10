@@ -325,15 +325,10 @@ bool PCSX::System::findResource(std::function<bool(const std::filesystem::path& 
     if (walker(m_binDir / name)) return true;
 
     // Then, let's search for our release folders...
-    // Maybe in a subfolder next to our main binary? That's the Windows way.
+    // Also search installed resources next to the executable.
     if (walker(m_binDir / releasePath / name)) return true;
     // Next up, the Unix way: binary is in /bin, and resources are in /share/pcsx-redux.
     if (walker(m_binDir / ".." / "share" / "pcsx-redux" / releasePath / name)) return true;
-    // And finally, MacOS had to do differently, of course. The MacOS app has this layout:
-    // binary is in Contents/MacOS/
-    // rest is in Contents/Resources/share/pcsx-redux
-    if (walker(m_binDir / ".." / "Resources" / "share" / "pcsx-redux" / releasePath / name)) return true;
-
     // And finally, let's try if we're running from sources.
     // If our main binary is at the root - that's the Unix way.
     if (walker(m_binDir / sourcePath / name)) return true;
@@ -347,21 +342,11 @@ bool PCSX::System::findResource(std::function<bool(const std::filesystem::path& 
 
 std::filesystem::path PCSX::System::getPersistentDir() const {
     if (getArgs().isPortable()) return getArgs().getPortablePath();
-#ifdef _WIN32
-    char* homeDir;
-    auto ret = _dupenv_s(&homeDir, nullptr, "APPDATA");
-    if ((ret != 0) || (!homeDir)) {
-        return "";
-    }
-    std::filesystem::path persistentDir = std::filesystem::path(homeDir) / "pcsx-redux";
-    free(homeDir);
-#else
     char* homeDir = getenv("HOME");
     if (!homeDir) {
         return "";
     }
     std::filesystem::path persistentDir = std::filesystem::path(homeDir) / ".config" / "pcsx-redux";
-#endif
     if (!std::filesystem::exists(persistentDir)) {
         if (!std::filesystem::create_directories(persistentDir)) {
             return "";

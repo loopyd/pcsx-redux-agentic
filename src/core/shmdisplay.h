@@ -31,7 +31,7 @@ namespace PCSX {
 
 // Publishes the emulated display and accepts pad input through a shared memory block, so that a host
 // application can show the running game in its own window. Enabled with -shmdisplay. The block is named
-// pcsx-redux-display-<pid>, as a POSIX shm object or a Windows file mapping.
+// pcsx-redux-display-<pid>, as a POSIX shared memory object.
 //
 // The block starts with ShmDisplayHeader, and a copy of the 1024x512 16bpp VRAM follows at vramOffset.
 // The header and VRAM are written on each vblank. sequence is odd while a write is in progress, so a

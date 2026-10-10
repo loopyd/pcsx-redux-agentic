@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Extend Lua missions using the pinned source and bundled LuaJIT, `pb` and `protoc`.
+Extend Linux PCSX-Redux Agentic missions using the pinned source and bundled LuaJIT, `pb` and `protoc`.
 Prefer that source over documentation for another revision; do not add a decoder
 or generated Rust runner.
 
@@ -51,6 +51,14 @@ Paths below are relative to `third_party/pcsx-redux-agentic/`:
 | `third_party/lua-protobuf/README.md` | Reflection, integer options and decoding behavior |
 
 ## Application
+
+`PCSX.captureCPUChecked()` returns copied PC, GPR[34], CP0[32], decimal cycles,
+last executed word, nonempty delay slots, ISR flags, exception context, and nearby memory
+words. Calls retain full checked-state refusals and return the same `savestate:`
+errors as checked saves. Reads are aligned U32 words in segments 0, 4, and 5 from
+the first 2 MiB of RAM, BIOS, or scratch; unavailable words are omitted, while
+zero words remain present. Tables own their values. `execution.capture()` uses
+this call and marks its nearby list for JSON array encoding.
 
 `MemoryAsFile::writeBlock` bypasses device handlers. [MMIO probes](bus.md) execute
 effects using scratch RAM and advance guest/device time.

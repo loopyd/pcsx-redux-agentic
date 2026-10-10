@@ -88,13 +88,7 @@ class GdbClient : public Intrusive::List<GdbClient>::Node {
         auto* req = new WriteRequest();
         size_t len;
         char* msg;
-#ifdef _WIN32
-        len = _vscprintf(fmt, a);
-        msg = (char*)malloc(len + 1);
-        vsnprintf(msg, len + 1, fmt, a);
-#else
         len = vasprintf(&msg, fmt, a);
-#endif
         req->m_slice.acquire(msg, len);
         req->enqueue(this);
         va_end(a);

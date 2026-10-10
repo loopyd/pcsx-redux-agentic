@@ -28,18 +28,13 @@ SOFTWARE.
 
 #include <string.h>
 
-#if defined(__i386__) || defined(_M_IX86) || defined(__x86_64) || defined(_M_AMD64)
+#if defined(__i386__) || defined(__x86_64)
 #define CPU_FEATURES_X86
-#if defined(_MSC_VER)
-#include <immintrin.h>
-#include <intrin.h>
-#else
 #include <cpuid.h>
 #include <immintrin.h>
 #endif
-#endif
 
-#if defined(__linux__) && (defined(__arm__) || defined(__aarch64__))
+#if (defined(__arm__) || defined(__aarch64__))
 #include <sys/auxv.h>
 #ifndef HWCAP_NEON
 #define HWCAP_NEON (1 << 12)
@@ -54,15 +49,7 @@ struct Regs {
 };
 
 bool cpuidCount(uint32_t leaf, uint32_t subleaf, Regs &r) {
-#if defined(_MSC_VER)
-    int out[4];
-    __cpuidex(out, static_cast<int>(leaf), static_cast<int>(subleaf));
-    r = {static_cast<uint32_t>(out[0]), static_cast<uint32_t>(out[1]), static_cast<uint32_t>(out[2]),
-         static_cast<uint32_t>(out[3])};
-    return true;
-#else
     return __get_cpuid_count(leaf, subleaf, &r.eax, &r.ebx, &r.ecx, &r.edx) != 0;
-#endif
 }
 
 uint32_t maxLeaf() {
@@ -72,9 +59,7 @@ uint32_t maxLeaf() {
 }
 
 uint64_t xcr0() {
-#if defined(_MSC_VER)
-    return _xgetbv(0);
-#elif defined(__GNUC__) || defined(__clang__)
+#if defined(__GNUC__) || defined(__clang__)
     uint32_t lo, hi;
     __asm__ __volatile__("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
     return (static_cast<uint64_t>(hi) << 32) | lo;
@@ -124,10 +109,10 @@ PCSX::CPUFeatures probe() {
     }
 #endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if defined(__aarch64__)
     // Advanced SIMD is mandatory in the AArch64 base architecture.
     f.neon = true;
-#elif defined(__linux__) && defined(__arm__)
+#elif defined(__arm__)
     f.neon = (getauxval(AT_HWCAP) & HWCAP_NEON) != 0;
 #endif
     return f;

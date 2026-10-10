@@ -1,11 +1,11 @@
 ---
 name: psx-emulator
-description: Operate, inspect and debug PS1 programs and devices through bounded PCSX-Redux Lua missions with reproducible captures.
+description: Operate, inspect and debug PS1 programs and devices through bounded Linux PCSX-Redux Agentic native missions with reproducible captures.
 ---
 
 # PSX emulator
 
-Use embedded missions through `bin/harness runtime run --mission NAME`. Harness owns
+The skill ships with the Linux PCSX-Redux Agentic fork. Use embedded missions through `bin/harness runtime run --mission NAME`. Harness owns
 bounds, cleanup and receipts; requesting project owns semantic acceptance.
 Every mission reads [runtime contract](references/runtime.md), then selected
 reference below. Load only needed branches; [catalog](references/catalog.md)

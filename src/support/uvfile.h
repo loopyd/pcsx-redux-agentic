@@ -192,13 +192,9 @@ class UvFile : public File, public UvThreadOp {
 
   protected:
     RawView rawView() noexcept final override {
-#if defined(__linux__)
         if (m_filetype != RO_SEEKABLE || m_download || m_cache ||
             m_cacheProgress.load(std::memory_order_relaxed) != 0 || m_handle < 0 || m_failed) return {};
         return {RawKind::Descriptor, nullptr, 0, m_handle};
-#else
-        return {};
-#endif
     }
 
   private:

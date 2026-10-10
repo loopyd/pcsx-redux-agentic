@@ -73,11 +73,7 @@
 #include "widgets/memory_observer.h"
 #include "widgets/typed_debugger.h"
 
-#if defined(__APPLE__)
-#define GL_SHADER_VERSION "#version 410\n"
-#else
 #define GL_SHADER_VERSION "#version 300 es\n"
-#endif
 
 struct SDL_Window;
 struct SDL_GLContextState;

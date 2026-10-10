@@ -20,11 +20,8 @@
 #pragma once
 #include "core/r3000a.h"
 #ifdef DYNAREC_AA64
-#include "support/windowswrapper.h"
 
-#ifndef _WIN32
 #include <sys/mman.h>  // For mmap/mprotect
-#endif
 #include "vixl/src/aarch64/macro-assembler-aarch64.h"
 
 using namespace vixl::aarch64;
@@ -39,16 +36,7 @@ alignas(4096) static uint8_t s_codeCache[allocSize];
 
 class Emitter : public MacroAssembler {
   public:
-#ifdef __APPLE__
-    Emitter() : MacroAssembler(reinterpret_cast<uint8_t*>(makeBuffer()), allocSize) {}
-
-    static void* makeBuffer() {
-        void* ptr = mmap(s_codeCache, allocSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        return (ptr == MAP_FAILED) ? nullptr : ptr;
-    }
-#else
     Emitter() : MacroAssembler(s_codeCache, allocSize) {}
-#endif
     void L(Label& l) { Bind(&l); }
 
     template <typename T = void*>
@@ -66,14 +54,7 @@ class Emitter : public MacroAssembler {
     void ready() { FinalizeCode(); }
 
     bool setRWX() {
-#if defined(_WIN32)
-        DWORD oldProtect;  // Unused, but VirtualProtect wants somewhere to store it anyways.
-        return VirtualProtect(s_codeCache, allocSize, PAGE_EXECUTE_READWRITE, &oldProtect) != 0;
-#elif !defined(__APPLE__)
         return mprotect(s_codeCache, allocSize, PROT_READ | PROT_WRITE | PROT_EXEC) != -1;
-#else
-        return false;
-#endif
     }
 
     void setRW() { GetBuffer()->SetWritable(); }

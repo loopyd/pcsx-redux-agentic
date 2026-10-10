@@ -34,13 +34,7 @@
 #include "ftxui/screen/terminal.hpp"
 #include "lua/luawrapper.h"
 
-#ifdef _WIN32
-#include <io.h>
-#define isatty _isatty
-#define fileno _fileno
-#else
 #include <unistd.h>
-#endif
 
 namespace {
 constexpr size_t c_maxLogLines = 10000;

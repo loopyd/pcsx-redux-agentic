@@ -24,7 +24,6 @@ SOFTWARE.
 
 */
 
-#if !defined(_WIN32) && !defined(_WIN64)
 
 #include <assert.h>
 #include <fcntl.h>
@@ -92,5 +91,3 @@ PCSX::SharedMem::~SharedMem() {
         close(m_fd);
     }
 }
-
-#endif

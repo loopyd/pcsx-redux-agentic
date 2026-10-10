@@ -26,7 +26,6 @@ SOFTWARE.
 
 #include "binpath.h"
 
-#ifdef __linux__
 
 #include <unistd.h>
 
@@ -35,5 +34,3 @@ std::u8string PCSX::BinPath::getExecutablePath() {
     readlink("/proc/self/exe", (char*)buffer, BUFSIZ);
     return std::u8string(buffer);
 }
-
-#endif

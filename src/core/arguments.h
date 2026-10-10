@@ -102,11 +102,7 @@ class Arguments {
     bool m_shadersDisabled = false;
     bool m_updateDisabled = false;
     bool m_shmDisplayEnabled = false;
-#ifdef __linux__
     bool m_viewportsEnabled = false;
-#else
-    bool m_viewportsEnabled = true;
-#endif
 };
 
 }  // namespace PCSX

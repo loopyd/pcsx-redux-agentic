@@ -23,9 +23,6 @@
 #ifdef DYNAREC_X86_64
 #include "xbyak.h"
 #include "xbyak_util.h"
-#ifdef __APPLE__
-#include <sys/mman.h>  // For mmap
-#endif                 // __APPLE__
 
 using namespace Xbyak;
 using namespace Xbyak::util;
@@ -230,12 +227,7 @@ struct Emitter final : public CodeGenerator {
     // Tries to mark the emitter memory as readable/writeable/executable without throwing an exception.
     // Returns whether or not it succeeded
     bool setRWX() {
-#ifdef __APPLE__  // MacOS doesn't like marking static memory as executable the way Xbyak does, so we do it ourselves
-        return mmap(s_codeCache, allocSize, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
-                    -1, 0) != MAP_FAILED;
-#else
         return setProtectMode(PROTECT_RWE, false);
-#endif
     }
 };
 #endif  // DYNAREC_X86_64

@@ -42,11 +42,7 @@
 #include "support/eventbus.h"
 #include "supportpsx/adpcm.h"
 
-#if defined(_MSC_VER) || defined(__linux__)
 #define HAS_ATOMIC_WAIT 1
-#else
-#define HAS_ATOMIC_WAIT 0
-#endif
 
 namespace PCSX {
 class Lua;

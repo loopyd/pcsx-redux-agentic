@@ -41,13 +41,13 @@
 #include "support/file.h"
 #include "support/hashtable.h"
 
-#if defined(__i386__) || defined(_M_IX86)
+#if defined(__i386__)
 #define DYNAREC_NONE  // Hahano
-#elif defined(__x86_64) || defined(_M_AMD64)
+#elif defined(__x86_64)
 #define DYNAREC_X86_64
-#elif defined(__aarch64__) || defined(_M_ARM64) || defined(__ARM_ARCH_ISA_A64)
+#elif defined(__aarch64__) || defined(__ARM_ARCH_ISA_A64)
 #define DYNAREC_AA64
-#elif defined(__arm__) || defined(_M_ARM)
+#elif defined(__arm__)
 #define DYNAREC_NONE  // Placeholder for AA32
 #elif defined(__powerpc__) || defined(_M_PPC)
 #define DYNAREC_NONE  // Placeholder for PPC
@@ -55,11 +55,6 @@
 #define DYNAREC_NONE
 #endif
 
-// Disable AA64 JIT on Windows for now
-#if defined(DYNAREC_AA64) && (defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__))
-#undef DYNAREC_AA64
-#define DYNAREC_NONE
-#endif
 
 namespace PCSX {
 

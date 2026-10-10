@@ -483,14 +483,10 @@ class PosixFile : public File {
 
   protected:
     RawView rawView() noexcept final override {
-#if defined(__linux__)
         if (m_filetype != RO_SEEKABLE || !m_handle) return {};
         const int descriptor = fileno(m_handle);
         if (descriptor < 0) return {};
         return {RawKind::Descriptor, nullptr, 0, descriptor};
-#else
-        return {};
-#endif
     }
 
   private:

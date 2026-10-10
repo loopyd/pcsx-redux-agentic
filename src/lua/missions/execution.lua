@@ -1,6 +1,6 @@
 -- lualoader, R"EOF(--
 -- Native CPU boundary observations and bounded symbol-qualified coverage.
-local m, s = require 'support', require 'snapshot'
+local m = require 'support'
 local ffi, bit = require 'ffi', require 'bit'
 local M = {}
 
@@ -35,22 +35,9 @@ function M.classify(word)
 end
 
 function M.capture()
-    local r = s.live().registers
-    local near = m.array()
-    for offset = -8, 8, 4 do
-        local address = r.pc + offset
-        local word = M.word(address)
-        if word then near[#near + 1] = {address = address, word = word} end
-    end
-    return {pc = r.pc, cycles = tostring(r.cycle):gsub('^#', ''),
-        gpr = r.gpr, cp0 = r.cp0, last_executed_word = r.code,
-        next_memory_word = M.word(r.pc), nearby_memory = near,
-        in_isr = r.in_isr, next_is_delay_slot = r.next_is_delay_slot,
-        current_delayed_load = r.current_delayed_load,
-        delay_slot_info_1 = r.delay_slot_info_1, delay_slot_info_2 = r.delay_slot_info_2,
-        exception = {cause = r.cp0[14], epc = r.cp0[15], status = r.cp0[13],
-            badvaddr = r.cp0[9], code = bit.band(bit.rshift(r.cp0[14], 2), 31),
-            branch_delay = bit.band(r.cp0[14], 0x80000000) ~= 0}}
+    local observation = PCSX.captureCPUChecked()
+    observation.nearby_memory = m.array(observation.nearby_memory)
+    return observation
 end
 
 function M.deltas(before, after)
