@@ -21,10 +21,58 @@
 
 #include <stdint.h>
 
+#include <array>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include "core/sstate.h"
 
 namespace PCSX {
 class SIO;
+
+class MemoryCardImage {
+  public:
+    static constexpr size_t SectorSize = 128, BlockSize = 8192, Size = 131072;
+    struct Block {
+        int mcd = 0, number = 0;
+        std::string titleAscii, titleSjis, titleUtf8, id, name, filename;
+        uint32_t fileSize = 0, iconCount = 0, allocState = 0;
+        uint16_t icon[16 * 16 * 3]{};
+        int32_t nextBlock = -1;
+        bool checksumValid = false;
+        std::vector<unsigned> chain;
+        std::vector<std::string> diagnostics;
+        void reset() { *this = Block{}; }
+        bool isErased() const { return allocState >= 0xa0 && allocState <= 0xa3; }
+        bool isChained() const { return allocState == 0x52 || allocState == 0x53; }
+    };
+    struct Directory {
+        std::array<Block, 15> blocks;
+        unsigned freeBlocks = 0, files = 0;
+        std::vector<std::string> diagnostics;
+    };
+    struct File {
+        Block metadata;
+        std::string bytes;
+    };
+
+    explicit MemoryCardImage(std::string_view raw);
+    static MemoryCardImage parse(std::string_view bytes, std::string_view format = "auto");
+    static Block inspectBlock(std::string_view raw, unsigned block, bool icons = false, bool title = true);
+    static std::vector<unsigned> fileChain(std::string_view raw, unsigned firstBlock);
+    std::string_view bytes() const { return m_bytes; }
+    Directory directory(bool icons = false, bool titles = true) const;
+    File readFile(unsigned firstBlock) const;
+    void validate() const;
+    MemoryCardImage erased(unsigned firstBlock) const;
+    MemoryCardImage copiedFrom(const MemoryCardImage& source, unsigned firstBlock, unsigned& destinationBlock) const;
+    void exportFile(std::string_view path, bool overwrite = false, std::string_view format = "raw") const;
+
+  private:
+    std::vector<unsigned> chain(unsigned firstBlock) const { return fileChain(m_bytes, firstBlock); }
+    std::string m_bytes;
+};
 
 class MemoryCard {
   public:
@@ -54,8 +102,8 @@ class MemoryCard {
     void enablePocketstation() { m_pocketstationEnabled = true; };
     char *getMcdData() { return m_mcdData; }
     void loadMcd(PCSX::u8string mcd);
-    void saveMcd(PCSX::u8string mcd, const char *data, uint32_t adr, size_t size);
-    void saveMcd(PCSX::u8string mcd) { saveMcd(mcd, m_mcdData, 0, c_cardSize); }
+    bool saveMcd(PCSX::u8string mcd, const char *data, uint32_t adr, size_t size);
+    bool saveMcd(PCSX::u8string mcd) { return saveMcd(mcd, m_mcdData, 0, c_cardSize); }
 
   private:
     enum Commands : uint8_t {

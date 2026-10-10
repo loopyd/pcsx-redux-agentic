@@ -29,9 +29,6 @@ static const std::string_view condition = (
 static const std::string_view controller = (
 #include "lua/missions/controller.lua"
 );
-static const std::string_view decoded = (
-#include "lua/missions/decoded.lua"
-);
 static const std::string_view delivery = (
 #include "lua/missions/delivery.lua"
 );
@@ -88,6 +85,9 @@ static const std::string_view media = (
 );
 static const std::string_view memory = (
 #include "lua/missions/memory.lua"
+);
+static const std::string_view memcard = (
+#include "lua/missions/memcard.lua"
 );
 static const std::string_view mount = (
 #include "lua/missions/mount.lua"
@@ -178,7 +178,6 @@ const PCSX::Missions::Resource resources[] = {
     {"command", PCSX::Missions::Role::Module, "src/lua/missions/command.lua", command.data(), command.size()},
     {"condition", PCSX::Missions::Role::Module, "src/lua/missions/condition.lua", condition.data(), condition.size()},
     {"controller", PCSX::Missions::Role::Module, "src/lua/missions/controller.lua", controller.data(), controller.size()},
-    {"decoded", PCSX::Missions::Role::Module, "src/lua/missions/decoded.lua", decoded.data(), decoded.size()},
     {"delivery", PCSX::Missions::Role::Module, "src/lua/missions/delivery.lua", delivery.data(), delivery.size()},
     {"devices", PCSX::Missions::Role::Module, "src/lua/missions/devices.lua", devices.data(), devices.size()},
     {"difference", PCSX::Missions::Role::Module, "src/lua/missions/difference.lua", difference.data(), difference.size()},
@@ -197,6 +196,7 @@ const PCSX::Missions::Resource resources[] = {
     {"irq", PCSX::Missions::Role::Mission, "src/lua/missions/irq.lua", irq.data(), irq.size()},
     {"lid", PCSX::Missions::Role::Module, "src/lua/missions/lid.lua", lid.data(), lid.size()},
     {"media", PCSX::Missions::Role::Module, "src/lua/missions/media.lua", media.data(), media.size()},
+    {"memcard", PCSX::Missions::Role::Mission, "src/lua/missions/memcard.lua", memcard.data(), memcard.size()},
     {"memory", PCSX::Missions::Role::Mission, "src/lua/missions/memory.lua", memory.data(), memory.size()},
     {"mount", PCSX::Missions::Role::Module, "src/lua/missions/mount.lua", mount.data(), mount.size()},
     {"opcode", PCSX::Missions::Role::Module, "src/lua/missions/opcode.lua", opcode.data(), opcode.size()},

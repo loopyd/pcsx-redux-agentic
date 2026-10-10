@@ -20,6 +20,7 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -400,6 +401,7 @@ SaveState constructSaveState();
 Result context() noexcept;
 Result saveChecked(std::string& output) noexcept;
 Result captureCPUChecked(CPUObservation& output) noexcept;
+Result withCheckedState(const std::function<Result(const SaveState&)>& operation) noexcept;
 Result loadChecked(std::string_view data) noexcept;
 
 std::string save();

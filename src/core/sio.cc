@@ -22,13 +22,10 @@
 #include <sys/stat.h>
 
 #include <algorithm>
-#include <bitset>
 #include <stdexcept>
 
 #include "core/memorycard.h"
 #include "core/pad.h"
-#include "mips-common/util/sjis-fullwidth-ascii.hh"
-#include "support/sjis_conv.h"
 #include "support/strings-helpers.h"
 
 // clk cycle byte
@@ -364,105 +361,8 @@ void PCSX::SIO::scheduledCallback() {
 }
 
 void PCSX::SIO::getMcdBlockInfo(int mcd, int block, McdBlock& info) {
-    if (block < 1 || block > 15) {
-        throw std::runtime_error("Wrong block number");
-    }
-
-    uint16_t clut[16];
-
-    info.reset();
-    info.number = block;
+    info = MemoryCardImage::inspectBlock(std::string_view(getMcdData(mcd), c_cardSize), block, true);
     info.mcd = mcd;
-
-    char* data = getMcdData(mcd);
-    uint8_t* ptr = reinterpret_cast<uint8_t*>(data) + block * c_blockSize + 2;
-    auto& ta = info.titleAscii;
-    auto& ts = info.titleSjis;
-    info.iconCount = std::max(1, *ptr & 0x3);
-
-    ptr += 2;
-    int x = 0;
-
-    for (int i = 0; i < 48; i++) {
-        uint8_t b = *ptr++;
-        ts += b;
-        uint16_t c = b;
-        if (b & 0x80) {
-            c <<= 8;
-            b = *ptr++;
-            ts += b;
-            c |= b;
-        }
-
-        bool found = false;
-        for (int s = 0; s < sizeof(::Sjis::c_fullwidthAsciiToSjis) / sizeof(::Sjis::c_fullwidthAsciiToSjis[0]); s++) {
-            if (c == ::Sjis::c_fullwidthAsciiToSjis[s]) {
-                c = s + 0x20;
-                found = true;
-                break;
-            }
-        }
-
-        ta += found ? c : '?';
-    }
-
-    info.titleUtf8 = Sjis::toUtf8(ts);
-
-    // Read CLUT
-    ptr = reinterpret_cast<uint8_t*>(data) + block * c_blockSize + 0x60;
-    std::memcpy(clut, ptr, 16 * sizeof(uint16_t));
-
-    // Icons can have 1 to 3 frames of animation
-    for (uint32_t i = 0; i < info.iconCount; i++) {
-        uint16_t* icon = &info.icon[i * 16 * 16];
-        ptr = reinterpret_cast<uint8_t*>(data) + block * c_blockSize + 128 + 128 * i;  // icon data
-
-        // Fetch each pixel, store it in the icon array in ABBBBBGGGGGRRRRR with the alpha bit set to 1
-        for (x = 0; x < 16 * 16; x++) {
-            const uint8_t entry = (uint8_t)*ptr;
-            icon[x++] = clut[entry & 0xf] | (1 << 15);
-            icon[x] = clut[entry >> 4] | (1 << 15);
-            ptr++;
-        }
-    }
-
-    // Parse directory frame info
-    const auto directoryFrame = (uint8_t*)data + block * c_sectorSize;
-    uint32_t allocState = 0;
-    allocState |= directoryFrame[0];
-    allocState |= directoryFrame[1] << 8;
-    allocState |= directoryFrame[2] << 16;
-    allocState |= directoryFrame[3] << 24;
-    info.allocState = allocState;
-
-    char tmp[17];
-    memset(tmp, 0, sizeof(tmp));
-    std::strncpy(tmp, (const char*)&directoryFrame[0xa], 12);
-    info.id = tmp;
-    memset(tmp, 0, sizeof(tmp));
-    std::strncpy(tmp, (const char*)&directoryFrame[0x16], 16);
-    info.name = tmp;
-
-    uint32_t fileSize = 0;
-    fileSize |= directoryFrame[4];
-    fileSize |= directoryFrame[5] << 8;
-    fileSize |= directoryFrame[6] << 16;
-    fileSize |= directoryFrame[7] << 24;
-    info.fileSize = fileSize;
-
-    uint16_t nextBlock = 0;
-    nextBlock |= directoryFrame[8];
-    nextBlock |= directoryFrame[9] << 8;
-    info.nextBlock = nextBlock == 0xffff ? -1 : (nextBlock + 1);
-
-    // Check if the block is marked as free in the directory frame and adjust the name/filename if so
-    if (info.isErased()) {
-        info.reset();
-        info.allocState = 0xa0;
-        info.titleAscii = "Free Block";
-        info.titleSjis = "Free Block";
-        info.titleUtf8 = "Free Block";
-    }
 }
 
 char* PCSX::SIO::getMcdData(int mcd) {
@@ -478,128 +378,88 @@ char* PCSX::SIO::getMcdData(int mcd) {
     }
 }
 
-// Erase a memory card block by clearing it with 0s
-// mcd: The memory card we want to use (1 or 2)
-void PCSX::SIO::eraseMcdFile(const McdBlock& block) {
-    char* data = getMcdData(block.mcd);
-
-    // Set the block data to 0
-    const size_t offset = block.number * c_blockSize;
-    std::memset(data + offset, 0, c_blockSize);
-
-    // Fix up the corresponding directory frame in block 0.
-    const auto frame = (uint8_t*)data + block.number * c_sectorSize;
-    frame[0] = 0xa0;                   // Code for a freshly formatted block
-    for (auto i = 1; i < 0x7f; i++) {  // Zero the rest of the frame
-        frame[i] = 0;
-    }
-    frame[0x7f] = 0xa0;  // xor checksum of frame
-
-    if (block.isErased()) {
-        return;
-    }
-
-    auto nextBlock = block.nextBlock;
-    if ((nextBlock >= 1) && (nextBlock <= 15)) {
-        McdBlock next;
-        getMcdBlockInfo(block.mcd, nextBlock, next);
-        eraseMcdFile(next);
+bool PCSX::SIO::eraseMcdFile(const McdBlock& block) {
+    if (cardTransactionActive()) return false;
+    try {
+        const MemoryCardImage source(std::string_view(getMcdData(block.mcd), c_cardSize));
+        const auto prepared = source.erased(block.number);
+        commitCardImage(block.mcd, prepared);
+        return true;
+    } catch (const std::exception& error) {
+        PCSX::g_system->printf("Memory card erase refused: %s\n", error.what());
+        return false;
     }
 }
 
 unsigned PCSX::SIO::getFreeSpace(int mcd) {
+    const std::string_view data(getMcdData(mcd), c_cardSize);
     unsigned count = 0;
-    for (int i = 1; i < 16; i++) {
-        McdBlock block;
-        getMcdBlockInfo(mcd, i, block);
-        if (block.isErased()) {
-            count++;
-        }
+    for (unsigned i = 1; i <= 15; ++i) {
+        const auto block = MemoryCardImage::inspectBlock(data, i, false, false);
+        if (block.isErased() && block.checksumValid) ++count;
     }
-
     return count;
 }
 
 unsigned PCSX::SIO::getFileBlockCount(McdBlock block) {
-    if (block.isErased()) {
+    if (block.isErased()) return 0;
+    try {
+        return MemoryCardImage::fileChain(std::string_view(getMcdData(block.mcd), c_cardSize), block.number).size();
+    } catch (const std::exception&) {
         return 0;
-    }
-
-    std::bitset<16> walked;
-    unsigned count = 1;
-
-    while (true) {
-        if ((block.nextBlock < 1) || (block.nextBlock > 15)) {
-            return count;
-        }
-        if (walked.test(block.nextBlock)) {
-            return count;
-        }
-        walked.set(block.nextBlock);
-        getMcdBlockInfo(block.mcd, block.nextBlock, block);
-        count++;
     }
 }
 
 int PCSX::SIO::findFirstFree(int mcd) {
-    McdBlock block;
-    for (int i = 1; i < 16; i++) {
-        getMcdBlockInfo(mcd, i, block);
-        if (block.isErased()) {
-            return i;
-        }
+    const std::string_view data(getMcdData(mcd), c_cardSize);
+    for (unsigned i = 1; i <= 15; ++i) {
+        const auto block = MemoryCardImage::inspectBlock(data, i, false, false);
+        if (block.isErased() && block.checksumValid) return i;
     }
-
     return -1;
 }
 
-bool PCSX::SIO::copyMcdFile(McdBlock block) {
-    auto other = otherMcd(block);
-    if (getFreeSpace(other) < getFileBlockCount(block)) {
+bool PCSX::SIO::copyMcdFile(McdBlock block, bool eraseSource) {
+    if (cardTransactionActive()) return false;
+    try {
+        const auto destination = otherMcd(block);
+        const MemoryCardImage source(std::string_view(getMcdData(block.mcd), c_cardSize));
+        const MemoryCardImage target(std::string_view(getMcdData(destination), c_cardSize));
+        unsigned first = 0;
+        const auto prepared = target.copiedFrom(source, block.number, first);
+        std::optional<MemoryCardImage> erased;
+        if (eraseSource) erased = source.erased(block.number);
+        if (erased) commitCardImage(block.mcd, *erased);
+        commitCardImage(destination, prepared);
+        return true;
+    } catch (const std::exception&) {
         return false;
     }
-    const auto data = getMcdData(block);
-    const auto otherData = getMcdData(other);
+}
 
-    std::bitset<16> walked;
-    int prevBlock = -1;
+bool PCSX::SIO::cardTransactionActive() const noexcept {
+    return m_currentDevice == DeviceType::MemoryCard ||
+           m_memoryCard[0].m_currentCommand != MemoryCard::Commands::None ||
+           m_memoryCard[1].m_currentCommand != MemoryCard::Commands::None;
+}
 
-    while (true) {
-        int dstBlock = findFirstFree(other);
-        if (dstBlock < 1 || dstBlock > 16) {
-            throw std::runtime_error("Inconsistent memory card state");
-        }
+bool PCSX::SIO::cardDirty(unsigned slot) const {
+    if (slot < 1 || slot > c_cardCount) throw std::runtime_error("invalid memory card slot");
+    return !m_memoryCard[slot - 1].m_savedToDisk;
+}
 
-        // copy block data
-        size_t srcOffset = block.number * c_blockSize;
-        size_t dstOffset = dstBlock * c_blockSize;
-        std::memcpy(otherData + dstOffset, data + srcOffset, c_blockSize);
+void PCSX::SIO::commitCardImage(unsigned slot, const MemoryCardImage& image) noexcept {
+    auto& card = m_memoryCard[slot - 1];
+    std::memcpy(card.m_mcdData, image.bytes().data(), c_cardSize);
+    card.m_directoryFlag = MemoryCard::Flags::DirectoryUnread;
+    card.m_savedToDisk = false;
+}
 
-        // copy directory entry
-        srcOffset = block.number * c_sectorSize;
-        dstOffset = dstBlock * c_sectorSize;
-        std::memcpy(otherData + dstOffset, data + srcOffset, c_sectorSize);
-
-        // Fix up the corresponding directory frame in block 0.
-        if (prevBlock != -1) {
-            const auto frame = reinterpret_cast<uint8_t*>(otherData) + prevBlock * c_sectorSize;
-            uint8_t crcFix = frame[8] ^ (dstBlock - 1);
-            frame[8] = dstBlock - 1;
-            frame[0x7f] ^= crcFix;
-        }
-        prevBlock = dstBlock;
-        if (block.nextBlock == -1) {
-            return true;
-        }
-        if ((block.nextBlock < 1) || (block.nextBlock > 15)) {
-            return false;
-        }
-        if (walked.test(block.nextBlock)) {
-            return false;
-        }
-        walked.set(block.nextBlock);
-        getMcdBlockInfo(block.mcd, block.nextBlock, block);
-    }
+bool PCSX::SIO::flushCard(unsigned slot) {
+    if (slot < 1 || slot > c_cardCount || cardTransactionActive()) return false;
+    const auto path = slot == 1 ? g_emulator->settings.get<Emulator::SettingMcd1>().string()
+                                : g_emulator->settings.get<Emulator::SettingMcd2>().string();
+    return m_memoryCard[slot - 1].saveMcd(path);
 }
 
 // Back up the entire memory card to a file

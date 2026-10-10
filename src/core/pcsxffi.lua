@@ -412,4 +412,53 @@ print = function(...) printLike(function(s) C.luaMessage(s, false) end, ...) end
 printError = function(...) printLike(function(s) C.luaMessage(s, true) end, ...) end
 bit.extract = function(x, n, w) return bit.rshift(bit.band(x, bit.lshift(1, w) - 1), n) end
 
+return function()
+    local history, nativeSnapshot = PCSX.History, PCSX.History.snapshot
+    history.correlateCD = function(capture)
+        return (capture or history.snapshot()).correlateCD()
+    end
+    history.snapshot = function()
+        local owner = nativeSnapshot()
+        local statusBytes, recordBytes, payload = owner:statusBytes(), owner:recordBytes(), owner:payload()
+        assert(#statusBytes == ffi.sizeof('HistoryStatus'), 'invalid native history status size')
+        local status = ffi.new('HistoryStatus')
+        ffi.copy(status, statusBytes, #statusBytes)
+        local count = tonumber(status.events)
+        assert(#recordBytes == count * ffi.sizeof('HistoryRecord'), 'invalid native history record size')
+        local records = ffi.new('HistoryRecord[?]', math.max(1, count))
+        ffi.copy(records, recordBytes, #recordBytes)
+        return {
+            status = function() return ffi.new('HistoryStatus', status) end,
+            records = function(first, length)
+                historyInteger(first, count, 'record first index')
+                historyInteger(length, count - first, 'record count')
+                if first == 0 and length == count then return records end
+                local result = ffi.new('HistoryRecord[?]', math.max(1, length))
+                ffi.copy(result, records + first, length * ffi.sizeof('HistoryRecord'))
+                return result
+            end,
+            bytes = function(offset, length)
+                historyInteger(offset, #payload, 'payload offset')
+                historyInteger(length, #payload - offset, 'payload length')
+                return payload:sub(offset + 1, offset + length)
+            end,
+            correlateCD = function() return owner:correlateCD() end,
+        }
+    end
+    local function checked(namespace, name)
+        local native = assert(namespace[name])
+        namespace[name] = function(...)
+            local result, observation = native(...)
+            stateResult(result)
+            return observation
+        end
+    end
+    for _, name in ipairs({'captureChecked', 'waitResponse', 'openLid', 'closeLid', 'scheduleCloseLid', 'mount', 'eject'}) do
+        checked(PCSX.CD, name)
+    end
+    for _, name in ipairs({'captureChecked', 'editChecked', 'importChecked', 'flushChecked'}) do
+        checked(PCSX.MemoryCards, name)
+    end
+end
+
 -- )EOF"

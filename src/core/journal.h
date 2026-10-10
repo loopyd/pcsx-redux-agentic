@@ -31,6 +31,13 @@ struct Status {
 };
 static_assert(sizeof(Status) == 48);
 
+struct Snapshot {
+    Status status;
+    uint64_t epoch = 0;
+    std::vector<Record> records;
+    std::vector<uint8_t> payload;
+};
+
 class Journal {
   public:
     explicit Journal(std::thread::id owner = std::this_thread::get_id()) : m_owner(owner) {}
@@ -122,6 +129,15 @@ class Journal {
         if (!owner() || m_status.state != 2 || offset > m_payload.size() ||
             length > m_payload.size() - offset || (length && !out)) return false;
         if (length) std::memcpy(out, m_payload.data() + offset, length);
+        return true;
+    }
+    bool snapshot(Snapshot& out) const {
+        std::lock_guard guard(m_mutex);
+        if (!owner() || m_status.state != 2 || m_records.size() > 65536 || m_payload.size() > 8 * 1024 * 1024)
+            return false;
+        out.status = m_status;
+        out.records = m_records;
+        out.payload = m_payload;
         return true;
     }
     bool owner() const { return std::this_thread::get_id() == m_owner; }

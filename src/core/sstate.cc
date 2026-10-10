@@ -499,7 +499,8 @@ CPUObservation projectCPU(const SaveState& state) {
     return output;
 }
 
-Result savePrepared(std::string& output, SaveMode mode, CPUObservation* cpu = nullptr) noexcept {
+Result savePrepared(std::string& output, SaveMode mode, CPUObservation* cpu = nullptr,
+                    const std::function<Result(const SaveState&)>* operation = nullptr) noexcept {
     output.clear();
     const auto guard = mode == SaveMode::Checked ? boundary(true) : contextAvailable();
     if (guard != Result::Ok) return guard;
@@ -546,6 +547,7 @@ Result savePrepared(std::string& output, SaveMode mode, CPUObservation* cpu = nu
             const auto validation = validateRestore(readback);
             if (validation != Result::Ok) return validation;
             if (cpu) *cpu = projectCPU(readback.state);
+            if (operation) return (*operation)(readback.state);
         }
         if (!cpu) output.swap(bytes);
         return Result::Ok;
@@ -564,6 +566,11 @@ Result captureCPUChecked(CPUObservation& output) noexcept {
     output = {};
     std::string bytes;
     return savePrepared(bytes, SaveMode::Checked, &output);
+}
+Result withCheckedState(const std::function<Result(const SaveState&)>& operation) noexcept {
+    if (!operation) return Result::InvalidState;
+    std::string bytes;
+    return savePrepared(bytes, SaveMode::Checked, nullptr, &operation);
 }
 }
 

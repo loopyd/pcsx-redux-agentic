@@ -42,6 +42,13 @@ class ISO9660Reader {
 
     typedef std::pair<ISO9660LowLevel::DirEntry, ISO9660LowLevel::DirEntry_XA> FullDirEntry;
     std::vector<FullDirEntry> listAllEntriesFrom(const ISO9660LowLevel::DirEntry& entry);
+    struct Directory {
+        std::vector<FullDirEntry> entries;
+        std::string path;
+        const char* error = nullptr;
+    };
+    Directory listDirectory(std::string_view path, size_t maxEntries = 4096);
+
     const ISO9660LowLevel::DirEntry& getRootDirEntry() { return m_pvd.get<ISO9660LowLevel::PVD_RootDir>(); }
     const ISO9660LowLevel::PVD& getPVD() { return m_pvd; }
     // Returns the LBA just past the end of the volume descriptor set, i.e. the
@@ -53,6 +60,7 @@ class ISO9660Reader {
     bool m_failed = false;
     uint32_t m_vdEnd = 17;
 
+    Directory readDirectory(const ISO9660LowLevel::DirEntry&, size_t maxEntries, bool includeSentinels);
     std::optional<FullDirEntry> findEntry(const std::string_view& filename);
     ISO9660LowLevel::PVD m_pvd;
 };

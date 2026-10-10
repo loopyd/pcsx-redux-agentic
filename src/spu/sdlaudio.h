@@ -119,6 +119,7 @@ class SDLAudio {
     void setCaptureLua(Lua, std::function<std::array<uint32_t, 2>()>);
     void checkCaptureSettings();
     bool captureEnvironment(Environment&);
+    bool captureSnapshot(Capture::Snapshot&);
     bool checkEnvironment(const Environment&);
     ~SDLAudio() { uninit(); }
     uint32_t getFrameCount() { return m_frameCount.load(); }

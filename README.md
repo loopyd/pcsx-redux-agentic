@@ -91,6 +91,16 @@ named tables that own their data. `Audio.exportPCM` streams raw PCM and WAV file
 in fixed chunks. Native MMIO and VRAM packers construct complete store probes.
 Lua controls checked admission, guest execution, and scratch and register restoration.
 
+`History.snapshot()` owns one frozen journal with its worker and joined Audio
+records. Native CD correlation reuses that snapshot. `PCSX.CD` supplies checked
+controller observations, bounded response waiting, lid controls and prepared media
+replacement. ISO directory listing returns complete bounded rows in one call.
+
+`PCSX.MemoryCards` supplies owned card snapshots, inventory, save extraction,
+staged copy/move/erase, supported image import, raw export and explicit flush.
+The baked `memcard` mission uses the same native parser as SIO. Failed persistence
+keeps dirty state; live edits and host writes remain separate operations.
+
 `PCSX.convertScreenshot(bytes, width, height, bpp)` converts packed BGR555 pixels
 to RGB24 in one bounded call, sharing the native VRAM colour kernel. RGB24 passes
 through unchanged. The frames mission keeps raw pixels and metadata and uses this

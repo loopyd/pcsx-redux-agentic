@@ -44,8 +44,45 @@ lineage. CPU handoff joins exact publication sequence ranges. These observations
 do not establish DSP/hardware fidelity, worker race/deadlock freedom or acceptable
 performance; those require actual native missions and measured controls.
 
-The existing 31 fixture sources cover parsing, accounting, refusals and seven
-native seed missions. Synthetic rows qualify parser contracts only. Native seed
-states use the current v6 schema and explicitly record host edits; changed fork
-semantic domains cannot be given invented legacy meanings. Preserve failures and
-run the seven producer/worker/DMA missions separately under a verified fork build.
+Synthetic rows qualify parser contracts only. Native seed states use the current
+v6 schema and record host edits. Preserve failed captures and run affected
+producer/worker/DMA missions under a verified fork build before claiming behavior.
+
+`PCSX.History.snapshot()` owns the frozen journal, payload, worker lane and joined
+Audio events. Export and transaction analysis reuse that capture. Its `status`,
+`records` and `bytes` functions retain the existing zero-based range conventions;
+`correlateCD()` performs native worker chronology, publication and forward Audio
+joins. `PCSX.History.correlateCD(capture?)` accepts the same snapshot. Acquisition
+requires settled paused ownership and matching frozen epochs. Correlation refuses
+incomplete evidence. Failed acquisition retains the raw frozen journal and an
+incomplete transaction report; it does not clear recorder evidence.
+
+`PCSX.CD.captureChecked()` returns owned controller fields after complete native
+checked-state capture and validation, without decoding the full state in Lua.
+`PCSX.CD.waitResponse({maxVsyncs=60, timeoutMs=10000}, callback)` counts native
+Vsyncs, requests a pause and checks the response only after execution and event
+dispatch unwind. It leaves the FIFO unconsumed and unacknowledged. Bounds are
+1–120 Vsyncs, 1–600000 milliseconds and 64 pending handles. The callback receives
+`(response, nil)` or `(nil, error)` once; response includes copied `state`,
+`vsyncs`, `interrupt` and `command_error`. `handle.cancel()` requests completion
+with an error. Deadline, reset, state load and shutdown release listeners and
+callback references. Retain the handle when cancellation is needed.
+
+`PCSX.CD.peekLid()` reads the current flag without applying scheduled closure.
+`openLid()`, `closeLid()` and `scheduleCloseLid()` require checked admission;
+scheduled closure uses the existing one-second guest-cycle target. `mount(path)`
+prepares an owned image and checks media topology before replacing it; `eject()`
+installs an owned failed image. Both require an open lid and idle controller
+transfers. Failed preparation retains the old image. Successful mounting signals
+`IsoMounted` after releasing the lease and never closes the lid or resets the
+guest. A notification failure after replacement is `CommitFailed`; rollback is
+not promised. The baked mission exposes these operations with actions `open-lid`,
+`close-lid`, `schedule-close-lid`, `mount` and `eject`. Declare all replacement
+media inputs explicitly; a host path change alone does not extend receipt provenance.
+
+`iso:listDirectory(path, {maxEntries=4096})` traverses ancestors once and returns
+owned rows `{name, lba, size, isDir}` plus the normalized path. `listDir` aliases it.
+Paths are at most 4096 bytes, components at most 255 bytes, directory extents at
+most 8 MiB and entry bounds 1–65536. Names are exact and case-sensitive; missing
+directories, relative components, malformed records and exceeded bounds refuse.
+The bound applies during native collection, before Lua table construction.

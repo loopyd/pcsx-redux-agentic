@@ -48,6 +48,8 @@ Paths below are relative to `third_party/pcsx-redux-agentic/`:
 | `src/core/gte-instructions.cc` | Native COP2 arithmetic; interpreter gates on Status.CU2 |
 | `src/spu/registers.cc` | Port side effects |
 | `src/core/isoffi.lua`, `cdrom.cc` | Mounted media/sector modes/ISO reader versus controller lifecycle |
+| `src/core/cdlua.cc`, `historylua.cc` | Checked CD observations/waits, prepared media changes and frozen native joins |
+| `src/core/memorycardlua.cc`, `memorycard.cc`, `sio.cc` | Owned card images, shared directory/chain parsing, staged edits and persistence |
 | `third_party/lua-protobuf/README.md` | Reflection, integer options and decoding behavior |
 
 ## Application
@@ -126,6 +128,6 @@ timers remain separate.
 
 Save/load can alter scheduling; serialized state does not establish determinism
 or complete hardware coverage. `PCSX.SPU.playAudio` provides host preview, not
-emulated PCM. Analog trajectories, disc switching and hardware-fidelity claims
+emulated PCM. Analog trajectories and hardware-fidelity claims
 require explicit inputs, bounds and validation; never approximate silently.
 Keep experiment evidence outside procedural references.

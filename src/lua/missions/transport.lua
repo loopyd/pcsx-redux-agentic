@@ -47,17 +47,18 @@ function M.run()
                 if start_error then failures[#failures+1]=start_error end
                 local function attempt(label,callback)
                     local ok,value=pcall(callback)
-                    if not ok then failures[#failures+1]=label..': '..tostring(value);return nil end
+                    if not ok then failures[#failures+1]=label..': '..tostring(value);return nil,tostring(value) end
                     return value
                 end
                 if started then attempt('history freeze',function() h.stop();return true end) end
                 if audio_started then attempt('audio freeze',function() a.stop();return true end) end
-                local native,sound,correlation
-                if started then native=attempt('history export',events.export) end
+                local native,sound,correlation,capture,snapshot_error
+                if started then capture,snapshot_error=attempt('history snapshot',h.snapshot) end
+                if started then native=attempt('history export',function() return events.export(capture or h) end) end
                 if audio_started then sound=attempt('audio export',pcm.export) end
                 if started then
                     correlation=attempt('CD correlation',function()
-                        return transactions.export(h,limits,native,joined and {report=sound,events=a.events} or nil,bindings)
+                        return transactions.export(capture or h,limits,native,joined and {report=sound} or nil,bindings,snapshot_error)
                     end)
                 end
                 if started or audio_started then

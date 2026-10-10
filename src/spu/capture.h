@@ -35,6 +35,11 @@ class Capture {
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
     };
+    struct Snapshot {
+        Status status;
+        uint64_t epoch = 0;
+        std::vector<Event> events;
+    };
     static constexpr uint32_t MAX_FRAMES = 44100 * 60;
     static constexpr uint32_t MAX_RECORDS = 65536;
     static constexpr uint32_t MAX_BATCH = 1024;
@@ -169,6 +174,13 @@ class Capture {
         if (!frozen() || count > MAX_BATCH || first > m_status.events || count > m_status.events - first ||
             (count && !out)) return false;
         if (count) std::memcpy(out, m_events.data() + first, size_t(count) * sizeof(Event));
+        return true;
+    }
+    bool snapshot(Snapshot& out) {
+        if (!frozen() || m_status.events > MAX_RECORDS) return false;
+        if (!status(out.status)) return false;
+        out.epoch = identity()[1];
+        out.events.assign(m_events.begin(), m_events.begin() + m_status.events);
         return true;
     }
     bool sampleRange(uint32_t offset, uint32_t frames) {

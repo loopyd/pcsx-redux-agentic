@@ -37,6 +37,7 @@ retains layer navigation.
 | Sound voices/DSP state | [SPU](references/spu.md) |
 | Native mixed PCM/SPU access capture | [Audio](references/audio.md) |
 | Disc media/controller/journal capture | [CD-ROM](references/cdrom.md) |
+| Card inventory, save extraction, edits and persistence | [Memory cards](references/memcard.md) |
 | Extend Lua action | [API contract](references/api.md) |
 | Native customization | [Native authorization and validation](references/native.md) |
 

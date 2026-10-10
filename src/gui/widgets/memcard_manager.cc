@@ -277,11 +277,10 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
                 if (otherFreeSpace >= size) {
                     if (ImGui::SmallButton(buttonName.c_str())) {
                         auto latest = getLatest();
-                        bool success = g_emulator->m_sio->copyMcdFile(block);
+                        bool success = g_emulator->m_sio->copyMcdFile(block, true);
                         if (!success) {
                             gui->addNotification("Error while copying save file");
                         } else {
-                            g_emulator->m_sio->eraseMcdFile(block);
                             saveUndoBuffer(
                                 std::move(latest),
                                 fmt::format("Moved file {}({}) from card {} to card {}", block.number,

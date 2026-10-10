@@ -47,6 +47,12 @@ class CDRom {
     virtual ~CDRom() {}
     static CDRom* factory();
     bool isLidOpen();
+    bool peekLid() const noexcept { return m_lidOpen; }
+    void swapPreparedIso(std::shared_ptr<CDRIso>& iso) noexcept { m_iso.swap(iso); }
+    void notifyIsoMounted() {
+        parseIso();
+        g_system->m_eventBus->signal(Events::IsoMounted{});
+    }
     void closeLid() {
         History::CD::Scope historyScope(History::CD::Operation::Lid, 0);
         m_lidOpen = false;
@@ -82,6 +88,8 @@ class CDRom {
     const std::string& getCDRomLabel() { return m_cdromLabel; }
 
     virtual bool acceptsPreparedState(const SaveStates::CDRom&, uint32_t scheduleMask) const noexcept = 0;
+    virtual bool acceptsPreparedMedia(const SaveStates::CDRom&, uint32_t scheduleMask,
+                                      const std::shared_ptr<CDRIso>&) const noexcept = 0;
     virtual void reset() = 0;
     bool historyInitialized() const;
     void historyReset();

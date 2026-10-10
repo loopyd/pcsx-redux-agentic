@@ -1,5 +1,6 @@
 local f,transactions,m=require 'responses',require 'transactions',require 'support'
 local j=f.journal();local limits={mutations=16,bytes=8388608}
+j.h.correlateCD=function() return {decoded={enabled=false,records=m.array(),handoffs=m.array(),unconsumed_publications=m.array()},feeds={}} end
 f.identity(function()
     local result=transactions.scan(j.h,limits,nil,{})
     assert(result.complete and result.schema=='psx.runtime-cd-transactions/v2' and result.cd_observation_version==3)

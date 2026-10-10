@@ -28,6 +28,9 @@
 #include <vector>
 
 #include "core/history.h"
+#include "core/historylua.h"
+#include "core/cdlua.h"
+#include "core/memorycardlua.h"
 #include "core/transactions.h"
 #include "core/pcsxlua.h"
 
@@ -1096,6 +1099,7 @@ static void registerAllSymbols(PCSX::Lua L) {
 }
 
 void PCSX::LuaFFI::runPausedCallbacks(Lua L) {
+    pollCD(L);
     auto* state = L.getState();
     const int base = lua_gettop(state);
     lua_getfield(state, LUA_REGISTRYINDEX, pauseCallbacks);
@@ -1131,6 +1135,10 @@ void PCSX::LuaFFI::open_pcsx(Lua L) {
     L.push(lua_CFunction(captureCPUChecked));
     L.push(lua_CFunction(queuePausedCallback));
     L.pcall(2);
+    openHistoryCapture(L);
+    openCD(L);
+    openMemoryCards(L);
+    L.pcall();
     L.getfieldtable("PCSX", LUA_GLOBALSINDEX);
     L.declareFunc("scanByteRanges", scanByteRanges, -1);
     L.declareFunc("convertVRAM", convertVRAM, -1);

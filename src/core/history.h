@@ -32,6 +32,7 @@ bool clear();
 bool status(Status* out);
 bool records(uint32_t first, uint32_t count, Record* out);
 bool bytes(uint32_t offset, uint32_t length, void* out);
+bool snapshot(Snapshot& out);
 void fail(Failure reason);
 void emit(Kind kind, uint32_t device, std::array<uint32_t, 8> data = {},
           uint64_t related = 0, const void* payload = nullptr, uint32_t length = 0,

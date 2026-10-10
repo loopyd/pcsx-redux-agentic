@@ -188,8 +188,9 @@ function M.describe(record)
     return kind, data, decoded
 end
 
-function M.export()
-    local h = assert(PCSX.History, 'native history binding required')
+function M.export(capture)
+    local h = capture or assert(PCSX.History, 'native history binding required')
+    if not capture and type(h.snapshot)=='function' then h=h.snapshot() end
     local status = h.status()
     assert(status.version == 1 and status.state == 2, 'unsupported or unfrozen native history')
     local count, size = tonumber(status.events), tonumber(status.bytes)

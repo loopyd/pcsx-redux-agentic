@@ -107,6 +107,11 @@ class CDRomImpl final : public PCSX::CDRom {
     }
 
     bool acceptsPreparedState(const PCSX::SaveStates::CDRom& cd, uint32_t mask) const noexcept override {
+        return acceptsPreparedMedia(cd, mask, m_iso);
+    }
+
+    bool acceptsPreparedMedia(const PCSX::SaveStates::CDRom& cd, uint32_t mask,
+                              const std::shared_ptr<PCSX::CDRIso>& iso) const noexcept override {
         using namespace PCSX::SaveStates;
         using Access = PCSX::CDRIso::StateAccess;
         const auto msf = [](const auto& field) {
@@ -116,13 +121,13 @@ class CDRomImpl final : public PCSX::CDRom {
         };
         const auto position = msf(cd.get<CDCurrentPosition>());
         const auto seek = msf(cd.get<CDSeekPosition>());
-        const auto access = [this](Access kind, MSF at, uint8_t track = 0) {
-            return m_iso && m_iso->acceptsStateAccess(kind, at, track);
+        const auto access = [&iso](Access kind, MSF at, uint8_t track = 0) {
+            return iso && iso->acceptsStateAccess(kind, at, track);
         };
         const auto data = [&](MSF at, bool resetsXA) {
             if (!access(Access::DataSector, at)) return false;
-            const auto track = m_iso->getTrack(at);
-            if (track == 0 || m_iso->getTrackType(track) == PCSX::CDRIso::TrackType::CDDA || resetsXA ||
+            const auto track = iso->getTrack(at);
+            if (track == 0 || iso->getTrackType(track) == PCSX::CDRIso::TrackType::CDDA || resetsXA ||
                 !cd.get<CDRealtime>().decodedValue() || cd.get<CDXAEnded>().decodedValue() ||
                 cd.get<CDXAFirstSector>().decodedValue()) return true;
             if (!m_xaFormatReady) return false;
@@ -132,10 +137,10 @@ class CDRomImpl final : public PCSX::CDRom {
         };
         const auto audio = [&](MSF at) {
             if (!access(Access::TrackAddress, at)) return false;
-            if (at >= m_iso->getTD(0)) return true;
+            if (at >= iso->getTD(0)) return true;
             if (!access(Access::Position, at)) return false;
             uint8_t locP[8];
-            if (m_iso->getLocP(at, locP) && cd.get<CDAutoPause>().decodedValue() &&
+            if (iso->getLocP(at, locP) && cd.get<CDAutoPause>().decodedValue() &&
                 cd.get<CDPlayTrack>().decodedValue() != 0 && locP[0] != cd.get<CDPlayTrack>().decodedValue())
                 return true;
             return access(Access::AudioSector, at);
@@ -152,13 +157,13 @@ class CDRomImpl final : public PCSX::CDRom {
                     if (size > 0) {
                         unsigned track = isValidBCD(payload[0]) ? PCSX::IEC60908b::btoi(payload[0]) : 100;
                         if (track != 0) {
-                            if (track > m_iso->getTN()) {
+                            if (track > iso->getTN()) {
                                 if (!access(Access::Position, position)) return false;
-                                track = m_iso->getTrack(position);
+                                track = iso->getTrack(position);
                             }
                             if (track != 0) {
                                 if (!access(Access::TrackAddress, position, track)) return false;
-                                next = m_iso->getTD(track);
+                                next = iso->getTD(track);
                                 seeks = true;
                             }
                         }

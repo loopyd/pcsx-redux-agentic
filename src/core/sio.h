@@ -40,37 +40,7 @@ struct SIORegisters {
 
 class SIO {
   public:
-    struct McdBlock {
-        McdBlock() { reset(); }
-        int mcd;
-        int number;
-        std::string titleAscii;
-        std::string titleSjis;
-        std::string titleUtf8;
-        std::string id;
-        std::string name;
-        uint32_t fileSize;
-        uint32_t iconCount;
-        uint16_t icon[16 * 16 * 3];
-        uint32_t allocState;
-        int16_t nextBlock;
-        void reset() {
-            mcd = 0;
-            number = 0;
-            titleAscii.clear();
-            titleSjis.clear();
-            titleUtf8.clear();
-            id.clear();
-            name.clear();
-            fileSize = 0;
-            iconCount = 0;
-            memset(icon, 0, sizeof(icon));
-            allocState = 0;
-            nextBlock = -1;
-        }
-        bool isErased() const { return (allocState & 0xa0) == 0xa0; }
-        bool isChained() const { return (allocState & ~1) == 0x52; }
-    };
+    using McdBlock = MemoryCardImage::Block;
 
     static constexpr size_t c_sectorSize = 8 * 16;            // 80h bytes per sector/frame
     static constexpr size_t c_blockSize = c_sectorSize * 64;  // 40h sectors per block
@@ -107,12 +77,13 @@ class SIO {
     void scheduledCallback();
     void reset();
 
-    bool copyMcdFile(McdBlock block);
-    void eraseMcdFile(const McdBlock &block);
-    void eraseMcdFile(int mcd, int block) {
+    bool copyMcdFile(McdBlock block, bool eraseSource = false);
+    bool eraseMcdFile(const McdBlock &block);
+    bool eraseMcdFile(int mcd, int block) {
         McdBlock info;
-        getMcdBlockInfo(mcd, block, info);
-        eraseMcdFile(info);
+        info.mcd = mcd;
+        info.number = block;
+        return eraseMcdFile(info);
     }
     int findFirstFree(int mcd);
     unsigned getFreeSpace(int mcd);
@@ -128,6 +99,10 @@ class SIO {
         m_memoryCard[1].loadMcd(mcd2);
     }
     void saveMcd(int mcd);
+    bool cardTransactionActive() const noexcept;
+    bool cardDirty(unsigned slot) const;
+    void commitCardImage(unsigned slot, const MemoryCardImage& image) noexcept;
+    bool flushCard(unsigned slot);
     static constexpr int otherMcd(int mcd) {
         if ((mcd != 1) && (mcd != 2)) throw std::runtime_error("Bad memory card number");
         if (mcd == 1) return 2;

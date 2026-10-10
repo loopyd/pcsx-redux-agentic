@@ -29,6 +29,7 @@
 #include "json.hpp"
 #include "lua/luawrapper.h"
 #include "spu/environment.h"
+#include "spu/capture.h"
 
 namespace PCSX {
 
@@ -75,6 +76,7 @@ class SPUInterface {
     virtual void captureReturn(uint32_t, uint32_t, uint32_t) = 0;
     virtual void invalidateCapture() = 0;
     virtual std::array<uint64_t, 2> captureIdentity() = 0;
+    virtual bool captureSnapshot(SPU::Capture::Snapshot&) = 0;
     virtual bool captureEnvironment(SPU::Environment&) = 0;
     virtual bool checkEnvironment(const SPU::Environment&) = 0;
 

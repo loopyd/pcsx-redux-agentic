@@ -56,6 +56,7 @@ Bounded capture of device state and output.
 | Sound voices and DSP state | [SPU](spu.md) |
 | Native mixed PCM and SPU access capture | [Audio](audio.md) |
 | Disc media, CD controller and journal capture | [CD-ROM](cdrom.md) |
+| Card inventory, extraction, edits and persistence | [Memory cards](memcard.md) |
 
 ## 5. Extend an action
 

@@ -120,6 +120,13 @@ bool PCSX::SPU::SDLAudio::checkEnvironment(const Environment& value) {
         value.stream == (m_stream != nullptr);
 }
 
+bool PCSX::SPU::SDLAudio::captureSnapshot(Capture::Snapshot& out) {
+    if (!paused(m_capture)) return false;
+    checkCaptureSettings();
+    StreamGuard lock(m_stream);
+    return lock.valid && m_capture.snapshot(out);
+}
+
 void PCSX::SPU::SDLAudio::checkCaptureSettings() {
     if (!m_capture.ownerThread()) { m_capture.fail(Capture::Thread); return; }
     if (!m_capture.active()) return;

@@ -27,6 +27,8 @@
 
 #include "core/arguments.h"
 #include "core/cdrom.h"
+#include "core/cdlua.h"
+#include "core/pcsxlua.h"
 #include "core/gpu.h"
 #include "core/logger.h"
 #include "core/psxemulator.h"
@@ -561,9 +563,11 @@ runner.init({
                     // call "update" when the emulator is paused.
                     s_ui->update();
                 }
+                PCSX::LuaFFI::pollCD(*L);
             }
             system->pause();
             system->m_eventBus->signal(PCSX::Events::Quitting{});
+            PCSX::LuaFFI::pollCD(*L);
             system->purgeAllEvents();
         } catch (...) {
             // This will ensure we don't do certain cleanups that are awaiting other tasks,

@@ -522,5 +522,14 @@ bool workerRecords(uint32_t first, uint32_t count, WorkerRecord* out) {
     if (count) std::memcpy(out, worker.records.data() + first, size_t(count) * sizeof(WorkerRecord));
     return true;
 }
+bool workerSnapshot(WorkerSnapshot& out) {
+    if (!History::ownerThread() || g_system->running() || g_system->quitting()) return false;
+    std::lock_guard guard(worker.mutex);
+    if (worker.status.state == 1 || worker.records.size() > 65536) return false;
+    out.status = worker.status;
+    if (worker.status.state == 2) out.records = worker.records;
+    else out.records.clear();
+    return true;
+}
 
 }

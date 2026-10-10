@@ -20,6 +20,7 @@
 #include "core/luaiso.h"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <unordered_set>
 
@@ -54,8 +55,14 @@ LuaIso* openIsoFromFile(PCSX::LuaFFI::LuaFile* wrapper) {
     return new LuaIso(std::make_shared<PCSX::CDRIso>(wrapper->file));
 }
 
-PCSX::ISO9660Reader* createIsoReader(LuaIso* wrapper) { return new PCSX::ISO9660Reader(wrapper->iso); }
-void deleteIsoReader(PCSX::ISO9660Reader* isoReader) { delete isoReader; }
+std::unordered_set<PCSX::ISO9660Reader*> readers;
+PCSX::ISO9660Reader* createIsoReader(LuaIso* wrapper) {
+    auto reader = std::make_unique<PCSX::ISO9660Reader>(wrapper->iso);
+    readers.insert(reader.get());
+    return reader.release();
+}
+void deleteIsoReader(PCSX::ISO9660Reader* reader) { readers.erase(reader); delete reader; }
+uintptr_t isoReaderAddress(PCSX::ISO9660Reader* reader) { return reinterpret_cast<uintptr_t>(reader); }
 
 bool isReaderFailed(PCSX::ISO9660Reader* reader) { return reader->failed(); }
 PCSX::LuaFFI::LuaFile* readerOpen(PCSX::ISO9660Reader* reader, const char* path) {
@@ -70,70 +77,48 @@ MSF getIsoTD(LuaIso* wrapper, uint32_t tn) {
     return {ret.m, ret.s, ret.f};
 }
 
-struct DirEntries {
-    std::vector<PCSX::ISO9660Reader::FullDirEntry> entries;
-};
-
-// Drop ISO9660 "." (\0) and ".." (\1) sentinel entries from a listing.
-static std::vector<PCSX::ISO9660Reader::FullDirEntry> stripSelfParent(
-    std::vector<PCSX::ISO9660Reader::FullDirEntry>&& entries) {
-    std::vector<PCSX::ISO9660Reader::FullDirEntry> out;
-    out.reserve(entries.size());
-    for (auto& e : entries) {
-        const auto& name = e.first.get<PCSX::ISO9660LowLevel::DirEntry_Filename>().value;
-        if (name.size() == 1 && (name[0] == '\0' || name[0] == '\1')) continue;
-        out.push_back(std::move(e));
+constexpr char directoryMetatable[] = "PCSX.ISODirectory";
+int destroyDirectory(lua_State* state) {
+    static_cast<PCSX::ISO9660Reader::Directory*>(lua_touserdata(state, 1))->~Directory();
+    return 0;
+}
+int listIsoDirectory(lua_State* state) {
+    if (lua_gettop(state) != 3 || lua_type(state, 1) != LUA_TNUMBER ||
+        lua_type(state, 2) != LUA_TSTRING || lua_type(state, 3) != LUA_TNUMBER)
+        return luaL_error(state, "ISO listDirectory requires a reader, path, and entry bound");
+    const double address = lua_tonumber(state, 1), count = lua_tonumber(state, 3);
+    if (!std::isfinite(address) || address < 0 || address > 9007199254740991.0 || std::floor(address) != address ||
+        !std::isfinite(count) || count < 1 || count > 65536 || std::floor(count) != count)
+        return luaL_error(state, "invalid ISO reader or entry bound");
+    auto* reader = reinterpret_cast<PCSX::ISO9660Reader*>(uintptr_t(address));
+    if (!readers.contains(reader)) return luaL_error(state, "ISO reader is no longer owned");
+    size_t length;
+    const char* path = lua_tolstring(state, 2, &length);
+    luaL_checkstack(state, 6, "ISO listDirectory requires more stack space");
+    auto* directory = new (lua_newuserdata(state, sizeof(PCSX::ISO9660Reader::Directory)))
+        PCSX::ISO9660Reader::Directory();
+    luaL_getmetatable(state, directoryMetatable);
+    lua_setmetatable(state, -2);
+    try { *directory = reader->listDirectory(std::string_view(path, length), size_t(count)); }
+    catch (const std::bad_alloc&) { directory->error = "ISO directory allocation failed"; }
+    catch (...) { directory->error = "malformed ISO directory"; }
+    if (directory->error) return luaL_error(state, "%s", directory->error);
+    lua_createtable(state, directory->entries.size(), 0);
+    for (size_t index = 0; index < directory->entries.size(); ++index) {
+        const auto& entry = directory->entries[index].first;
+        const auto& name = entry.get<PCSX::ISO9660LowLevel::DirEntry_Filename>().value;
+        lua_createtable(state, 0, 4);
+        lua_pushlstring(state, name.data(), name.size()); lua_setfield(state, -2, "name");
+        lua_pushnumber(state, entry.get<PCSX::ISO9660LowLevel::DirEntry_LBA>()); lua_setfield(state, -2, "lba");
+        lua_pushnumber(state, entry.get<PCSX::ISO9660LowLevel::DirEntry_Size>()); lua_setfield(state, -2, "size");
+        lua_pushboolean(state, entry.get<PCSX::ISO9660LowLevel::DirEntry_Flags>().value & 2);
+        lua_setfield(state, -2, "isDir");
+        lua_rawseti(state, -2, index + 1);
     }
-    return out;
-}
-
-DirEntries* readerListDir(PCSX::ISO9660Reader* reader, const char* path) {
-    if (reader->failed()) return new DirEntries{};
-    auto root = reader->getRootDirEntry();
-    if (path == nullptr || path[0] == '\0') {
-        return new DirEntries{stripSelfParent(reader->listAllEntriesFrom(root))};
-    }
-    // Walk the path using listAllEntriesFrom. ISO9660 directory entries
-    // don't carry version suffixes (only files do), so exact match on each
-    // path component is correct for directory listing.
-    auto parts = PCSX::StringsHelpers::split(std::string_view(path), "/");
-    PCSX::ISO9660LowLevel::DirEntry current = root;
-    for (auto& part : parts) {
-        auto entries = reader->listAllEntriesFrom(current);
-        bool found = false;
-        for (auto& [entry, xa] : entries) {
-            if (entry.get<PCSX::ISO9660LowLevel::DirEntry_Filename>().value == part) {
-                current = entry;
-                found = true;
-                break;
-            }
-        }
-        if (!found) return new DirEntries{};
-    }
-    // Only return children if the target is actually a directory.
-    if ((current.get<PCSX::ISO9660LowLevel::DirEntry_Flags>().value & 2) == 0) {
-        return new DirEntries{};
-    }
-    return new DirEntries{stripSelfParent(reader->listAllEntriesFrom(current))};
-}
-
-void deleteDirEntries(DirEntries* entries) { delete entries; }
-uint32_t dirEntriesCount(DirEntries* entries) { return entries->entries.size(); }
-const char* dirEntryName(DirEntries* entries, uint32_t index) {
-    if (index >= entries->entries.size()) return "";
-    return entries->entries[index].first.get<PCSX::ISO9660LowLevel::DirEntry_Filename>().value.c_str();
-}
-uint32_t dirEntryLBA(DirEntries* entries, uint32_t index) {
-    if (index >= entries->entries.size()) return 0;
-    return entries->entries[index].first.get<PCSX::ISO9660LowLevel::DirEntry_LBA>();
-}
-uint32_t dirEntrySize(DirEntries* entries, uint32_t index) {
-    if (index >= entries->entries.size()) return 0;
-    return entries->entries[index].first.get<PCSX::ISO9660LowLevel::DirEntry_Size>();
-}
-bool dirEntryIsDir(DirEntries* entries, uint32_t index) {
-    if (index >= entries->entries.size()) return false;
-    return (entries->entries[index].first.get<PCSX::ISO9660LowLevel::DirEntry_Flags>().value & 2) != 0;
+    lua_pushlstring(state, directory->path.data(), directory->path.size());
+    directory->~Directory();
+    new (directory) PCSX::ISO9660Reader::Directory();
+    return 2;
 }
 
 struct GapEntry {
@@ -451,13 +436,7 @@ static void registerAllSymbols(PCSX::Lua L) {
     REGISTER(L, readerOpen);
     REGISTER(L, fileisoOpen);
 
-    REGISTER(L, readerListDir);
-    REGISTER(L, deleteDirEntries);
-    REGISTER(L, dirEntriesCount);
-    REGISTER(L, dirEntryName);
-    REGISTER(L, dirEntryLBA);
-    REGISTER(L, dirEntrySize);
-    REGISTER(L, dirEntryIsDir);
+    REGISTER(L, isoReaderAddress);
 
     REGISTER(L, readerFindGaps);
     REGISTER(L, deleteGapList);
@@ -541,5 +520,12 @@ void PCSX::LuaFFI::open_iso(Lua L) {
 #include "core/isoffi.lua"
     );
     registerAllSymbols(L);
+    auto* state = L.getState();
+    luaL_newmetatable(state, directoryMetatable);
+    lua_pushcfunction(state, destroyDirectory); lua_setfield(state, -2, "__gc");
+    lua_pop(state, 1);
+    lua_getglobal(state, "PCSX");
+    lua_pushcfunction(state, listIsoDirectory); lua_setfield(state, -2, "_listIsoDirectory");
+    lua_pop(state, 1);
     L.load(isoFFI, "src:core/isoffi.lua");
 }

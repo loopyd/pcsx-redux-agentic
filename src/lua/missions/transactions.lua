@@ -1,22 +1,27 @@
 -- lualoader, R"EOF(--
 local m,events,image,c = require 'support',require 'events',require 'image',require 'controller'
 local M={}
-function M.scan(h,limits,audio,bindings)
+function M.scan(h,limits,audio,bindings,correlated)
+    if type(h.snapshot)=='function' then h=h.snapshot() end
     local status=h.status();local controller=c.new(status);local sectors=require('sectors').new(limits)
+    correlated=correlated or (type(h.correlateCD)=='function' and h.correlateCD())
+    assert(type(correlated)=='table' and type(correlated.decoded)=='table' and type(correlated.feeds)=='table',
+        'native CD correlation or an owning correlated report is required')
     local names={'controller','scheduler','streams','media','sectors','audio','eligibility','delivery','transfers','command',
-        'submission','playback','decoded','lid'}
+        'submission','playback','lid'}
     local consumers={controller,require('scheduler').new(controller),require('streams').new(controller),
-        require('media').new(controller),sectors,require('feeds').new(controller,audio),require('eligibility').new(controller),
+        require('media').new(controller),sectors,require('feeds').new(controller,audio,correlated.feeds),require('eligibility').new(controller),
         require('delivery').new(controller),require('transfers').new(controller),require('command').new(controller),
-        require('submission').new(controller),require('playback').new(controller),require('decoded').new(controller,h),require('lid').new(controller)}
+        require('submission').new(controller),require('playback').new(controller),require('lid').new(controller)}
     local images,geometry,previous,boundaries={}
     local records=h.records(0,tonumber(status.events))
+    local frozen=h.bytes(0,tonumber(status.bytes))
     for index=0,tonumber(status.events)-1 do
         local row=records[index];events.describe(row)
         local offset,length=tonumber(row.offset),tonumber(row.length)
         assert(offset>=0 and length>=0 and offset%1==0 and length%1==0 and offset+length<=tonumber(status.bytes),
             'native CD payload exceeds frozen journal')
-        local payload=h.bytes(offset,length);assert(type(payload)=='string' and #payload==length,'short owning native payload copy')
+        local payload=frozen:sub(offset+1,offset+length);assert(#payload==length,'short owning native payload copy')
         if row.kind==47 then
             local phase=tonumber(row.device);assert(not controller.current() and not images[phase],'nested or duplicate image boundary')
             local decoded=image.decode(row,payload)
@@ -37,7 +42,7 @@ function M.scan(h,limits,audio,bindings)
     assert(images[0] and images[1],'native image boundaries incomplete')
     local result={schema='psx.runtime-cd-transactions/v2',native_envelope_version=1,cd_observation_version=3,
         build_identity=m.buildIdentity(),complete=true,begin_cycle=m.exact(status.beginCycle),end_cycle=m.exact(status.endCycle),
-        events=tonumber(status.events),payload_bytes=tonumber(status.bytes),image={initial=images[0],final=images[1]}}
+        events=tonumber(status.events),payload_bytes=tonumber(status.bytes),image={initial=images[0],final=images[1]},decoded=correlated.decoded}
     for i,consumer in ipairs(consumers) do result[names[i]]=consumer.finish() end
     assert(boundaries and boundaries[0] and boundaries[1] and result.sectors.initial_bytes==boundaries[0].bytes and
         result.sectors.final_bytes==boundaries[1].bytes,'native FIFO export boundaries mismatch')
@@ -48,8 +53,9 @@ function M.scan(h,limits,audio,bindings)
         'per-byte bus timing','worker execution timestamps','worker race/deadlock/performance qualification'})
     return result
 end
-function M.export(h,limits,native,audio,bindings)
+function M.export(h,limits,native,audio,bindings,snapshot_error)
     local ok,result,encoded=pcall(function()
+        assert(not snapshot_error,'native CD snapshot unavailable: '..tostring(snapshot_error))
         local status=h.status();local build_identity=m.buildIdentity()
         assert(native and native.schema=='psx.native-history/v2' and native.native_envelope_version==1 and native.cd_observation_version==3 and
             native.build_identity.binary_sha256==build_identity.binary_sha256 and native.build_identity.source_manifest_sha256==build_identity.source_manifest_sha256 and

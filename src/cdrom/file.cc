@@ -35,7 +35,10 @@ PCSX::CDRIsoFile::CDRIsoFile(std::shared_ptr<CDRIso> iso, uint32_t lba, int32_t 
         mode = IEC60908b::SectorMode::RAW;
         do {
             m_cachedLBA = lba;
-            iso->readSectors(lba, sector, 1);
+            if (iso->readSectors(lba, sector, 1) != 1) {
+                m_failed = true;
+                return;
+            }
             static constexpr uint8_t syncPattern[] = {0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
                                                       0xff, 0xff, 0xff, 0xff, 0xff, 0x00};
             if (memcmp(sector, syncPattern, sizeof(syncPattern)) != 0) {
@@ -85,7 +88,10 @@ PCSX::CDRIsoFile::CDRIsoFile(std::shared_ptr<CDRIso> iso, uint32_t lba, int32_t 
     while (true) {
         if (m_cachedLBA != lba) {
             m_cachedLBA = lba;
-            iso->readSectors(lba, sector, 1);
+            if (iso->readSectors(lba, sector, 1) != 1) {
+                m_failed = true;
+                return;
+            }
         }
         uint8_t* subheaders = sector + 16;
         if (subheaders[2] & 0x81) break;

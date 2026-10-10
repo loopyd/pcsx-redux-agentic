@@ -108,6 +108,7 @@ class impl final : public SPUInterface {
     void captureReturn(uint32_t, uint32_t, uint32_t) final;
     void invalidateCapture() final;
     std::array<uint64_t, 2> captureIdentity() final { return m_audioOut.capture().identity(); }
+    bool captureSnapshot(Capture::Snapshot& out) final { return m_audioOut.captureSnapshot(out); }
     bool captureEnvironment(Environment& value) final { return m_audioOut.captureEnvironment(value); }
     bool checkEnvironment(const Environment& value) final { return m_audioOut.checkEnvironment(value); }
 

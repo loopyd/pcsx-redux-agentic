@@ -29,7 +29,7 @@ PCSX::ISO9660Reader::ISO9660Reader(std::shared_ptr<CDRIso> iso) : m_iso(iso) {
 
     // Scan the full Volume Descriptor Set (LBA 16..terminator) to both find
     // the PVD and record where the set actually ends.
-    while (true) {
+    while (pvdSector < 4096) {
         IO<File> pvdFile(new CDRIsoFile(iso, pvdSector, 2048));
         if (pvdFile->failed()) {
             m_failed = true;
@@ -37,7 +37,7 @@ PCSX::ISO9660Reader::ISO9660Reader(std::shared_ptr<CDRIso> iso) : m_iso(iso) {
         }
 
         uint8_t vd[7];
-        pvdFile->readAt(vd, 7, 0);
+        if (pvdFile->readAt(vd, 7, 0) != 7) { m_failed = true; return; }
         if ((vd[1] != 'C') || (vd[2] != 'D') || (vd[3] != '0') || (vd[4] != '0') || (vd[5] != '1') || (vd[6] != 1)) {
             // Malformed descriptor set: even if we already have the PVD, the
             // set is broken so we can't trust m_vdEnd.
@@ -61,6 +61,7 @@ PCSX::ISO9660Reader::ISO9660Reader(std::shared_ptr<CDRIso> iso) : m_iso(iso) {
 
         pvdSector++;
     }
+    m_failed = true;
 }
 
 PCSX::File *PCSX::ISO9660Reader::open(const std::string_view &filename) {
@@ -94,37 +95,107 @@ std::optional<PCSX::ISO9660Reader::FullDirEntry> PCSX::ISO9660Reader::findEntry(
     return current;
 }
 
-std::vector<PCSX::ISO9660Reader::FullDirEntry> PCSX::ISO9660Reader::listAllEntriesFrom(
-    const ISO9660LowLevel::DirEntry &dirEntry) {
-    if (m_failed) return {};
-    if ((dirEntry.get<ISO9660LowLevel::DirEntry_Flags>().value & 2) == 0) return {};
-
-    IO<File> dir(new CDRIsoFile(m_iso, dirEntry.get<ISO9660LowLevel::DirEntry_LBA>(),
-                                dirEntry.get<ISO9660LowLevel::DirEntry_Size>()));
-
-    std::vector<FullDirEntry> ret;
-    while (!dir->eof()) {
-        uint8_t peek = dir->byte();
-        if (peek == 0) continue;
-        dir->rSeek(-1, SEEK_CUR);
-        ISO9660LowLevel::DirEntry entry;
-
-        auto ptr = dir->rTell();
-        entry.deserialize(dir);
-        auto len = entry.get<ISO9660LowLevel::DirEntry_Length>().value;
-        auto extLen = entry.get<ISO9660LowLevel::DirEntry_ExtLength>().value;
-        auto N = entry.get<ISO9660LowLevel::DirEntry_Filename>().value.size();
-        ssize_t maybeXA = len + extLen - 33 - N;
-        if ((N & 1) == 0) {
-            dir->byte();
-            maybeXA--;
-        }
-        ISO9660LowLevel::DirEntry_XA entryXA;
-        if (maybeXA == 14) entryXA.deserialize(dir);
-        dir->rSeek(ptr + len + extLen, SEEK_SET);
-
-        ret.push_back({entry, entryXA});
+PCSX::ISO9660Reader::Directory PCSX::ISO9660Reader::readDirectory(
+    const ISO9660LowLevel::DirEntry& dirEntry, size_t maxEntries, bool includeSentinels) {
+    Directory result;
+    if (m_failed) { result.error = "invalid ISO9660 reader"; return result; }
+    if (!(dirEntry.get<ISO9660LowLevel::DirEntry_Flags>().value & 2)) {
+        result.error = "ISO path is not a directory";
+        return result;
     }
+    const uint64_t size = dirEntry.get<ISO9660LowLevel::DirEntry_Size>();
+    const uint64_t lba = dirEntry.get<ISO9660LowLevel::DirEntry_LBA>();
+    const uint64_t volume = m_pvd.get<ISO9660LowLevel::PVD_VolumeSpaceSize>();
+    if (lba > volume || size > (volume - lba) * 2048 || size > 8388608) {
+        result.error = "ISO directory extent exceeds bounds";
+        return result;
+    }
+    IO<File> dir(new CDRIsoFile(m_iso, lba, size));
+    if (dir->failed()) { result.error = "cannot read ISO directory"; return result; }
+    while (uint64_t(dir->rTell()) < size) {
+        const auto start = dir->rTell();
+        uint8_t length;
+        if (dir->read(&length, 1) != 1) {
+            result.error = "short ISO directory read";
+            return result;
+        }
+        if (!length) {
+            dir->rSeek(std::min<uint64_t>((uint64_t(start) / 2048 + 1) * 2048, size), SEEK_SET);
+            continue;
+        }
+        if (length < 34 || uint64_t(start) + length > size || (start % 2048) + length > 2048) {
+            result.error = "malformed ISO directory record";
+            return result;
+        }
+        uint8_t header[33];
+        if (dir->readAt(header, sizeof(header), start) != sizeof(header) ||
+            header[1] != 0 || header[32] == 0 || 33u + header[32] + ((header[32] & 1) ? 0 : 1) > length) {
+            result.error = "malformed ISO directory record";
+            return result;
+        }
+        dir->rSeek(start, SEEK_SET);
+        FullDirEntry entry;
+        entry.first.deserialize(dir);
+        const auto& name = entry.first.get<ISO9660LowLevel::DirEntry_Filename>().value;
+        if ((name.size() & 1) == 0) dir->byte();
+        if (length - 33 - name.size() - ((name.size() & 1) ? 0 : 1) == 14)
+            entry.second.deserialize(dir);
+        dir->rSeek(start + length, SEEK_SET);
+        const bool sentinel = name.size() == 1 && (name[0] == '\0' || name[0] == '\1');
+        if (!includeSentinels && sentinel) continue;
+        if (result.entries.size() == maxEntries) {
+            result.error = "ISO directory exceeds entry bound";
+            return result;
+        }
+        result.entries.push_back(std::move(entry));
+    }
+    return result;
+}
 
-    return ret;
+PCSX::ISO9660Reader::Directory PCSX::ISO9660Reader::listDirectory(std::string_view path, size_t maxEntries) {
+    Directory result;
+    if (!maxEntries || maxEntries > 65536 || path.size() > 4096 || path.find('\0') != path.npos ||
+        path.find('\\') != path.npos) {
+        result.error = "invalid ISO directory path or entry bound";
+        return result;
+    }
+    auto current = getRootDirEntry();
+    size_t offset = 0;
+    while (offset < path.size()) {
+        if (path[offset] == '/') { ++offset; continue; }
+        const size_t end = path.find('/', offset);
+        const auto part = path.substr(offset, end == path.npos ? path.size() - offset : end - offset);
+        if (part == "." || part == ".." || part.size() > 255) {
+            result.error = "invalid ISO directory path component";
+            return result;
+        }
+        auto children = readDirectory(current, maxEntries, false);
+        if (children.error) { result.error = children.error; return result; }
+        bool found = false;
+        for (const auto& entry : children.entries) {
+            if (entry.first.get<ISO9660LowLevel::DirEntry_Filename>().value != part) continue;
+            if (!(entry.first.get<ISO9660LowLevel::DirEntry_Flags>().value & 2)) {
+                result.error = "ISO path is not a directory";
+                return result;
+            }
+            current = entry.first;
+            found = true;
+            break;
+        }
+        if (!found) { result.error = "ISO directory not found"; return result; }
+        if (!result.path.empty()) result.path += '/';
+        result.path += part;
+        offset = end == path.npos ? path.size() : end + 1;
+    }
+    auto entries = readDirectory(current, maxEntries, false);
+    result.entries = std::move(entries.entries);
+    result.error = entries.error;
+    return result;
+}
+
+std::vector<PCSX::ISO9660Reader::FullDirEntry> PCSX::ISO9660Reader::listAllEntriesFrom(
+    const ISO9660LowLevel::DirEntry& entry) {
+    auto result = readDirectory(entry, 65536, true);
+    if (result.error) return {};
+    return std::move(result.entries);
 }

@@ -46,14 +46,7 @@ LuaFile* fileisoOpen(LuaIso* wrapper, uint32_t lba, uint32_t size, enum SectorMo
 uint32_t getIsoTN(LuaIso* wrapper);
 MSF getIsoTD(LuaIso* wrapper, uint32_t tn);
 
-typedef struct { char opaque[?]; } DirEntries;
-DirEntries* readerListDir(IsoReader* reader, const char* path);
-void deleteDirEntries(DirEntries* entries);
-uint32_t dirEntriesCount(DirEntries* entries);
-const char* dirEntryName(DirEntries* entries, uint32_t index);
-uint32_t dirEntryLBA(DirEntries* entries, uint32_t index);
-uint32_t dirEntrySize(DirEntries* entries, uint32_t index);
-bool dirEntryIsDir(DirEntries* entries, uint32_t index);
+uintptr_t isoReaderAddress(IsoReader* reader);
 
 typedef struct { char opaque[?]; } GapList;
 GapList* readerFindGaps(IsoReader* reader);
@@ -144,6 +137,8 @@ uint8_t dirTreeGetDateDay(IsoDirTree* node);
 local C = ffi.load 'CORE_ISO'
 
 local function createIsoReaderWrapper(isoReader)
+    local address = tonumber(C.isoReaderAddress(isoReader))
+    assert(address <= 9007199254740991, 'ISO reader address exceeds exact Lua integer range')
     local reader = {
         _wrapper = ffi.gc(isoReader, C.deleteIsoReader),
         open = function(self, fname) return Support.File._createFileWrapper(C.readerOpen(self._wrapper, fname)) end,
@@ -156,23 +151,17 @@ local function createIsoReaderWrapper(isoReader)
             end
             return result
         end,
-        listDir = function(self, path)
+        listDirectory = function(self, path, options)
+            options = options or {}
+            assert(type(options) == 'table', 'ISO directory options must be a table')
+            for key in pairs(options) do assert(key == 'maxEntries', 'unknown ISO directory option') end
             if path == nil then path = '' end
-            local entries = ffi.gc(C.readerListDir(self._wrapper, path), C.deleteDirEntries)
-            local count = C.dirEntriesCount(entries)
-            local result = {}
-            for i = 0, count - 1 do
-                local name = ffi.string(C.dirEntryName(entries, i))
-                table.insert(result, {
-                    name = name,
-                    lba = C.dirEntryLBA(entries, i),
-                    size = C.dirEntrySize(entries, i),
-                    isDir = C.dirEntryIsDir(entries, i),
-                })
-            end
-            return result
+            local limit = options.maxEntries
+            if limit == nil then limit = 4096 end
+            return PCSX._listIsoDirectory(address, path, limit)
         end,
     }
+    reader.listDir = reader.listDirectory
     return reader
 end
 
@@ -181,6 +170,9 @@ local function createIsoWrapper(wrapper)
         _wrapper = ffi.gc(wrapper, C.deleteIso),
         failed = function(self) return C.isIsoFailed(self._wrapper) end,
         createReader = function(self) return createIsoReaderWrapper(C.createIsoReader(self._wrapper)) end,
+        listDirectory = function(self, path, options)
+            return self:createReader():listDirectory(path, options)
+        end,
         clearPPF = function(self) C.isoClearPPF(self._wrapper) end,
         savePPF = function(self) C.isoSavePPF(self._wrapper) end,
         open = function(self, lba, size, mode)

@@ -30,11 +30,16 @@ struct WorkerStatus {
     uint32_t version = 3, state = 0, events = 0, limit = 0, failures = 0, dropped = 0;
 };
 static_assert(sizeof(WorkerStatus) == 48);
+struct WorkerSnapshot {
+    WorkerStatus status;
+    std::vector<WorkerRecord> records;
+};
 bool limits(uint32_t flags, Limits* out);
 bool prepare(uint32_t events, uint32_t bytes, uint32_t workerEvents, uint32_t flags);
 bool freezeWorker();
 bool workerStatus(WorkerStatus* out);
 bool workerRecords(uint32_t first, uint32_t count, WorkerRecord* out);
+bool workerSnapshot(WorkerSnapshot& out);
 inline uint32_t spuAddress(const void* base, const void* pointer) {
     const auto first = reinterpret_cast<uintptr_t>(base), value = reinterpret_cast<uintptr_t>(pointer);
     return first && value >= first && value-first < 524288 ? uint32_t(value-first) : UINT32_MAX;

@@ -152,6 +152,11 @@ bool clear() {
 bool status(Status* out) { return out && journal() && journal()->status(*out); }
 bool records(uint32_t first, uint32_t count, Record* out) { return paused() && journal()->records(first, count, out); }
 bool bytes(uint32_t offset, uint32_t length, void* out) { return paused() && journal()->bytes(offset, length, out); }
+bool snapshot(Snapshot& out) {
+    if (!paused() || gpuDepth || !CD::idle() || !journal()->snapshot(out)) return false;
+    out.epoch = epoch;
+    return true;
+}
 void fail(Failure reason) { if (journal()) journal()->fail(reason); }
 
 Gpu::Gpu(GPU& gpu, GpuSource source, uint32_t origin, uint32_t words, uint32_t value)
