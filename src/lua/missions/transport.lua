@@ -102,7 +102,7 @@ function M.run()
         end) end
         m.atTarget(function()
             PCSX.pauseEmulator()
-            PCSX.nextTick(m.guard(function()
+            PCSX.nextPause(m.guard(function()
                 if closing then return end
                 m.requireIdleCapture()
                 assert(h.status().state==0 and (not joined or a.status().state==0),'CD capture recorders must be empty')

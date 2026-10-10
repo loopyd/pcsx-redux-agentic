@@ -51,7 +51,7 @@ m.begin('action,target,bank,register,value,savestate', function()
         assert(supported[bit.band(opcode, 63)], 'reserved GTE command')
         m.breakpoint(pc + 4, 'Exec', 4, function()
             PCSX.pauseEmulator()
-            PCSX.nextTick(m.guard(function() finish(before, describe(s.live()), 'live', opcode) end))
+            PCSX.nextPause(m.guard(function() finish(before, describe(s.live()), 'live', opcode) end))
             return false
         end)
         PCSX.resumeEmulator()

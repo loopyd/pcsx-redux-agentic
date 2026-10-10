@@ -25,6 +25,7 @@ namespace PCSX {
 
 namespace LuaFFI {
 void open_pcsx(Lua);
+void runPausedCallbacks(Lua);
 }
 
 }  // namespace PCSX

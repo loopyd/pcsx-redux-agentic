@@ -26,7 +26,7 @@ function M.run()
             closing = true
             PCSX.pauseEmulator()
             timer:stop(); timer:close()
-            -- A separate timer survives nextTick dispatch and leaves device/Pause callbacks.
+            -- Leave device and Pause callbacks before recorder cleanup.
             local deferred = uv.new_timer()
             m.retained[#m.retained + 1] = deferred
             deferred:start(1, 0, m.guard(function()
@@ -80,7 +80,7 @@ function M.run()
         end) end
         m.atTarget(function()
             PCSX.pauseEmulator()
-            PCSX.nextTick(m.guard(function()
+            PCSX.nextPause(m.guard(function()
                 if closing then return end
                 m.requireIdleCapture()
                 assert(h.status().state == 0, 'audio recorder must be empty before initial state capture')

@@ -21,7 +21,7 @@ m.begin('target,function,return,a0,a1,a2,a3,trace,trace_limit,savestate', functi
     m.breakpoint(stop, 'Exec', 4, function()
         if not started then return true end
         PCSX.pauseEmulator()
-        PCSX.nextTick(m.guard(function()
+        PCSX.nextPause(m.guard(function()
             m.capture(save)
             if m.argument('trace') then
                 m.report('trace.json', {schema = 'psx.runtime-trace/v1', events = trace})

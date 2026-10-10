@@ -81,7 +81,7 @@ function M.run()
         end) end
         m.atTarget(function()
             PCSX.pauseEmulator()
-            PCSX.nextTick(m.guard(function()
+            PCSX.nextPause(m.guard(function()
                 if closing then return end
                 m.requireIdleCapture()
                 ingress.requireBinding(h)

@@ -42,7 +42,7 @@ end, stop=function() assert(paused and native.state == 1); native.state = 2 end,
     status=function() return native end},
     pauseEmulator=function() paused=true; if callbacks['ExecutionFlow::Pause'] then callbacks['ExecutionFlow::Pause']() end end,
     resumeEmulator=function() assert(native.state == 1); paused=false end,
-    nextTick=function(callback) next_tick=callback end,
+    nextPause=function(callback) next_tick=callback end,
     createSaveState=function()
         assert(native.state ~= 1, 'state captured while recording')
         return setmetatable({bytes='state',close=function(self) self.bytes=nil end},

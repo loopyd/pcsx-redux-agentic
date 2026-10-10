@@ -215,7 +215,7 @@ function M.atTarget(callback)
         if restored and tonumber(PCSX.getRegisters().pc) == target then callback(); return end
         M.breakpoint(target, 'Exec', 4, function()
             PCSX.pauseEmulator()
-            PCSX.nextTick(M.guard(callback))
+            PCSX.nextPause(M.guard(callback))
             return false
         end)
         PCSX.resumeEmulator()

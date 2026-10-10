@@ -33,7 +33,7 @@ m.begin('scratch', function()
             count = count + 1
             if count ~= 2 then return end
             PCSX.pauseEmulator()
-            PCSX.nextTick(m.guard(function()
+            PCSX.nextPause(m.guard(function()
                 local red, info = display.capture()
                 assert(info.available and info.width == 320 and info.height == 240, 'visible 320x240 display required')
                 assert(info.format == 'psx-bgr555-le' and red == string.rep('\31\0', 320 * 240), 'red native display differs')

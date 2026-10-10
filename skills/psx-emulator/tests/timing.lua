@@ -69,7 +69,7 @@ m.begin('scenario,stop', function()
     end)
     m.atTarget(function()
         PCSX.pauseEmulator()
-        PCSX.nextTick(m.guard(function()
+        PCSX.nextPause(m.guard(function()
             if scenario == 'gpuirq' then
                 -- Native restore replays GPU acknowledge; establish this fixture latch afterward.
                 local ffi = require 'ffi'

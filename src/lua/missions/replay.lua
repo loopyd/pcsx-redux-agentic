@@ -192,7 +192,7 @@ m.begin('runs,depth,limit', function()
         PCSX.pauseEmulator()
         frame = frame + 1
         assert(frame <= active.frames, 'replay frame bound exceeded')
-        PCSX.nextTick(m.guard(advance))
+        PCSX.nextPause(m.guard(advance))
     end)
     begin()
 end)

@@ -53,7 +53,7 @@ local function bounded_watch(address, width, save, limit)
             mission.verdict = {kind = 'failed', reason = 'pause error: ' .. tostring(err):sub(1, 4096)}
         end
         if previous == 'armed' or previous == 'acquiring' then
-            PCSX.nextTick(m.guard(finalize))
+            PCSX.nextPause(m.guard(finalize))
         end
     end
 
@@ -157,7 +157,7 @@ local function bounded_watch(address, width, save, limit)
             if mission.phase ~= 'acquiring' then return end
             owned_flow('pause', PCSX.pauseEmulator)
             mission.phase = 'initial-pending'
-            PCSX.nextTick(m.guard(function()
+            PCSX.nextPause(m.guard(function()
                 mission.phase = 'initializing'
                 local ok, err = pcall(function()
                     local registers = m.registers()
@@ -205,7 +205,6 @@ local function bounded_watch(address, width, save, limit)
                     if mission.phase == 'initializing' then mission.phase = 'armed' end
                 end)
                 if not ok then stop('failed', 'initial observation error: ' .. tostring(err):sub(1, 4096), 'error') end
-                -- Nested nextTick work is discarded by the native UI poller.
                 if mission.phase == 'settling' then finalize() end
             end))
         end))
@@ -232,7 +231,7 @@ m.begin('target,address,kind,width,hits,savestate,instructions', function()
                 registers = m.registers()}
             if #events == hits then
                 PCSX.pauseEmulator()
-                PCSX.nextTick(m.guard(function()
+                PCSX.nextPause(m.guard(function()
                     m.report('watch.json', {schema = 'psx.runtime-watch/v1', kind = kind,
                         address = address, width = width, boundary = 'before instruction', events = events})
                     m.capture(save)

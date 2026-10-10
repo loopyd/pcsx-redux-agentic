@@ -63,9 +63,16 @@ this call and marks its nearby list for JSON array encoding.
 `MemoryAsFile::writeBlock` bypasses device handlers. [MMIO probes](bus.md) execute
 effects using scratch RAM and advance guest/device time.
 
-`PCSX.nextTick` defers host work; it does not step. The UI poller discards nested
-nextTick callbacks. Follow [Step](step.md), [Trace](trace.md) and [Replay](replay.md)
-boundaries.
+`PCSX.nextPause(function)` queues up to 64 callbacks for a paused outer-loop
+boundary, after CPU execution and event dispatch unwind and pending loads finish.
+Native dispatch preserves FIFO order, rechecks the boundary before each callback,
+and retains nested callbacks for a later tick. It does not pause or step the guest;
+call `PCSX.pauseEmulator()` when a pause is needed. Checked operations still apply
+their own recorder, GPU, and state admission checks.
+
+`PCSX.nextTick` remains general UI polling work and can run inside CPU execution.
+Use `nextPause` for checked capture after a breakpoint or device callback. Follow
+[Step](step.md), [Trace](trace.md), and [Replay](replay.md) boundaries.
 
 Save/load can alter scheduling; serialized state does not establish determinism
 or complete hardware coverage. `PCSX.SPU.playAudio` provides host preview, not

@@ -23,7 +23,7 @@ m.begin('', function()
     local observations = m.array()
     m.event('ExecutionFlow::Pause', function(event)
         -- Native triggerBP resets its step state after dispatch; defer the next request.
-        PCSX.nextTick(m.guard(function()
+        PCSX.nextPause(m.guard(function()
             local index = #observations + 1
             local pc = tonumber(registers.pc)
             assert(pc == expected[index], string.format('step %d PC %08x', index, pc))

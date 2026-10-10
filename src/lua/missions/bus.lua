@@ -42,7 +42,7 @@ function M.write(width, operations, callback)
         local probe = {scratch = start, scratch_bytes = bytes, operations = #operations,
             store_bits = width, before_cycles = state.registers.cycle,
             after_cycles = tonumber(PCSX.getCPUCycles())}
-        PCSX.nextTick(m.guard(function() callback(probe) end))
+        PCSX.nextPause(m.guard(function() callback(probe) end))
         return false
     end)
     regs.pc = start

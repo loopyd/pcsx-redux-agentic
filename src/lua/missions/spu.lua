@@ -63,7 +63,7 @@ m.begin('action,target,voice,offset,length,address,value,frames,savestate,scratc
             local limit, events = m.integer('frames', 1, 1, 120), {}
             m.event('GPU::Vsync', function()
                 PCSX.pauseEmulator()
-                PCSX.nextTick(m.guard(function()
+                PCSX.nextPause(m.guard(function()
                     events[#events + 1] = summary(s.live())
                     if #events == limit then
                         finish({schema = 'psx.runtime-spu/v1', action = action, source = 'live',

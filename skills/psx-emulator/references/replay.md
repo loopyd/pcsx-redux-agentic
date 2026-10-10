@@ -77,5 +77,5 @@ state, host audio queues and PCM are unexamined. `screen` compares storage/range
 and dimensions/format/availability separately; equal unavailable displays remain
 `image_comparison_available:false`, not image evidence.
 
-Preserve deferred Vsync boundaries. UI polling discards nested nextTick callbacks;
-start the next restoration directly when already outside dispatch.
+Preserve deferred Vsync boundaries through `PCSX.nextPause`. Start the next
+restoration only after CPU execution and event dispatch have unwound.

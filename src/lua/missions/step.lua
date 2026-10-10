@@ -48,7 +48,7 @@ m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
     timer:start(seconds * 1000, 0, safe(function()
         pending = false
         PCSX.pauseEmulator()
-        PCSX.nextTick(safe(function()
+        PCSX.nextPause(safe(function()
             finish(started and 'step timeout' or 'target timeout', false, execution.capture())
         end))
     end))
@@ -57,7 +57,7 @@ m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
         if not pending or closed then return end
         pending = false
         local native_exception = event.exception
-        PCSX.nextTick(safe(function()
+        PCSX.nextPause(safe(function()
             local after = execution.capture()
             count = count + 1
             local entered = (not before.in_isr and after.in_isr) or
@@ -77,7 +77,7 @@ m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
     m.atTarget(safe(function()
         -- A target breakpoint is still dispatching; defer until its step reset completes.
         PCSX.pauseEmulator()
-        PCSX.nextTick(safe(function()
+        PCSX.nextPause(safe(function()
             before, started = execution.capture(), true
             record({initial = before})
             if stop and before.pc == stop then finish('stop already reached', true, before)

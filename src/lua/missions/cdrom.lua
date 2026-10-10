@@ -42,7 +42,7 @@ m.begin('action,target,path,lba,sectors,mode,offset,length,command,params,frames
                 m.event('GPU::Vsync', function()
                     frames = frames + 1
                     PCSX.pauseEmulator()
-                    PCSX.nextTick(m.guard(function()
+                    PCSX.nextPause(m.guard(function()
                         local state = s.live()
                         if state.cdrom.responseFifo0.has_value and not state.cdrom.responseFifo0.value_read then
                             if save then m.captureState('state.pbuf') end

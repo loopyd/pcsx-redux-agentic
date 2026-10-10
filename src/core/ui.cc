@@ -27,6 +27,7 @@
 #include "core/debug.h"
 #include "core/gpu.h"
 #include "core/pad.h"
+#include "core/pcsxlua.h"
 #include "core/psxemulator.h"
 #include "core/spu.h"
 #include "supportpsx/binloader.h"
@@ -91,6 +92,7 @@ void PCSX::UI::tick() {
     } else {
         L.pop();
     }
+    LuaFFI::runPausedCallbacks(L);
 }
 
 void PCSX::UI::shellReached() {

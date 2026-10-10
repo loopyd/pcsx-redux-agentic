@@ -92,6 +92,11 @@ for Lua decoding and 198.2 ms for native projection. The gain was small; full
 checked-state capture still dominates this operation. These results do not predict
 other machines or guest workloads.
 
+`PCSX.nextPause(function)` defers paused mission work until CPU execution and
+event dispatch have unwound. Its native FIFO holds at most 64 callbacks, preserves
+nested work, and rechecks the boundary before each callback. Target and step
+captures use this scheduler while retaining checked-state refusals.
+
 Receipts establish the supplied inputs, binary, limits, and captures for a run.
 They do not establish hardware fidelity or deterministic replay. Describe the
 observed behavior and its limits in the requesting project's evidence.

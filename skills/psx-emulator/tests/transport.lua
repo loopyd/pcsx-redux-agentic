@@ -93,7 +93,7 @@ local function reset(arguments,failures)
             return setmetatable({bytes='state',close=function(self) self.bytes=nil end},
                 {__tostring=function(self) assert(self.bytes,'closed Slice');return self.bytes end})
         end,
-        nextTick=function(callback) ticks[#ticks+1]=callback end,
+        nextPause=function(callback) ticks[#ticks+1]=callback end,
         pauseEmulator=function() if callbacks['ExecutionFlow::Pause'] then callbacks['ExecutionFlow::Pause']() end end,
         resumeEmulator=function() record('resume') end}
     luv={new_timer=function()

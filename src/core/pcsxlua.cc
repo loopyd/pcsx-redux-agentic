@@ -432,6 +432,26 @@ PCSX::Slice* createSaveState() {
     return new PCSX::Slice(std::move(ss));
 }
 
+constexpr char pauseCallbacks[] = "PCSX.PauseCallbacks";
+constexpr size_t maxPauseCallbacks = 64;
+
+int queuePausedCallback(lua_State* state) {
+    if (lua_gettop(state) != 1 || !lua_isfunction(state, 1))
+        return luaL_error(state, "PCSX.nextPause requires one function");
+    lua_getfield(state, LUA_REGISTRYINDEX, pauseCallbacks);
+    if (lua_isnil(state, -1)) {
+        lua_pop(state, 1);
+        lua_createtable(state, maxPauseCallbacks, 0);
+        lua_pushvalue(state, -1);
+        lua_setfield(state, LUA_REGISTRYINDEX, pauseCallbacks);
+    }
+    const auto count = lua_objlen(state, -1);
+    if (count >= maxPauseCallbacks) return luaL_error(state, "PCSX.nextPause queue exceeds 64 callbacks");
+    lua_pushvalue(state, 1);
+    lua_rawseti(state, -2, count + 1);
+    return 0;
+}
+
 int captureCPUChecked(lua_State* state) {
     using namespace PCSX::SaveStates;
     CPUObservation observation{};
@@ -640,6 +660,31 @@ static void registerAllSymbols(PCSX::Lua L) {
     L.pop();
 }
 
+void PCSX::LuaFFI::runPausedCallbacks(Lua L) {
+    auto* state = L.getState();
+    const int base = lua_gettop(state);
+    lua_getfield(state, LUA_REGISTRYINDEX, pauseCallbacks);
+    if (!lua_istable(state, -1)) { lua_settop(state, base); return; }
+    const int queue = base + 1;
+    const size_t limit = lua_objlen(state, queue);
+    for (size_t i = 0; i < std::min(limit, maxPauseCallbacks); ++i) {
+        if (g_system->running() || g_system->inExecute() || g_system->quitting() ||
+            g_system->hasPendingSaveStateLoad() || g_system->m_eventBus->dispatching()) break;
+        const size_t count = lua_objlen(state, queue);
+        if (!count) break;
+        lua_rawgeti(state, queue, 1);
+        for (size_t j = 1; j < count; ++j) {
+            lua_rawgeti(state, queue, j + 1);
+            lua_rawseti(state, queue, j);
+        }
+        lua_pushnil(state);
+        lua_rawseti(state, queue, count);
+        try { L.pcall(); } catch (...) { return; }
+        lua_settop(state, queue);
+    }
+    lua_settop(state, base);
+}
+
 void PCSX::LuaFFI::open_pcsx(Lua L) {
     History::initialize();
     static int lualoader = 1;
@@ -649,7 +694,8 @@ void PCSX::LuaFFI::open_pcsx(Lua L) {
     registerAllSymbols(L);
     L.load(pcsxFFI, "src:core/pcsxffi.lua", false);
     L.push(lua_CFunction(captureCPUChecked));
-    L.pcall(1);
+    L.push(lua_CFunction(queuePausedCallback));
+    L.pcall(2);
     L.getfieldtable("PCSX", LUA_GLOBALSINDEX);
     L.declareFunc("scanByteRanges", scanByteRanges, -1);
     L.declareFunc("convertVRAM", convertVRAM, -1);

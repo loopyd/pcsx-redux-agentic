@@ -27,7 +27,7 @@ m.begin('target,frames,buttons,slot,screenshot,savestate', function()
                 pad.clearOverride(button)
             end
             -- Finish outside event dispatch with emulation paused.
-            PCSX.nextTick(m.guard(function()
+            PCSX.nextPause(m.guard(function()
                 m.capture(save)
                 if screenshot then
                     local screen = PCSX.GPU.takeScreenShot()

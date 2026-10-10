@@ -53,7 +53,7 @@ m.begin('target,identity,frames,stop,seconds,events,bytes', function()
     end) end
     m.atTarget(function()
         PCSX.pauseEmulator()
-        PCSX.nextTick(m.guard(function()
+        PCSX.nextPause(m.guard(function()
             if closing then return end
             m.captureState('initial.pbuf')
             h.begin(event_limit, byte_limit)
