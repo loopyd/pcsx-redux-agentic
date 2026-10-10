@@ -108,6 +108,7 @@ local function tick()
     local current=ticks;ticks={};for _,callback in ipairs(current) do callback() end
 end
 local function flush()
+    tick()
     for _,timer in ipairs(timers) do if timer.ms==1 and timer.active then timer.callback() end end
 end
 local function start(arguments,failures) reset(arguments,failures);transport.run();tick() end
