@@ -109,6 +109,25 @@ both paths. These medians exclude startup, input acquisition, checked capture an
 guest execution. They do not establish whole-mission speedups or predict other
 hosts. Existing packet, ingress and strict-state checks also passed.
 
+Further seven-sample runs on the same host measured the complete export or packing
+operation, including file write/close:
+
+| Caller operation | Previous path | Current native path |
+| --- | ---: | ---: |
+| Pack a 512×128 VRAM upload probe | 6.70 ms | 0.073 ms (91×) |
+| Strict PC field query from a 20.4 MiB state | 5.12 ms | 0.025 ms (206×) |
+| Export two seconds of frozen PCM to raw/WAV | 1.14 ms | 0.36 ms (3.20×) |
+| Export 1,694 history records | 14.50 ms | 13.56 ms (1.07×) |
+
+Probe bytes, state query reports, PCM/WAV files and history journals matched.
+History reports differed only in the expected binary/source identity. State and
+PCM measurements paired both paths against the same input. An empty WAV and a live
+odd-sized VRAM upload also matched, and existing state/recorder/audio checks passed.
+The small audio journal case showed little timing change; batching primarily
+reduces repeated native crossings. Two-run replay and an 8 MiB RAM comparison
+passed. These observations retain the timing exclusions above and do not qualify
+the entire mission library or establish hardware fidelity.
+
 `PCSX.convertScreenshot(bytes, width, height, bpp)` converts packed BGR555 pixels
 to RGB24 in one bounded call, sharing the native VRAM colour kernel. RGB24 passes
 through unchanged. The frames mission keeps raw pixels and metadata and uses this
