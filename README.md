@@ -68,15 +68,21 @@ belong in the integrating repository.
 ## Native APIs
 
 Use native bulk operations for state capture, memory-card readback, byte-range
-comparison, VRAM, and screenshot conversion. Keep Lua responsible for mission
-composition and reports. Checked v6 save states include both complete memory cards and CPU, CD,
+comparison, VRAM, screenshot conversion, JSON encoding, GPU packet decoding,
+and strict state wire validation. Keep Lua responsible for mission composition
+and provenance correlation. Checked v6 save states include both complete memory cards and CPU, CD,
 SPU, GPU, MDEC, scheduling, and memory state. Load validation precedes mutation;
 a later host-file commit failure is reported and paused, with no filesystem
 rollback promise.
 
-The library still performs substantial bulk work in Lua. See the
-[native execution reference](.agents/skills/psx-emulator/references/native.md) for
-measurement candidates; the mission catalogue is not fully performance-qualified.
+`PCSX.encodeJSON` and `PCSX.jsonArray` own deterministic report encoding and array
+tagging; `support` exposes direct aliases. GPU wrappers adapt their options into
+one `PCSX.decodeGPU` or `PCSX.readGPUChain` call. Strict persisted-state inspection
+uses `PCSX.validateSaveStateWire` before the existing native `pb.decode`; it does
+not change checked restore admission. The former Lua bulk implementations are
+removed. See [API](.agents/skills/psx-emulator/references/api.md) for bounds and
+[native execution](.agents/skills/psx-emulator/references/native.md) for remaining
+measurement candidates. The mission catalogue is not fully performance-qualified.
 
 `PCSX.convertScreenshot(bytes, width, height, bpp)` converts packed BGR555 pixels
 to RGB24 in one bounded call, sharing the native VRAM colour kernel. RGB24 passes

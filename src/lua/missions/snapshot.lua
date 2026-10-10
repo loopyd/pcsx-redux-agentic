@@ -22,79 +22,8 @@ function M.observe(callback)
     end
 end
 
--- Check tags with the bundled reader before decode can discard unknown fields.
-function M.compatible(bytes)
-    local slice = require('pb.slice').new(bytes)
-    local formats = {[0] = 'v', [1] = 'q', [5] = 'd'}
-    local fixed = {double = 1, fixed64 = 1, sfixed64 = 1,
-        float = 5, fixed32 = 5, sfixed32 = 5, string = 2, bytes = 2}
-    local values = 0
-    local function count()
-        values = values + 1
-        assert(values <= 100000, 'state encoded value limit exceeded')
-    end
-    local function varint(narrow)
-        local first = slice:level(slice:level())
-        local value = slice:unpack('v')
-        local last = slice:level(slice:level()) - 1
-        assert(value ~= nil, 'truncated varint')
-        assert(last - first < 9 or bytes:byte(last) <= 1, 'varint overflow')
-        if narrow then
-            assert(type(value) == 'number' and value <= 4294967295, '32-bit varint overflow')
-        end
-        return value
-    end
-    local function scalar(wire, kind)
-        count()
-        if wire ~= 0 then
-            assert(slice:unpack(formats[wire]) ~= nil, 'truncated scalar field')
-            return
-        end
-        local value = varint(kind == 'uint32' or kind == 'sint32')
-        if kind == 'bool' then assert(value == 0 or value == 1, 'invalid encoded boolean') end
-        if kind == 'int32' then
-            local positive = type(value) == 'number' and value <= 2147483647
-            local negative = type(value) == 'string' and #value == 21 and
-                value >= '#18446744071562067968' and value <= '#18446744073709551615'
-            assert(positive or negative, 'invalid encoded int32 sign extension')
-        end
-    end
-    local function inspect(kind, depth)
-        assert(depth <= 64, 'state schema nesting exceeds 64')
-        local seen = {}
-        while #slice > 0 do
-            count()
-            local tag = varint(true)
-            assert(type(tag) == 'number' and tag >= 8 and tag <= 4294967295, 'invalid state field tag')
-            local number, wire = math.floor(tag / 8), tag % 8
-            local name, _, fieldType, _, label = pb.field(kind, number)
-            assert(name, 'unknown encoded field: ' .. kind .. '#' .. number)
-            local _, _, category = pb.type(fieldType)
-            local expected = category == 'message' and 2 or fixed[fieldType] or 0
-            local repeated = label == 'repeated' or label == 'packed'
-            assert(repeated or not seen[number], 'duplicate singular field: ' .. kind .. '.' .. name)
-            seen[number] = true
-            local packed = repeated and wire == 2 and expected ~= 2
-            assert(wire == expected or packed, 'incompatible wire type: ' .. kind .. '.' .. name)
-            if wire == 2 then
-                local position = slice:unpack('@')
-                local length = varint(true)
-                assert(length <= #slice, 'truncated length-delimited field')
-                slice:unpack('*', position)
-                slice:enter()
-                if packed then
-                    while #slice > 0 do scalar(expected, fieldType) end
-                elseif category == 'message' then inspect(fieldType, depth + 1)
-                else slice:unpack('+', #slice) end
-                slice:leave()
-            else scalar(wire, fieldType) end
-        end
-    end
-    inspect('SaveState', 0)
-end
-
 function M.decode(bytes, strict)
-    if strict then M.compatible(bytes) end
+    if strict then PCSX.validateSaveStateWire(bytes) end
     pb.option(strict and 'no_default_values' or 'auto_default_values')
     local ok, decoded = pcall(pb.decode, 'SaveState', bytes)
     pb.option('auto_default_values')

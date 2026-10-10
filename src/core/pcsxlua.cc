@@ -18,11 +18,14 @@
  ***************************************************************************/
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <cstring>
 #include <limits>
 #include <new>
+#include <string>
+#include <vector>
 
 #include "core/history.h"
 #include "core/transactions.h"
@@ -30,6 +33,7 @@
 
 #include "core/debug.h"
 #include "core/gpu.h"
+#include "core/gpupackets.h"
 #include "core/gpudump.h"
 #include "core/gpulogger.h"
 #include "core/psxemulator.h"
@@ -38,6 +42,7 @@
 #include "core/sstate.h"
 #include "lua/luafile.h"
 #include "lua/luawrapper.h"
+#include "support/protobuf-wire.h"
 
 namespace {
 
@@ -359,6 +364,259 @@ int convertScreenshot(lua_State* state) {
         writeBGR555RGB(pixel, output + index * 3);
     }
     lua_pushlstring(state, reinterpret_cast<const char*>(output), rgbSize);
+    return 1;
+}
+
+char jsonArrayMetatableMarker;
+char jsonWriterMetatableMarker;
+
+struct JSONKey {
+    const char* bytes;
+    size_t size;
+    int slot;
+};
+
+struct JSONWriter {
+    static constexpr size_t maxDepth = 64;
+    static constexpr size_t maxValues = 1000000;
+    static constexpr size_t maxOutput = 67108864;
+    std::string output;
+    std::array<std::vector<JSONKey>, maxDepth> keys;
+    std::array<const void*, maxDepth> ancestors = {};
+    size_t values = 0;
+    const char* error = nullptr;
+
+    bool fail(const char* message) {
+        error = message;
+        return false;
+    }
+
+    bool visit() {
+        if (values == maxValues) return fail("value budget exceeded");
+        ++values;
+        return true;
+    }
+
+    bool append(const char* bytes, size_t size) {
+        if (size > maxOutput - output.size()) return fail("output exceeds 64 MiB");
+        output.append(bytes, size);
+        return true;
+    }
+
+    template <size_t Size>
+    bool append(const char (&bytes)[Size]) {
+        return append(bytes, Size - 1);
+    }
+
+    bool string(const char* bytes, size_t size) {
+        if (maxOutput - output.size() < 2 || size > maxOutput - output.size() - 2)
+            return fail("output exceeds 64 MiB");
+        if (!append("\"")) return false;
+        size_t start = 0;
+        constexpr char hex[] = "0123456789abcdef";
+        for (size_t index = 0; index < size; ++index) {
+            const auto byte = static_cast<uint8_t>(bytes[index]);
+            if (byte >= 32 && byte != '\\' && byte != '"') continue;
+            const char escaped[] = {'\\', 'u', '0', '0', hex[byte >> 4], hex[byte & 15]};
+            if (!append(bytes + start, index - start) || !append(escaped, sizeof(escaped))) return false;
+            start = index + 1;
+        }
+        return append(bytes + start, size - start) && append("\"");
+    }
+};
+
+int destroyJSONWriter(lua_State* state) {
+    static_cast<JSONWriter*>(lua_touserdata(state, 1))->~JSONWriter();
+    return 0;
+}
+
+void pushJSONMetatable(lua_State* state, void* marker, lua_CFunction finalizer = nullptr) {
+    lua_pushlightuserdata(state, marker);
+    lua_rawget(state, LUA_REGISTRYINDEX);
+    if (!lua_isnil(state, -1)) return;
+    lua_pop(state, 1);
+    lua_newtable(state);
+    if (finalizer) {
+        lua_pushcfunction(state, finalizer);
+        lua_setfield(state, -2, "__gc");
+    }
+    lua_pushliteral(state, "native JSON metatable");
+    lua_setfield(state, -2, "__metatable");
+    lua_pushlightuserdata(state, marker);
+    lua_pushvalue(state, -2);
+    lua_rawset(state, LUA_REGISTRYINDEX);
+}
+
+bool isJSONArray(lua_State* state, int index) {
+    if (!lua_getmetatable(state, index)) return false;
+    lua_pushlightuserdata(state, &jsonArrayMetatableMarker);
+    lua_rawget(state, LUA_REGISTRYINDEX);
+    const bool tagged = lua_rawequal(state, -1, -2);
+    lua_pop(state, 2);
+    return tagged;
+}
+
+const char* validateJSONArray(lua_State* state, int index, size_t length) {
+    if (length > JSONWriter::maxValues) return "array exceeds value budget";
+    const int base = lua_gettop(state);
+    size_t entries = 0;
+    lua_pushnil(state);
+    while (lua_next(state, index)) {
+        if (lua_type(state, -2) != LUA_TNUMBER) {
+            lua_settop(state, base);
+            return "array keys must be contiguous positive integers";
+        }
+        const lua_Number key = lua_tonumber(state, -2);
+        if (!std::isfinite(key) || std::floor(key) != key || key < 1 || key > length ||
+            ++entries > JSONWriter::maxValues) {
+            lua_settop(state, base);
+            return "array keys must be contiguous positive integers";
+        }
+        lua_pop(state, 1);
+    }
+    return entries == length ? nullptr : "array keys must be contiguous positive integers";
+}
+
+bool writeJSONValue(lua_State* state, int index, JSONWriter& writer, size_t depth) {
+    if (depth >= JSONWriter::maxDepth) return writer.fail("depth exceeds 64 levels");
+    if (!writer.visit()) return false;
+    switch (lua_type(state, index)) {
+        case LUA_TNIL:
+            return writer.append("null");
+        case LUA_TBOOLEAN:
+            return lua_toboolean(state, index) ? writer.append("true") : writer.append("false");
+        case LUA_TNUMBER: {
+            const lua_Number value = lua_tonumber(state, index);
+            if (!std::isfinite(value)) return writer.fail("nonfinite JSON number");
+            char number[64];
+            const auto formatted = std::to_chars(std::begin(number), std::end(number), value,
+                                                 std::chars_format::general, 17);
+            if (formatted.ec != std::errc{})
+                return writer.fail("invalid JSON number format");
+            return writer.append(number, formatted.ptr - number);
+        }
+        case LUA_TSTRING: {
+            size_t size;
+            const char* bytes = lua_tolstring(state, index, &size);
+            return writer.string(bytes, size);
+        }
+        case LUA_TTABLE:
+            break;
+        default:
+            return writer.fail("unsupported JSON value");
+    }
+    if (!lua_checkstack(state, 8)) return writer.fail("insufficient Lua stack");
+    const void* identity = lua_topointer(state, index);
+    for (size_t ancestor = 0; ancestor < depth; ++ancestor) {
+        if (writer.ancestors[ancestor] == identity) return writer.fail("cyclic JSON table");
+    }
+    writer.ancestors[depth] = identity;
+    const size_t length = lua_objlen(state, index);
+    if (length || isJSONArray(state, index)) {
+        if (const char* error = validateJSONArray(state, index, length)) return writer.fail(error);
+        if (!writer.append("[")) return false;
+        for (size_t item = 1; item <= length; ++item) {
+            if (item > 1 && !writer.append(",")) return false;
+            lua_rawgeti(state, index, static_cast<int>(item));
+            if (!writeJSONValue(state, lua_gettop(state), writer, depth + 1)) return false;
+            lua_pop(state, 1);
+        }
+        writer.ancestors[depth] = nullptr;
+        return writer.append("]");
+    }
+    lua_newtable(state);
+    const int keyTable = lua_gettop(state);
+    auto& keys = writer.keys[depth];
+    keys.clear();
+    lua_pushnil(state);
+    while (lua_next(state, index)) {
+        if (lua_type(state, -2) != LUA_TSTRING) return writer.fail("object keys must be strings");
+        if (!writer.visit()) return false;
+        const int slot = static_cast<int>(keys.size() + 1);
+        lua_pushvalue(state, -2);
+        lua_rawseti(state, keyTable, slot);
+        size_t size;
+        const char* bytes = lua_tolstring(state, -2, &size);
+        keys.push_back({bytes, size, slot});
+        lua_pop(state, 1);
+    }
+    std::sort(keys.begin(), keys.end(), [](const JSONKey& left, const JSONKey& right) {
+        const int order = std::memcmp(left.bytes, right.bytes, std::min(left.size, right.size));
+        return order < 0 || (order == 0 && left.size < right.size);
+    });
+    if (!writer.append("{")) return false;
+    for (size_t item = 0; item < keys.size(); ++item) {
+        const auto& key = keys[item];
+        if ((item && !writer.append(",")) || !writer.string(key.bytes, key.size) || !writer.append(":"))
+            return false;
+        lua_rawgeti(state, keyTable, key.slot);
+        lua_rawget(state, index);
+        if (!writeJSONValue(state, lua_gettop(state), writer, depth + 1)) return false;
+        lua_pop(state, 1);
+    }
+    keys.clear();
+    lua_pop(state, 1);
+    writer.ancestors[depth] = nullptr;
+    return writer.append("}");
+}
+
+int validateSaveStateWire(lua_State* state) {
+    if (lua_gettop(state) != 1 || lua_type(state, 1) != LUA_TSTRING)
+        return luaL_error(state, "validateSaveStateWire: expected one byte string");
+    size_t size;
+    const char* bytes = lua_tolstring(state, 1, &size);
+    const auto result = PCSX::Protobuf::StrictWireValidator<PCSX::SaveStates::SaveState>::validate(bytes, size);
+    if (!result) {
+        if (result.fieldName)
+            return luaL_error(state, "%s: %s.%s", result.message(), result.messageType, result.fieldName);
+        if (result.messageType)
+            return luaL_error(state, "%s: %s#%d", result.message(), result.messageType, result.fieldNumber);
+        return luaL_error(state, "%s", result.message());
+    }
+    lua_pushboolean(state, true);
+    return 1;
+}
+
+int encodeJSON(lua_State* state) {
+    if (lua_gettop(state) != 1) return luaL_error(state, "encodeJSON: expected 1 argument");
+    luaL_checkstack(state, 4, "encodeJSON: insufficient Lua stack");
+    pushJSONMetatable(state, &jsonWriterMetatableMarker, destroyJSONWriter);
+    auto* writer = new (lua_newuserdata(state, sizeof(JSONWriter))) JSONWriter;
+    lua_pushvalue(state, -2);
+    lua_setmetatable(state, -2);
+    lua_remove(state, -2);
+    bool success = false;
+    try {
+        success = writeJSONValue(state, 1, *writer, 0);
+    } catch (const std::bad_alloc&) {
+        writer->error = "native allocation failed";
+    }
+    lua_settop(state, 2);
+    if (!success) return luaL_error(state, "encodeJSON: %s", writer->error);
+    lua_pushlstring(state, writer->output.data(), writer->output.size());
+    return 1;
+}
+
+int jsonArray(lua_State* state) {
+    if (lua_gettop(state) > 1) return luaL_error(state, "jsonArray: expected at most 1 argument");
+    luaL_checkstack(state, 8, "jsonArray: insufficient Lua stack");
+    if (lua_gettop(state) == 0 || lua_isnil(state, 1)) {
+        lua_settop(state, 0);
+        lua_newtable(state);
+    } else if (lua_type(state, 1) != LUA_TTABLE) {
+        return luaL_error(state, "jsonArray: expected a table or nil");
+    }
+    if (const char* error = validateJSONArray(state, 1, lua_objlen(state, 1)))
+        return luaL_error(state, "jsonArray: %s", error);
+    if (isJSONArray(state, 1)) return 1;
+    if (lua_getmetatable(state, 1)) {
+        lua_pushliteral(state, "__metatable");
+        lua_rawget(state, -2);
+        if (!lua_isnil(state, -1)) return luaL_error(state, "jsonArray: protected metatable");
+        lua_pop(state, 2);
+    }
+    pushJSONMetatable(state, &jsonArrayMetatableMarker);
+    lua_setmetatable(state, 1);
     return 1;
 }
 
@@ -753,6 +1011,11 @@ void PCSX::LuaFFI::open_pcsx(Lua L) {
     L.declareFunc("scanByteRanges", scanByteRanges, -1);
     L.declareFunc("convertVRAM", convertVRAM, -1);
     L.declareFunc("convertScreenshot", convertScreenshot, -1);
+    L.declareFunc("encodeJSON", encodeJSON, -1);
+    L.declareFunc("jsonArray", jsonArray, -1);
+    L.declareFunc("validateSaveStateWire", validateSaveStateWire, -1);
+    L.declareFunc("decodeGPU", PCSX::LuaFFI::decodeGPU, -1);
+    L.declareFunc("readGPUChain", PCSX::LuaFFI::readGPUChain, -1);
     L.push("execSlots");
     L.newtable();
     L.settable();

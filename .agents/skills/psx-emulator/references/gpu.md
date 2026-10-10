@@ -8,7 +8,9 @@ Follow [Runtime](runtime.md); use [VRAM](vram.md) for individual images.
 
 ## Procedure
 
-Canonical `support` and `packets` are preloaded. Set `identity=LABEL` (1–160 bytes).
+Canonical `support` and `packets` are preloaded. The `gp0`, `gp1` and `chain`
+wrappers each use one bounded native call; ingress correlation remains in Lua.
+Set `identity=LABEL` (1–160 bytes).
 The receipt identifies actual inputs/tools.
 
 | Action | Inputs and arguments |

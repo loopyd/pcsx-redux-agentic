@@ -47,10 +47,13 @@ Comparison `depth=0..64` (16), `limit=1..65536` (1024); traversal caps at 100000
 nodes and 64 MiB compared byte positions. Exceeded bounds fail without partial
 equality/completion; narrow the subtree. `offset`/`length` are export-only.
 
-Before comparison, `pb.slice` rejects unknown fields, incompatible wire types,
-duplicate singular fields, truncation, unsupported versions, overflowing varints/
+Before comparison, `PCSX.validateSaveStateWire` rejects unknown fields, incompatible wire types,
+duplicate singular fields, truncation, overflowing varints/
 narrow integers and non-0/1 booleans. Tags plus scalar elements (including packed)
-cap at 100000. Presence and uint64 values remain exact.
+cap at 100000. Native wire validation is bounded to 64 MiB and 64 nesting levels;
+bundled `pb.decode` still supplies presence and exact uint64 values. Version
+validation follows decoding. Wire inspection does not load a state or replace
+checked-restore admission.
 
 ## Application
 

@@ -52,6 +52,27 @@ Paths below are relative to `third_party/pcsx-redux-agentic/`:
 
 ## Application
 
+`PCSX.encodeJSON(value)` encodes nil, booleans, finite numbers, byte strings,
+arrays and string-keyed objects. Numbers use `%.17g`; object keys sort by bytes.
+Control bytes, quotes and backslashes use lowercase `\u00xx` escapes. Other bytes
+remain unchanged. Calls reject cycles, unsupported values, malformed arrays,
+nesting beyond 64 levels, more than one million values/keys, and output over 64 MiB.
+`PCSX.jsonArray(table?)` tags a contiguous numeric-key table; nil creates an empty
+array. `support.json` and `support.array` alias these bindings.
+
+`PCSX.decodeGPU(bytes, port, wordLimit, packetLimit)` parses an immutable GP0 or
+GP1 stream into the existing packet tables. `PCSX.readGPUChain(ram, address,
+wordLimit, nodeLimit)` gathers an immutable physical 2 MiB ordering table. The
+`packets` wrappers supply defaults and adapt options. Both calls retain the
+[GPU](gpu.md) bounds, operands and refusals; neither runs renderer commands.
+
+`PCSX.validateSaveStateWire(bytes)` checks up to 64 MiB against the native state
+schema without decoding or loading a state. It rejects unknown fields, duplicate
+singular fields, incompatible wire types, truncation, invalid tags/scalars,
+more than 100000 tags/scalars and nesting beyond 64 levels. Strict `snapshot`
+decoding uses this call before bundled `pb.decode`. Version and checked-restore
+validation remain separate; valid wire bytes alone do not authorize restoration.
+
 `PCSX.captureCPUChecked()` returns copied PC, GPR[34], CP0[32], decimal cycles,
 last executed word, nonempty delay slots, ISR flags, exception context, and nearby memory
 words. Calls retain full checked-state refusals and return the same `savestate:`

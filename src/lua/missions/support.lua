@@ -7,7 +7,6 @@ jit.off()
 jit.flush()
 local ffi = require 'ffi'
 local M = {captures = {}, retained = {}, done = false}
-local array = {}
 function M.requireIdleCapture()
     assert(PCSX.History and PCSX.History.status().state ~= 1,
         'host edits are forbidden during native history capture')
@@ -16,7 +15,7 @@ function M.requireIdleCapture()
     assert(not PCSX.Audio or PCSX.Audio.status().state ~= 1,
         'host edits are forbidden during native audio capture')
 end
-function M.array(value) return setmetatable(value or {}, array) end
+M.array = PCSX.jsonArray
 function M.uint64(value)
     if type(value)=='number' then
         assert(value>=0 and value<=9007199254740991 and value%1==0,'inexact uint64 input')
@@ -73,30 +72,7 @@ function M.input(name, required)
     return path
 end
 
-function M.json(value)
-    local kind = type(value)
-    if kind == 'string' then
-        return '"' .. value:gsub('[%z\1-\31\\"]', function(c)
-            return string.format('\\u%04x', c:byte())
-        end) .. '"'
-    elseif kind == 'number' then
-        assert(value == value and math.abs(value) ~= math.huge, 'nonfinite JSON number')
-        return string.format('%.17g', value)
-    elseif kind == 'boolean' then return tostring(value)
-    elseif kind == 'nil' then return 'null'
-    end
-    assert(kind == 'table', 'unsupported JSON value: ' .. kind)
-    local items = {}
-    if #value > 0 or getmetatable(value) == array then
-        for i = 1, #value do items[i] = M.json(value[i]) end
-        return '[' .. table.concat(items, ',') .. ']'
-    end
-    local keys = {}
-    for key in pairs(value) do keys[#keys + 1] = key end
-    table.sort(keys)
-    for _, key in ipairs(keys) do items[#items + 1] = M.json(key) .. ':' .. M.json(value[key]) end
-    return '{' .. table.concat(items, ',') .. '}'
-end
+M.json = PCSX.encodeJSON
 
 function M.write(name, bytes)
     assert(name:match('^[%w][%w_.-]*$') and #bytes <= 67108864, 'invalid capture name/size')
