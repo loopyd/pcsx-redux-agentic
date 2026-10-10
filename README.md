@@ -3,10 +3,9 @@
 PCSX-Redux Agentic is a Linux fork of [PCSX-Redux](https://github.com/grumpycoders/pcsx-redux)
 for agentic coding, PlayStation reverse engineering, and behavioral analysis. It
 combines the emulator and debugger with bounded native capture APIs and an embedded
-Lua mission library. The interface and built-in messages use English (`en_US`) only;
-translation catalogues, language selection, and the Lua `t_` translation helper are
-removed. Existing saved `Locale` keys are ignored and omitted when settings are
-saved. Japanese font support remains for PlayStation memory-card titles.
+Lua mission library. The interface and built-in messages use English (`en_US`) only.
+The settings loader ignores saved `Locale` keys and omits them when saving.
+Japanese font support remains for PlayStation memory-card titles.
 
 The upstream authorship and licenses remain in [AUTHORS](AUTHORS),
 [LICENSE](LICENSE), and [LICENSES.md](LICENSES.md).
@@ -20,15 +19,13 @@ git clone --recursive https://github.com/loopyd/pcsx-redux-agentic.git
 make -C pcsx-redux-agentic -j6 BUILD=Release
 ```
 
-The supported host build is native Linux Make with a C++23 compiler. Docker,
-Visual Studio, VS Code configuration, and CodeRabbit integration are removed.
+The supported host build is native Linux Make with a C++23 compiler.
 Required pkg-config packages are `capstone`, `freetype2`, `libavcodec`, `libavformat`,
-`libavutil`, `libswresample`, `libcurl`, `libuv`, `sdl3`, and `zlib`; the GUI also
+`libavutil`, `libswresample`, `libcurl`, `libuv`, `sdl3`, and `zlib`. The GUI also
 links OpenGL, X11, and XCB. Other libraries come from the pinned submodules or
 compatible system packages selected by the Makefile. Install dependencies through
 your project's approved toolchain process. The fork does not publish cloud builds
-or maintain hosted CI. The Linux host graph preserves x86-64 and AArch64 code paths;
-validation on one architecture does not establish validation on the other.
+or maintain hosted CI. The Linux host graph has x86-64 and AArch64 code paths.
 
 `make runtests` runs existing host tests. `make tools` builds the PSX conversion
 utilities. OpenBIOS and other guest programs stay in the pinned `src/mips`
@@ -47,7 +44,7 @@ These are separate from the native Make build.
 
 ## Embedded missions
 
-The binary embeds 19 entry missions and 34 shared modules. Query their names,
+The binary embeds the missions and their shared Lua modules. Query their names,
 roles, compiled Lua, and native state schema without starting emulation:
 
 ```sh
@@ -55,8 +52,8 @@ roles, compiled Lua, and native state schema without starting emulation:
 ```
 
 Select a builtin with `-mission NAME`, or trusted external Lua with `-dofile FILE`.
-Both routes preload the embedded shared modules; no loose canonical Lua files
-are required at runtime. Lua runs as host code without a sandbox.
+Both routes preload the embedded shared modules. The canonical Lua files are
+embedded in the binary. Lua runs as host code without a sandbox.
 
 Host integrations supply per-run settings, staged inputs and arguments, process
 bounds, cleanup, and receipt validation. Supply your own licensed BIOS,
@@ -67,99 +64,49 @@ belong in the integrating repository.
 
 ## Native APIs
 
-Use native bulk operations for state capture, memory-card readback, byte-range
-comparison, VRAM, screenshot conversion, JSON encoding, GPU packet decoding,
-strict state wire validation, recorder batches, PCM streaming, upload probe packing,
-and selective saved-state decoding. Keep Lua responsible for mission composition
-and provenance correlation. Checked v6 save states include both complete memory cards and CPU, CD,
-SPU, GPU, MDEC, scheduling, and memory state. Load validation precedes mutation;
-a later host-file commit failure is reported and paused, with no filesystem
-rollback promise.
+Native bulk APIs handle state capture, memory-card readback, VRAM, decoding, byte
+comparison, upload probe packing, and file export. Lua composes missions and
+correlates observations with their inputs. See the
+[API reference](.agents/skills/psx-emulator/references/api.md) for calls and bounds,
+and [native execution](.agents/skills/psx-emulator/references/native.md) for admission
+and validation rules.
 
-`PCSX.encodeJSON` and `PCSX.jsonArray` own deterministic report encoding and array
-tagging; `support` exposes direct aliases. GPU wrappers adapt their options into
-one `PCSX.decodeGPU` or `PCSX.readGPUChain` call. Saved-state queries and comparisons
-use `PCSX.selectSaveStateWire` to validate the complete input and decode only the
-requested envelope with native `pb.decode`. Empty paths still decode the full
-state; checked restore admission remains intact. Comparison shares cached schema
-descriptors and uses native byte scanning throughout.
+Checked v6 save states include both complete memory cards and CPU, CD, SPU, GPU,
+MDEC, scheduling, and memory state. The loader validates the input before mutation.
+If a later host-file commit fails, the loader reports the failure and pauses the
+emulator. It does not roll back filesystem changes.
 
-`History.records` and `History.cdWorkerRecords` copy frozen ranges into owning
-zero-based arrays. `Audio.blocks` and `Audio.events` return batches of owning
-named tables; `Audio.exportPCM` streams raw/WAV files in fixed chunks. Native
-MMIO/VRAM packers construct complete store probes while Lua retains checked
-admission, guest execution and scratch/register restoration. The scalar recorder
-readers, Lua upload assembly and unused WAV helper are removed. See
-[API](.agents/skills/psx-emulator/references/api.md) for bounds and
-[native execution](.agents/skills/psx-emulator/references/native.md) for validation
-rules. The mission catalogue is not fully performance-qualified.
+`PCSX.encodeJSON` encodes deterministic reports. `PCSX.jsonArray` marks arrays.
+`support` exposes direct aliases. GPU wrappers adapt their options into one
+`PCSX.decodeGPU` or `PCSX.readGPUChain` call.
 
-Seven samples on one Linux x86-64 Release build, with host Lua JIT disabled,
-compared the same inputs and file write/close operations:
+Saved-state queries and comparisons use `PCSX.selectSaveStateWire` to validate the
+complete input and decode only the requested envelope with native `pb.decode`.
+Empty paths decode the full state. Checked restore admission remains intact.
+Comparison shares cached schema descriptors and uses native byte scanning.
 
-| Caller operation | Previous Lua path | Native path |
-| --- | ---: | ---: |
-| Encode and export 10,000 JSON records | 29.13 ms | 7.08 ms (4.11×) |
-| Decode and export 5,120 GPU words / 4,096 packets | 17.00 ms | 5.28 ms (3.22×) |
-| Strict 20.4 MiB state decode and PC query | 5.17 ms | 5.00 ms |
-
-The 21 report files, command stream and state input matched byte for byte.
-State query timing stayed close to the baseline; native `pb.decode` remains in
-both paths. These medians exclude startup, input acquisition, checked capture and
-guest execution. They do not establish whole-mission speedups or predict other
-hosts. Existing packet, ingress and strict-state checks also passed.
-
-Further seven-sample runs on the same host measured the complete export or packing
-operation, including file write/close:
-
-| Caller operation | Previous path | Current native path |
-| --- | ---: | ---: |
-| Pack a 512×128 VRAM upload probe | 6.70 ms | 0.073 ms (91×) |
-| Strict PC field query from a 20.4 MiB state | 5.12 ms | 0.025 ms (206×) |
-| Export two seconds of frozen PCM to raw/WAV | 1.14 ms | 0.36 ms (3.20×) |
-| Export 1,694 history records | 14.50 ms | 13.56 ms (1.07×) |
-
-Probe bytes, state query reports, PCM/WAV files and history journals matched.
-History reports differed only in the expected binary/source identity. State and
-PCM measurements paired both paths against the same input. An empty WAV and a live
-odd-sized VRAM upload also matched, and existing state/recorder/audio checks passed.
-The small audio journal case showed little timing change; batching primarily
-reduces repeated native crossings. Two-run replay and an 8 MiB RAM comparison
-passed. These observations retain the timing exclusions above and do not qualify
-the entire mission library or establish hardware fidelity.
+`History.records` and `History.cdWorkerRecords` copy frozen ranges into zero-based
+arrays that own their data. `Audio.blocks` and `Audio.events` return batches of
+named tables that own their data. `Audio.exportPCM` streams raw PCM and WAV files
+in fixed chunks. Native MMIO and VRAM packers construct complete store probes.
+Lua controls checked admission, guest execution, and scratch and register restoration.
 
 `PCSX.convertScreenshot(bytes, width, height, bpp)` converts packed BGR555 pixels
 to RGB24 in one bounded call, sharing the native VRAM colour kernel. RGB24 passes
 through unchanged. The frames mission keeps raw pixels and metadata and uses this
 call for PPM export. Dimensions are limited to 1024×512 with exact input storage.
 
-Seven alternating paired samples on one Linux x86-64 Release build, with host Lua
-JIT disabled, measured PPM conversion, header construction, and file write/close.
-Median times fell from 12.26 to 0.22 ms at 320×240 and from 93.55 to 1.70 ms at
-1024×512, about 55× faster. Synthetic inputs covered all 65,536 BGR555 words;
-output matched the old Lua loop. A live 640×478 BIOS display also matched. These
-timings exclude guest execution and screenshot acquisition and do not establish
-a whole-mission speedup or predict other hosts.
-
 `PCSX.captureCPUChecked()` returns a copied CPU observation in one call. It retains
-full checked-state admission and native validation, while avoiding Lua decoding of
-the complete state. It includes GPR and CP0 banks, decimal cycle counts, delay and
-exception context, and safe RAM/BIOS/scratch instruction words. It does not advance
-the guest or read MMIO. Persisted-state inspection continues to use schema-aware
-bounded decoding. See [API](.agents/skills/psx-emulator/references/api.md) and
-[native execution](.agents/skills/psx-emulator/references/native.md).
-
-A paused x86-64 interpreter comparison matched the previous Lua CPU capture at
-13 RAM, BIOS, scratch, MMIO, alignment, and address boundaries, and retained the
-running-state refusal. Seven paired samples of five calls gave medians of 201.6 ms
-for Lua decoding and 198.2 ms for native projection. The gain was small; full
-checked-state capture still dominates this operation. These results do not predict
-other machines or guest workloads.
+full checked-state admission and native validation without decoding the complete
+state in Lua. It includes GPR and CP0 banks, decimal cycle counts, delay and
+exception context, and safe instruction words from RAM, BIOS, and scratch memory.
+It does not advance the guest or read MMIO. Persisted-state inspection uses
+schema-aware bounded decoding.
 
 `PCSX.nextPause(function)` defers paused mission work until CPU execution and
 event dispatch have unwound. Its native FIFO holds at most 64 callbacks, preserves
 nested work, and rechecks the boundary before each callback. Target, step, GPU,
-history, audio and CD capture use it while retaining checked-state refusals.
+history, audio, and CD capture use it while retaining checked-state refusals.
 
 Receipts establish the supplied inputs, binary, limits, and captures for a run.
 They do not establish hardware fidelity or deterministic replay. Describe the

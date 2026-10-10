@@ -20,6 +20,7 @@ artificial slices, and temporary verification frameworks. Add regression coverag
 only when requested; adapt and run existing checks when an API moves.
 
 Update the owning skill procedure and user documentation when capabilities change.
+Follow the [documentation rules](AGENTS.md#documentation) when editing prose.
 Keep experiments and proprietary captures out of maintained procedures. Bug reports
 should include the fork revision, Linux environment, inputs that may be shared,
 command, actual behavior, expected behavior, and relevant bounded logs.
