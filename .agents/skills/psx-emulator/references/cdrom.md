@@ -81,7 +81,8 @@ not promised. The baked mission exposes these operations with actions `open-lid`
 media inputs explicitly; a host path change alone does not extend receipt provenance.
 
 `iso:listDirectory(path, {maxEntries=4096})` traverses ancestors once and returns
-owned rows `{name, lba, size, isDir}` plus the normalized path. `listDir` aliases it.
+owned rows `{name, lba, size, isDir}` plus the normalized path. `listDir` uses the
+same native operation and retains its rows-only return value.
 Paths are at most 4096 bytes, components at most 255 bytes, directory extents at
 most 8 MiB and entry bounds 1–65536. Names are exact and case-sensitive; missing
 directories, relative components, malformed records and exceeded bounds refuse.

@@ -68,6 +68,7 @@ local function reset(arguments,failures)
     options=failures or {};history={state=0,failures=0};audio={state=0,failures=0}
     failed,finished,support.done=nil,false,false;support.retained={}
     local h={status=function() return history end}
+    h.snapshot=function() assert(history.state==2 and audio.state~=1,'unfrozen snapshot');return h end
     if not options.missing then h.beginCDV3=function(_,_,workers,flags)
         local joined=flags%2==1;assert(workers==0 or flags==3)
         assert(history.state==0 and (not joined or audio.state==1));record('history begin')

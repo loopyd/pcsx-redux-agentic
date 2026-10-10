@@ -161,7 +161,10 @@ local function createIsoReaderWrapper(isoReader)
             return PCSX._listIsoDirectory(address, path, limit)
         end,
     }
-    reader.listDir = reader.listDirectory
+    reader.listDir = function(self, path)
+        local rows = self:listDirectory(path)
+        return rows
+    end
     return reader
 end
 
