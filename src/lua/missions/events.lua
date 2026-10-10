@@ -55,7 +55,7 @@ local function cd_fields(record, data)
         if phase==0 then labels={'lookup_kind','packed_msf','absolute_frame','prior_backing_low','prior_backing_high'}
         elseif phase==1 then labels={'lookup_kind','native_result','disposition'}
         elseif phase==2 then labels={'reason','count_low','count_high','track','file','sector_bits','flags','base_bytes'}
-        elseif phase==6 then labels={'query','argument','native_result'};expected=(data[1]==7 and data[3]~=0) and 8 or 0
+        elseif phase==6 then labels={'query','argument','native_result'};expected=(data[1]==6 and data[3]~=0) and 8 or 0
         else assert(phase==4 or phase==5,'unknown media branch');labels={'id_bytes','label_bytes'};expected=64 end
     elseif kind==41 then
         assert(phase<=2,'unknown native buffer variant')

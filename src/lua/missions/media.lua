@@ -26,7 +26,7 @@ function M.new(controller)
         elseif phase==6 then
             assert(controller.current(),'native query lacks scope')
             record.query=d[1];record.argument=d[2];record.native_result=d[3]
-            if #payload~=0 then assert(d[1]==7 and d[3]==1 and #payload==8,'unqualified query payload');record.loc_p_hex=m.hex(payload) end
+            if #payload~=0 then assert(d[1]==6 and d[3]==1 and #payload==8,'unqualified query payload');record.loc_p_hex=m.hex(payload) end
             result.queries[#result.queries+1]=record
         else
             assert((phase==4 or phase==5) and #payload==64,'invalid native ISO identity boundary')

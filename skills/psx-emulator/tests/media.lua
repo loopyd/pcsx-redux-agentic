@@ -5,7 +5,7 @@ local function fixture(success)
             j.emit(40,0,{1,512,150,0,0},10,owner)
             j.emit(40,2,{7,2352,0,0,0,0,12},10,owner)
             j.emit(40,1,{1,success,0},10,owner)
-            j.emit(40,6,{7,512,1},owner,owner,'\1\1\0\0\0\0\2\0')
+            j.emit(40,6,{6,512,1},owner,owner,'\1\1\0\0\0\0\2\0')
         end)
     end)
 end
