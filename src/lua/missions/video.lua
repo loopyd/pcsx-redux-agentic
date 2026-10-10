@@ -36,9 +36,7 @@ function M.run()
         local function finish(reason,success)
             if closing then return end
             closing=true; PCSX.pauseEmulator(); timer:stop(); timer:close()
-            local deferred=uv.new_timer(); m.retained[#m.retained+1]=deferred
-            deferred:start(1,0,m.guard(function()
-                deferred:stop(); deferred:close()
+            PCSX.nextPause(m.guard(function()
                 local native,decoded,capture_error
                 local ok,err=pcall(function()
                     if started then

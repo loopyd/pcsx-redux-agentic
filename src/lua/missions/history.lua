@@ -16,10 +16,7 @@ m.begin('target,identity,frames,stop,seconds,events,bytes', function()
         closing = true
         PCSX.pauseEmulator()
         timer:stop(); timer:close()
-        local drain = uv.new_timer()
-        m.retained[#m.retained + 1] = drain
-        drain:start(1, 0, m.guard(function()
-            drain:stop(); drain:close()
+        PCSX.nextPause(m.guard(function()
             local result
             if started then
                 h.stop()

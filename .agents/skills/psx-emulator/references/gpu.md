@@ -45,7 +45,8 @@ The event budget includes shared DMA/IRQ/timer records, not just GPU commands.
 Wall bounds include target acquisition; allow export time before harness timeout.
 Offline inputs, `port` and `address` reject during capture.
 
-Capture freezes outside Pause/device callbacks before exporting History's raw
+Capture uses `PCSX.nextPause` to freeze after CPU execution and Pause/device
+dispatch unwind, before exporting History's raw
 events/payload. `ingress.json` correlates buffers, visited headers, terminals,
 GP0/DMA reads and decoded packets; `commands.bin` holds concatenated GP0 bytes only after
 successful decoding. Initial/final `.pbuf`, `-vram.bin`, `-screen.bin` and

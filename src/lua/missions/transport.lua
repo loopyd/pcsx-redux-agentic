@@ -42,11 +42,7 @@ function M.run()
         local function finish(reason,success,start_error)
             if closing then return end
             closing=true;PCSX.pauseEmulator();timer:stop();timer:close()
-            -- Leave breakpoint/Vsync/device scopes before freezing. History
-            -- must freeze while joined Audio is still active.
-            local deferred=uv.new_timer();m.retained[#m.retained+1]=deferred
-            deferred:start(1,0,m.guard(function()
-                deferred:stop();deferred:close()
+            PCSX.nextPause(m.guard(function()
                 local failures=m.array()
                 if start_error then failures[#failures+1]=start_error end
                 local function attempt(label,callback)

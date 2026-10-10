@@ -84,6 +84,21 @@ removed. See [API](.agents/skills/psx-emulator/references/api.md) for bounds and
 [native execution](.agents/skills/psx-emulator/references/native.md) for remaining
 measurement candidates. The mission catalogue is not fully performance-qualified.
 
+Seven samples on one Linux x86-64 Release build, with host Lua JIT disabled,
+compared the same inputs and file write/close operations:
+
+| Caller operation | Previous Lua path | Native path |
+| --- | ---: | ---: |
+| Encode and export 10,000 JSON records | 29.13 ms | 7.08 ms (4.11×) |
+| Decode and export 5,120 GPU words / 4,096 packets | 17.00 ms | 5.28 ms (3.22×) |
+| Strict 20.4 MiB state decode and PC query | 5.17 ms | 5.00 ms |
+
+The 21 report files, command stream and state input matched byte for byte.
+State query timing stayed close to the baseline; native `pb.decode` remains in
+both paths. These medians exclude startup, input acquisition, checked capture and
+guest execution. They do not establish whole-mission speedups or predict other
+hosts. Existing packet, ingress and strict-state checks also passed.
+
 `PCSX.convertScreenshot(bytes, width, height, bpp)` converts packed BGR555 pixels
 to RGB24 in one bounded call, sharing the native VRAM colour kernel. RGB24 passes
 through unchanged. The frames mission keeps raw pixels and metadata and uses this
@@ -114,8 +129,8 @@ other machines or guest workloads.
 
 `PCSX.nextPause(function)` defers paused mission work until CPU execution and
 event dispatch have unwound. Its native FIFO holds at most 64 callbacks, preserves
-nested work, and rechecks the boundary before each callback. Target and step
-captures use this scheduler while retaining checked-state refusals.
+nested work, and rechecks the boundary before each callback. Target, step, GPU,
+history, audio and CD capture use it while retaining checked-state refusals.
 
 Receipts establish the supplied inputs, binary, limits, and captures for a run.
 They do not establish hardware fidelity or deterministic replay. Describe the

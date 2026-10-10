@@ -26,11 +26,7 @@ function M.run()
             closing = true
             PCSX.pauseEmulator()
             timer:stop(); timer:close()
-            -- Leave device and Pause callbacks before recorder cleanup.
-            local deferred = uv.new_timer()
-            m.retained[#m.retained + 1] = deferred
-            deferred:start(1, 0, m.guard(function()
-                deferred:stop(); deferred:close()
+            PCSX.nextPause(m.guard(function()
                 local result, capture_error
                 local ok, err = pcall(function()
                     if started then

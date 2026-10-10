@@ -100,7 +100,9 @@ their own recorder, GPU, and state admission checks.
 
 `PCSX.nextTick` remains general UI polling work and can run inside CPU execution.
 Use `nextPause` for checked capture after a breakpoint or device callback. Follow
-[Step](step.md), [Trace](trace.md), and [Replay](replay.md) boundaries.
+[Step](step.md), [Trace](trace.md), and [Replay](replay.md) boundaries. GPU,
+History, Audio and CD finalizers also queue native pause callbacks; wall-deadline
+timers remain separate.
 
 Save/load can alter scheduling; serialized state does not establish determinism
 or complete hardware coverage. `PCSX.SPU.playAudio` provides host preview, not
