@@ -1,7 +1,7 @@
 # ImFileDialog
 A simple file dialog library for Dear ImGui.
 
-This library supports favorites, actual Windows icons, image previews, zooming in, etc...
+The Linux backend supports favorites, file and folder icons, image previews, and zooming.
 
 **DISCLAIMER**: This library was designed and built for use in [SHADERed](https://github.com/dfranx/SHADERed) - it uses older version of Dear ImGui so some changes might be required to get it compiled. The way the file filter  and the library itself looks was also limited due to me not wanting to break [SHADERed](https://github.com/dfranx/SHADERed)'s plugins.
 
@@ -60,13 +60,9 @@ File filter syntax:
 Name1 {.ext1,.ext2}, Name2 {.ext3,.ext4},.*
 ```
 
-## Running the example
-If you want to test ImFileDialog, run these commands:
-```bash
-cmake .
-make
-./ImFileDialogExample
-```
+## Build
+
+The fork's native Make build compiles this library directly into the emulator.
 
 ## Screenshots
 **1. Table view:**
@@ -94,4 +90,4 @@ make
  * preview pane / layout options
 
 ## LICENSE
-ImFileDialog is licensed under MIT license. See [LICENSE](./LICENSE) for more details. 
+ImFileDialog is licensed under MIT license. See [LICENSE](./LICENSE) for more details.

@@ -16,7 +16,7 @@ Library to copy/retrieve content to/from the clipboard/pasteboard.
 
 ## Features
 
-Available features on Windows, macOS, and Linux (X11):
+This fork retains the Linux (X11) backend:
 
 * Copy/paste UTF-8 text.
 * Copy/paste user-defined data.
@@ -61,8 +61,6 @@ int main() {
   at the same time, remember to avoid storing data types that could
   change depending on the platform (e.g. `size_t`) in your custom
   format data.
-* **Windows**:
-  - [Limited number of clipboard formats on Windows](http://blogs.msdn.com/b/oldnewthing/archive/2015/03/19/10601208.aspx)
 * **Linux**:
   - To be able to copy/paste on Linux you need `libx11-dev`/`libX11-devel` package.
 

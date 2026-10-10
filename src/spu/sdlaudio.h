@@ -158,13 +158,12 @@ class SDLAudio {
     uint32_t getCurrentFrames() { return m_frames.load(); }
     void waitForGoal(uint32_t goal) {
 #if HAS_ATOMIC_WAIT
-        // for once, Visual Studio is better than clang/gcc/libc++/libstdc++. Its C++20
-        // support contain the appropriate wait/notify on atomics, so we can do this:
+        // Use atomic wait/notify when the standard library supports it.
         auto triggered = m_triggered.load();
         m_goalpost.store(goal);
         m_triggered.wait(triggered);
 #else
-        // and until the rest of the world catches on, we'll have to do this instead:
+        // Otherwise, wait on the condition variable.
         std::unique_lock<std::mutex> l(m_mu);
         auto triggered = m_triggered;
         m_goalpost = goal;

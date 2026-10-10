@@ -559,9 +559,8 @@ void PCSX::GUI::init(std::function<void()> applyArguments) {
 
     // SDL splits window and GL context creation, so the 3.0 fallback has to
     // cover both: a 3.2-core context can fail to materialize even after the
-    // window itself succeeded. On platforms where the pixel format binds at
-    // window creation (Win32 WGL is the strict case) a clean retry needs a
-    // fresh window too, so we destroy and recreate both.
+    // window itself succeeded. Destroy both so the retry starts with a fresh
+    // window and context.
     if (!m_window || !m_glContext) {
         g_system->log(LogClass::UI, "SDL failed to create OpenGL 3.2 core context, retrying with any 3.0 profile\n");
         if (m_glContext) {

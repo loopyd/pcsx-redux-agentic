@@ -1,4 +1,0 @@
-{
-    "cmake.configureOnOpen": false,
-    "dotnet.defaultSolution": "vsprojects/pcsx-redux.sln"
-}

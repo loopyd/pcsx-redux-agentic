@@ -15,8 +15,9 @@ git clone --recursive https://github.com/loopyd/pcsx-redux-agentic.git
 make -C pcsx-redux-agentic -j6 BUILD=Release
 ```
 
-The host build uses Make and a modern C++ compiler with C++23 support. Required
-pkg-config packages are `capstone`, `freetype2`, `libavcodec`, `libavformat`,
+The supported host build is native Linux Make with a C++23 compiler. Docker,
+Visual Studio, VS Code configuration, and CodeRabbit integration are removed.
+Required pkg-config packages are `capstone`, `freetype2`, `libavcodec`, `libavformat`,
 `libavutil`, `libswresample`, `libcurl`, `libuv`, `sdl3`, and `zlib`; the GUI also
 links OpenGL, X11, and XCB. Other libraries come from the pinned submodules or
 compatible system packages selected by the Makefile. Install dependencies through
@@ -31,6 +32,9 @@ submodule and use their own MIPS toolchain, for example:
 ```sh
 make -C src/mips/openbios
 ```
+
+Pinned upstream submodules retain their own build scripts and portability code.
+Those scripts are not supported host build routes in this fork.
 
 Linux Nix packaging remains in `flake.nix` and `pcsx-redux.nix`. Local AppImage
 packaging uses `make appimage` and requires the corresponding Linux packaging tools.

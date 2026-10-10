@@ -13,6 +13,6 @@ For the tools that need to be built, the top level Makefile can be used to build
 
 The [linux-mips](linux-mips) folder contains scripts for generating a cross-compiler for the MIPS architecture.
 
-The rest of the folders are the sources for some other internal tools that are not directly usable here, but published to other platforms.
+The remaining folders contain internal tools and native Linux build support.
 
 `../scripts/manage-psx-emulator-skill.sh` installs, checks, or removes the fork-owned skill links in an integrating project. It does not change home hooks or install dependencies.

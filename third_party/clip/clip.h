@@ -27,12 +27,6 @@ namespace clip {
 
   class lock {
   public:
-    // You can give your current HWND as the "native_window_handle."
-    // Windows clipboard functions use this handle to open/close
-    // (lock/unlock) the clipboard. From the MSDN documentation we
-    // need this handler so SetClipboardData() doesn't fail after a
-    // EmptyClipboard() call. Anyway it looks to work just fine if we
-    // call OpenClipboard() with a null HWND.
     lock(void* native_window_handle = nullptr);
     ~lock();
 
@@ -126,11 +120,7 @@ namespace clip {
   // clipboard will be non-premultiplied too. Basically you will be
   // always dealing with straight alpha images.
   //
-  // Details: Windows expects premultiplied images on its clipboard
-  // content, so the library code make the proper conversion
-  // automatically. macOS handles straight alpha directly, so there is
-  // no conversion at all. Linux/X11 images are transferred in
-  // image/png format which are specified in straight alpha.
+  // Linux/X11 transfers images in image/png format with straight alpha.
   class image {
   public:
     image();

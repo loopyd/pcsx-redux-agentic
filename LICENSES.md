@@ -55,7 +55,7 @@ find a link to the vendored version itself.
  - [noto](https://fonts.google.com/noto) ([vendored](https://github.com/grumpycoders/pcsx-redux/tree/main/third_party/noto))
  - [PEGTL](https://github.com/taocpp/PEGTL)
  - [pprint.lua](https://github.com/jagt/pprint.lua) ([vendored](https://github.com/grumpycoders/pcsx-redux/tree/main/third_party/pprint.lua))
- - [snitch](https://github.com/snitch-org/snitch) ([vendored](https://github.com/grumpycoders/pcsx-redux/tree/main/third_party/snitch))
+ - [snitch](https://github.com/snitch-org/snitch) (unused test code removed; [license retained](third_party/snitch/LICENSE))
  - [stb](https://github.com/nothings/stb)
  - [thorvg](https://github.com/thorvg/thorvg) ([vendored](https://github.com/pcsx-redux/thorvg))
  - [tracy](https://github.com/wolfpld/tracy)

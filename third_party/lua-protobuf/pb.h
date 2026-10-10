@@ -19,50 +19,11 @@
 # endif
 #endif
 
-#if !defined(PB_API) && defined(_WIN32) && !defined(PB_STATIC_API)
-# ifdef PB_IMPLEMENTATION
-#  define PB_API __declspec(dllexport)
-# else
-#  define PB_API __declspec(dllimport)
-# endif
-#endif
-
 #ifndef PB_API
 # define PB_API
 #endif
 
-#if defined(_MSC_VER) || defined(__UNIXOS2__) || defined(__SOL64__)
-typedef unsigned char      uint8_t;
-typedef signed   char       int8_t;
-typedef unsigned short     uint16_t;
-typedef signed   short      int16_t;
-typedef unsigned int       uint32_t;
-typedef signed   int        int32_t;
-typedef unsigned long long uint64_t;
-typedef signed   long long  int64_t;
-
-#ifndef INT64_MIN
-# define INT64_MIN LLONG_MIN
-#endif
-
-#ifndef INT64_MAX
-# define INT64_MAX LLONG_MAX
-#endif
-
-#elif defined(__SCO__) || defined(__USLC__) || defined(__MINGW32__)
-# include <stdint.h>
-#else
 # include <inttypes.h>
-# if (defined(__sun__) || defined(__digital__))
-#   if defined(__STDC__) && (defined(__arch64__) || defined(_LP64))
-typedef unsigned long int  uint64_t;
-typedef signed   long int   int64_t;
-#   else
-typedef unsigned long long uint64_t;
-typedef signed   long long  int64_t;
-#   endif /* LP64 */
-# endif /* __sun__ || __digital__ */
-#endif
 
 #include <stddef.h>
 #include <limits.h>

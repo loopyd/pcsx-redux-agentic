@@ -1,35 +1,12 @@
-# Visual Studio files
-*.rsuser
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-*.userprefs
-
 #Clion Files
 .idea/
 
 Debug/
 Release/
 ReleaseWithTracy/
-ReleaseWithClangCL/
 ReleaseCLI/
 Enabled/
 Disabled/
-
-.vs/
-.vscode/*.log
-
-ipch/
-*.aps
-*.ncb
-*.opendb
-*.opensdf
-*.sdf
-*.cachefile
-*.VC.db
-*.VC.VC.opendb
-
 
 .Trash-1000/
 
@@ -58,14 +35,6 @@ bins/
 pcsx.json
 pcsx.json.tmp
 *.mcd
-
-# FastBuild and msfastbuild stuff
-*.bff
-*.fdb
-
-# macos files
-.DS_store
-PCSX-Redux.app
 
 # Savestate files
 *.sstate
@@ -114,8 +83,6 @@ DynarecProfileData.txt
 DynarecDisassembly.txt
 sstate.proto
 
-# Sentry Native files
-
 # nops' configuration file
 comport.txt
 
@@ -142,10 +109,6 @@ luacov.stats.out
 /AppDir
 /*.AppImage
 /*.AppImage.zsync
-
-# xmake
-.xmake/
-build/
 
 # gtest objects are built next to their sources
 tests/**/*.o

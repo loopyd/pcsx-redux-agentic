@@ -1,6 +1,3 @@
-#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
-#define _CRT_SECURE_NO_WARNINGS
-#endif
 #include "ImFileDialog.h"
 
 #include <fstream>
@@ -15,18 +12,8 @@
 #define STBI_ASSERT(x) assert(x)
 #include "stb/stb_image.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#include <commctrl.h>
-#include <commoncontrols.h>
-#include <shellapi.h>
-#include <lmcons.h>
-#pragma comment(lib, "Comctl32.lib")
-#pragma comment(lib, "Shell32.lib")
-#else
 #include <unistd.h>
 #include <pwd.h>
-#endif
 
 #define ICON_SIZE ImGui::GetFont()->LegacySize + 3
 // GImGui->FontSize is the current rendering size on the global ImGui context;
@@ -38,73 +25,6 @@
 
 static std::string u8StringToString(const std::u8string& str) {
 	return reinterpret_cast<const char*>(str.c_str());
-}
-
-namespace
-{
-	struct Image
-	{
-		std::vector<uint8_t> Pixels;
-		int Width, Height;
-	};
-
-#ifdef _WIN32
-	std::optional<Image> GetFileIconWin32(const SHFILEINFOW& sfi)
-	{
-		auto list = static_cast<HIMAGELIST>(nullptr);
-
-		if (FAILED(SHGetImageList(SHIL_LARGE, IID_IImageList, reinterpret_cast<void**>(&list))))
-		{
-			return std::nullopt;
-		}
-
-		const auto icon = ImageList_GetIcon(list, sfi.iIcon, ILD_NORMAL);
-
-		if (icon == nullptr)
-		{
-			return std::nullopt;
-		}
-
-		std::optional<Image> image;
-
-		ICONINFO info = {};
-
-		if (GetIconInfo(icon, &info))
-		{
-			if (info.hbmColor != nullptr)
-			{
-				DIBSECTION ds = {};
-
-				if (GetObject(info.hbmColor, sizeof(ds), &ds))
-				{
-					const auto bm = ds.dsBm;
-					const auto bw = bm.bmWidth;
-					const auto bh = bm.bmHeight;
-
-					if (const auto size = bw * bh * (bm.bmBitsPixel / 8); size > 0)
-					{
-						auto bits = std::vector<uint8_t>();
-
-						bits.resize(size);
-
-						if (GetBitmapBits(info.hbmColor, size, bits.data()))
-						{
-							image = Image{.Pixels = bits, .Width = bw, .Height = bh};
-						}
-					}
-				}
-			}
-
-			DeleteObject(info.hbmColor);
-
-			DeleteObject(info.hbmMask);
-		}
-
-		DestroyIcon(icon);
-
-		return image;
-	}
-#endif
 }
 
 namespace ifd {
@@ -233,20 +153,11 @@ namespace ifd {
 					ImGui::SameLine();
 				}
 				if (ImGui::Button(btnList[i].c_str(), ImVec2(0, GUI_ELEMENT_SIZE))) {
-#ifdef _WIN32
-					std::string newPath = "";
-#else
 					std::string newPath = "/";
-#endif
 					for (size_t j = 0; j <= i; j++) {
 						newPath += btnList[j];
-#ifdef _WIN32
-						if (j != i)
-							newPath += "\\";
-#else
 						if (j != i)
 							newPath += "/";
-#endif
 					}
 					path = stringToU8Path(newPath);
 					ret = true;
@@ -452,40 +363,6 @@ namespace ifd {
 		quickAccess->Read = true;
 		m_treeCache.push_back(quickAccess);
 
-#ifdef _WIN32
-		wchar_t username[UNLEN + 1] = { 0 };
-		DWORD username_len = UNLEN + 1;
-		GetUserNameW(username, &username_len);
-
-		std::wstring userPath = L"C:\\Users\\" + std::wstring(username) + L"\\";
-
-		// Quick Access / Bookmarks
-		quickAccess->Children.push_back(new FileTreeNode(userPath + L"Desktop"));
-		quickAccess->Children.push_back(new FileTreeNode(userPath + L"Documents"));
-		quickAccess->Children.push_back(new FileTreeNode(userPath + L"Downloads"));
-		quickAccess->Children.push_back(new FileTreeNode(userPath + L"Pictures"));
-
-		// OneDrive
-		FileTreeNode* oneDrive = new FileTreeNode(userPath + L"OneDrive");
-		m_treeCache.push_back(oneDrive);
-
-		// This PC
-		FileTreeNode* thisPC = new FileTreeNode("This PC");
-		thisPC->Read = true;
-		if (std::filesystem::exists(userPath + L"3D Objects"))
-			thisPC->Children.push_back(new FileTreeNode(userPath + L"3D Objects"));
-		thisPC->Children.push_back(new FileTreeNode(userPath + L"Desktop"));
-		thisPC->Children.push_back(new FileTreeNode(userPath + L"Documents"));
-		thisPC->Children.push_back(new FileTreeNode(userPath + L"Downloads"));
-		thisPC->Children.push_back(new FileTreeNode(userPath + L"Music"));
-		thisPC->Children.push_back(new FileTreeNode(userPath + L"Pictures"));
-		thisPC->Children.push_back(new FileTreeNode(userPath + L"Videos"));
-		DWORD d = GetLogicalDrives();
-		for (int i = 0; i < 26; i++)
-			if (d & (1 << i))
-				thisPC->Children.push_back(new FileTreeNode(std::string(1, 'A' + i) + ":\\"));
-		m_treeCache.push_back(thisPC);
-#else
 		std::error_code ec;
 
 		// Quick Access
@@ -516,7 +393,6 @@ namespace ifd {
 				thisPC->Children.push_back(new FileTreeNode(u8StringToString(entry.path().u8string())));
 		}
 		m_treeCache.push_back(thisPC);
-#endif
 	}
 	FileDialog::~FileDialog() {
 		m_clearIconPreview();
@@ -785,50 +661,6 @@ namespace ifd {
 
 	void* FileDialog::m_getIcon(const std::filesystem::path& path)
 	{
-#ifdef _WIN32
-		if (m_icons.count(u8StringToString(path.u8string())) > 0)
-			return m_icons[u8StringToString(path.u8string())];
-
-		std::string pathU8 = u8StringToString(path.u8string());
-
-		std::error_code ec;
-		m_icons[pathU8] = nullptr;
-
-		DWORD attrs = 0;
-		UINT flags = SHGFI_ICON | SHGFI_LARGEICON;
-		if (!std::filesystem::exists(path, ec)) {
-			flags |= SHGFI_USEFILEATTRIBUTES;
-			attrs = FILE_ATTRIBUTE_DIRECTORY;
-		}
-
-		SHFILEINFOW fileInfo = { 0 };
-		std::wstring pathW = path.wstring();
-		for (int i = 0; i < pathW.size(); i++)
-			if (pathW[i] == '/')
-				pathW[i] = '\\';
-		SHGetFileInfoW(pathW.c_str(), attrs, &fileInfo, sizeof(SHFILEINFOW), flags);
-
-		if (fileInfo.hIcon == nullptr)
-			return nullptr;
-
-		// check if icon is already loaded
-		auto itr = std::find(m_iconIndices.begin(), m_iconIndices.end(), fileInfo.iIcon);
-		if (itr != m_iconIndices.end()) {
-			const std::string& existingIconFilepath = m_iconFilepaths[itr - m_iconIndices.begin()];
-			m_icons[pathU8] = m_icons[existingIconFilepath];
-			return m_icons[pathU8];
-		}
-
-		m_iconIndices.push_back(fileInfo.iIcon);
-		m_iconFilepaths.push_back(pathU8);
-
-		if (auto image = GetFileIconWin32(fileInfo); image.has_value())
-		{
-			return m_icons[pathU8] = this->CreateTexture(image->Pixels.data(), image->Width, image->Height, 0);
-		}
-
-		return nullptr;
-#else
 		if (m_icons.count(u8StringToString(path.u8string())) > 0)
 			return m_icons[u8StringToString(path.u8string())];
 
@@ -883,7 +715,6 @@ namespace ifd {
 		}
 
 		return m_icons[pathU8];
-#endif
 	}
 	void FileDialog::m_clearIcons()
 	{
@@ -988,11 +819,6 @@ namespace ifd {
 			m_backHistory.push(m_currentDirectory);
 
 		m_currentDirectory = p;
-#ifdef _WIN32
-		// drives don't work well without the backslash symbol
-		if (p.u8string().size() == 2 && p.u8string()[1] == ':')
-			m_currentDirectory = std::filesystem::path(p.u8string() + u8"\\");
-#endif
 
 		m_clearIconPreview();
 		m_content.clear(); // p == "" after this line, due to reference
@@ -1436,12 +1262,7 @@ namespace ifd {
 		ImGui::SameLine();
 		if (ImGui::InputTextEx("##file_input", "Filename", m_inputTextbox, 1024, ImVec2((m_type != IFD_DIALOG_DIRECTORY) ? -250.0f : -FLT_MIN, 0), ImGuiInputTextFlags_EnterReturnsTrue)) {
 			bool success = m_finalize(std::string(m_inputTextbox));
-#ifdef _WIN32
-			if (!success)
-				MessageBeep(MB_ICONERROR);
-#else
 			(void)success;
-#endif
 		}
 		if (m_type != IFD_DIALOG_DIRECTORY) {
 			ImGui::SameLine();
@@ -1461,12 +1282,7 @@ namespace ifd {
 			bool success = false;
 			if (!filename.empty() || m_type == IFD_DIALOG_DIRECTORY)
 				success = m_finalize(filename);
-#ifdef _WIN32
-			if (!success)
-				MessageBeep(MB_ICONERROR);
-#else
 			(void)success;
-#endif
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, 0.0f))) {

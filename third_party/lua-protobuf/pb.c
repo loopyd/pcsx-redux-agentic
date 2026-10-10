@@ -1,11 +1,3 @@
-#ifdef _MSC_VER
-# define _CRT_SECURE_NO_WARNINGS
-# define _CRT_NONSTDC_NO_WARNINGS
-# pragma warning(disable: 4244) /* int -> char */
-# pragma warning(disable: 4706) /* = in if condition */
-# pragma warning(disable: 4709) /* comma in array index */
-# pragma warning(disable: 4127) /* const in if condition */
-#endif
 
 #define PB_IMPLEMENTATION
 #include "pb.h"
@@ -541,12 +533,7 @@ static void lpb_readtype(lua_State *L, lpb_State *LS, int type, pb_Slice *s) {
 
 /* io routines */
 
-#ifdef _WIN32
-# include <io.h>
-# include <fcntl.h>
-#else
 # define setmode(a,b)  ((void)0)
-#endif
 
 static int io_read(lua_State *L) {
     FILE *fp = (FILE*)lua_touserdata(L, 1);

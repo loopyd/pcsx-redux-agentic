@@ -39,10 +39,10 @@ body:
     validations:
       required: true
     attributes:
-      label: Operating System
-      placeholder: (eg Windows 10, MacOS Big Sur, Ubuntu 20.04 LTS ...)
+      label: Linux distribution
+      placeholder: (eg Debian 13, Ubuntu 24.04 LTS ...)
       description: >
-        The OS of the system you're running Redux on
+        Distribution, version, and host architecture running PCSX-Redux Agentic
 
   - type: textarea
     validations:

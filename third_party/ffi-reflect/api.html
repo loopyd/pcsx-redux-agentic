@@ -230,10 +230,8 @@ terminated with <tt>...</tt>).
 <div id="f_convention" class="field"><h2><tt>refct.convention</tt> attribute <span class="typ">(string)</span></h2>
 <p class="kinds"><strong>Applies to:</strong> <a href="#w_func">func</a>.</p>
 The calling convention that the function was declared with, which will be one
-of: <tt>"cdecl"</tt> (the default), <tt>"thiscall"</tt>, <tt>"fastcall"</tt>, <tt>"stdcall"</tt>. Note that
-on Windows, LuaJIT will automatically change <tt>__cdecl</tt> to <tt>__stdcall</tt> after the
-first call to the function (if appropriate).
-<div class="example"><strong>Example:</strong><pre>reflect.typeof("int(__stdcall *)(int)").element_type.convention == "stdcall"</pre></div><div class="example"><strong>Example:</strong><pre class="multiline">if not ffi.abi "win" then return "Windows-only example" end<br/>ffi.cdef "void* LoadLibraryA(const char*)"<br/>print(reflect.typeof(ffi.C.LoadLibraryA).convention) --&gt; cdecl<br/>ffi.C.LoadLibraryA("kernel32")<br/>print(reflect.typeof(ffi.C.LoadLibraryA).convention) --&gt; stdcall</pre></div></div>
+of: <tt>"cdecl"</tt> (the default), <tt>"thiscall"</tt>, <tt>"fastcall"</tt>, <tt>"stdcall"</tt>.
+<div class="example"><strong>Example:</strong><pre>reflect.typeof("int(__stdcall *)(int)").element_type.convention == "stdcall"</pre></div></div>
 <div id="f_value" class="field"><h2><tt>refct.value</tt> attribute <span class="typ">(integer)</span></h2>
 <p class="kinds"><strong>Applies to:</strong> <a href="#w_constant">constant</a>.</p>
 

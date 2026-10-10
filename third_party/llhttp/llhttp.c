@@ -3,18 +3,10 @@
 #include <string.h>
 
 #ifdef __SSE4_2__
- #ifdef _MSC_VER
-  #include <nmmintrin.h>
- #else  /* !_MSC_VER */
-  #include <x86intrin.h>
- #endif  /* _MSC_VER */
+ #include <x86intrin.h>
 #endif  /* __SSE4_2__ */
 
-#ifdef _MSC_VER
- #define ALIGN(n) _declspec(align(n))
-#else  /* !_MSC_VER */
- #define ALIGN(n) __attribute__((aligned(n)))
-#endif  /* _MSC_VER */
+#define ALIGN(n) __attribute__((aligned(n)))
 
 #include "llhttp.h"
 

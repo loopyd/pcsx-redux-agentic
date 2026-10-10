@@ -39,10 +39,8 @@ PCSX::Arguments::Arguments(const CommandLine::args& args) {
     auto portablePath = args.get<std::string_view>("portable");
     if (portablePath.has_value()) m_portablePath = portablePath.value();
     if (std::filesystem::exists("pcsx.json")) m_portable = true;
-    if (std::filesystem::exists(std::filesystem::path("vsprojects") / "pcsx-redux.sln")) m_portable = true;
-    if (std::filesystem::exists(std::filesystem::path("..") / "pcsx-redux.sln")) m_portable = true;
     if (!m_portable) {
-        // The probes above are relative to the current directory, which is only the install
+        // The config probe above is relative to the current directory, which is only the install
         // directory when the binary was started from it. A shortcut with its own start-in, a
         // file association on a disc image, or a frontend will all hand us something else, so
         // look next to the binary too, and anchor the portable directory there when that's

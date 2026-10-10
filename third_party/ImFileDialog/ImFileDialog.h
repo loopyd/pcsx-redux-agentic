@@ -52,12 +52,6 @@ namespace ifd {
 
 		class FileTreeNode {
 		public:
-#ifdef _WIN32
-			FileTreeNode(const std::wstring& path) {
-				Path = std::filesystem::path(path);
-				Read = false;
-			}
-#endif
 
 			FileTreeNode(const std::string& path) {
 				Path = stringToU8Path(path);

@@ -149,7 +149,7 @@ class Emitter : public MacroAssembler {
         }
     }
 
-    // Emit a trap instruction that gdb/lldb/Visual Studio can interpret as a breakpoint
+    // Emit a trap instruction that gdb/lldb can interpret as a breakpoint.
     void breakpoint() { Brk(0); }
 };
 #endif  // DYNAREC_AA64

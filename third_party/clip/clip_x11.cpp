@@ -143,7 +143,7 @@ public:
   bool try_lock() {
     bool res = m_lock.try_lock();
     if (!res) {
-      // TODO make this configurable (the same for Windows retries)
+      // TODO make the retry count configurable.
       for (int i=0; i<5 && !res; ++i) {
         res = m_lock.try_lock();
         std::this_thread::sleep_for(std::chrono::milliseconds(20));

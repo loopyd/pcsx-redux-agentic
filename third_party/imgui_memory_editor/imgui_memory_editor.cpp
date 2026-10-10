@@ -6,18 +6,9 @@
 #include "fmt/format.h"
 #include "imgui_stdlib.h"
 
-#ifdef _MSC_VER
-#define _PRISizeT   "I"
-#define ImSnprintf  _snprintf
-#else
 #define _PRISizeT   "z"
 #define ImSnprintf  snprintf
-#endif
 
-#ifdef _MSC_VER
-#pragma warning (push)
-#pragma warning (disable: 4996) // warning C4996: 'sprintf': This function or variable may be unsafe.
-#endif
 
 MemoryEditor::MemoryEditor(bool& show, size_t base_addr, size_t &goto_addr) : Open(show), BaseAddr(base_addr), OffsetAddr(goto_addr)
 {
