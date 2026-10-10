@@ -100,7 +100,7 @@ Keep proprietary inputs/captures outside skill assets.
 
 <a id="discovery"></a>
 
-The fork owns `skills/psx-emulator` and `src/lua/missions`. In a host checkout,
+The fork owns `.agents/skills/psx-emulator` and `src/lua/missions`. In a host checkout,
 `scripts/manage-psx-emulator-skill.sh install HOST_REPO` links its expected
 `third_party/pcsx-redux-agentic` skill through `.pi/skills/psx-emulator`; existing
 `.agents` and `.codex` aliases keep their current chain. The installer refuses

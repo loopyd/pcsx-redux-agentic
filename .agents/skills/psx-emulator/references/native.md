@@ -35,6 +35,14 @@ CPU fields and safe memory words before releasing the lease, then allocates Lua
 values. It avoids decoding the whole state in Lua; it is not a CPU-only admission
 shortcut. Persisted-state validation remains schema-aware and bounded.
 
+Bulk Lua work remains in `src/lua/missions`: `snapshot.lua` and `state.lua` parse
+persisted states, `support.lua` encodes JSON, `frames.lua` converts BGR555
+screenshots, `packets.lua` parses GPU words, `vram.lua` assembles uploads, and
+history/audio modules export individual records. Measure these complete caller
+paths before selecting another native API; acquisition alone does not qualify
+whole-mission performance. Keep semantic correlation and mission composition in
+Lua where native batching does not justify moving them.
+
 Verify changed behavior with the existing local build/checks and a focused runtime
 run. Measure the complete caller operation before claiming performance gains.
 Preserve frozen failed and successful evidence. Do not grow temporary controllers,

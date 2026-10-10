@@ -64,7 +64,7 @@ local. The binary embeds 19 entry missions and 35 shared modules; no loose canon
 Lua files are required at runtime. `--script` remains available for trusted external
 Lua. Lua runs as host code and is not a sandbox.
 
-The [psx-emulator skill](skills/psx-emulator/SKILL.md) owns mission selection,
+The [psx-emulator skill](.agents/skills/psx-emulator/SKILL.md) owns mission selection,
 arguments, runtime bounds, capture interpretation, and native API procedures.
 Install or check its links from an integrating project with:
 
@@ -86,13 +86,17 @@ SPU, GPU, MDEC, scheduling, and memory state. Load validation precedes mutation;
 a later host-file commit failure is reported and paused, with no filesystem
 rollback promise.
 
+The library still performs substantial bulk work in Lua. See the
+[native execution reference](.agents/skills/psx-emulator/references/native.md) for
+measurement candidates; the mission catalogue is not fully performance-qualified.
+
 `PCSX.captureCPUChecked()` returns a copied CPU observation in one call. It retains
 full checked-state admission and native validation, while avoiding Lua decoding of
 the complete state. It includes GPR and CP0 banks, decimal cycle counts, delay and
 exception context, and safe RAM/BIOS/scratch instruction words. It does not advance
 the guest or read MMIO. Persisted-state inspection continues to use schema-aware
-bounded decoding. See [API](skills/psx-emulator/references/api.md) and
-[native execution](skills/psx-emulator/references/native.md).
+bounded decoding. See [API](.agents/skills/psx-emulator/references/api.md) and
+[native execution](.agents/skills/psx-emulator/references/native.md).
 
 A paused x86-64 interpreter comparison matched the previous Lua CPU capture at
 13 RAM, BIOS, scratch, MMIO, alignment, and address boundaries, and retained the

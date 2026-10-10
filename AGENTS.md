@@ -8,8 +8,8 @@ build/test/release automation. Ship English (`en_US`) only; do not restore trans
 catalogues, locale settings, language selectors, or translation wrappers. Preserve
 character decoding and fonts needed to inspect PSX guest data.
 
-Read `skills/psx-emulator/SKILL.md` for runtime work. Prefer existing missions and
-native bounded bulk APIs with thin Lua wrappers. Preserve owner-thread admission,
+Read `.agents/skills/psx-emulator/SKILL.md` for runtime work. Prefer existing missions
+and native bounded bulk APIs with thin Lua wrappers. Preserve owner-thread admission,
 paused boundaries, recorder refusals, leases, and full checked-state validation.
 
 ## Delivery focus

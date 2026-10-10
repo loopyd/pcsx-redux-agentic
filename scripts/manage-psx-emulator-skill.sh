@@ -9,12 +9,12 @@ operation=$1
 host_repo=$(realpath -- "$2")
 fork_root=$(realpath -- "$(dirname -- "${BASH_SOURCE[0]}")/..")
 [[ $(realpath -- "$host_repo/third_party/pcsx-redux-agentic") == "$fork_root" ]] || fail 'fork must be the expected host submodule'
-skill=$fork_root/skills/psx-emulator
+skill=$fork_root/.agents/skills/psx-emulator
 [[ -f $skill/SKILL.md && ! -L $skill/SKILL.md ]] || fail 'canonical skill source is missing or not regular'
 [[ $(head -n 1 -- "$skill/SKILL.md") == --- ]] || fail 'skill frontmatter is missing'
 awk 'NR == 1 { next } /^---$/ { closed = 1; exit } /^name: psx-emulator$/ { found = 1 } END { exit !(found && closed) }' "$skill/SKILL.md" || fail 'canonical skill name differs'
 links=(.pi/skills/psx-emulator)
-targets=(../../third_party/pcsx-redux-agentic/skills/psx-emulator)
+targets=(../../third_party/pcsx-redux-agentic/.agents/skills/psx-emulator)
 for namespace in .agents .codex; do
     alias=$host_repo/$namespace/skills/psx-emulator
     if [[ -e $alias || -L $alias ]]; then
@@ -27,7 +27,7 @@ for index in "${!links[@]}"; do
     parent=$(dirname -- "$path")
     [[ $(realpath -m -- "$parent") == "$parent" ]] || fail 'link parent traverses an unrelated symlink'
     if [[ -L $path ]]; then
-        [[ $(readlink -- "$path") == "${targets[index]}" ]] || fail "unrelated symlink: ${links[index]}"
+        [[ $(readlink -- "$path") == "${targets[index]}" ]] || fail "unrelated or stale symlink: ${links[index]}"
     elif [[ -e $path ]]; then
         fail "unowned path must be migrated by its owner: ${links[index]}"
     elif [[ $operation == check ]]; then
