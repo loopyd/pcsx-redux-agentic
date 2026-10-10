@@ -150,7 +150,7 @@ bool clear() {
     CD::configure(false, epoch, false, 0); return true;
 }
 bool status(Status* out) { return out && journal() && journal()->status(*out); }
-bool record(uint32_t index, Record* out) { return out && paused() && journal()->record(index, *out); }
+bool records(uint32_t first, uint32_t count, Record* out) { return paused() && journal()->records(first, count, out); }
 bool bytes(uint32_t offset, uint32_t length, void* out) { return paused() && journal()->bytes(offset, length, out); }
 void fail(Failure reason) { if (journal()) journal()->fail(reason); }
 

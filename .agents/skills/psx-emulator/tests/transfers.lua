@@ -8,11 +8,11 @@ m.begin('scenario,stop', function()
         h.stop()
         local report = events.export()
         assert(report.complete, 'native fixture incomplete')
-        local records, payload = {}, h.bytes(0, report.payload_bytes)
-        for i = 0, report.events - 1 do records[#records + 1] = h.record(i) end
+        local records, payload = h.records(0, report.events), h.bytes(0, report.payload_bytes)
         local function select(kind, channel)
             local values = {}
-            for _, r in ipairs(records) do
+            for i = 0, report.events - 1 do
+                local r = records[i]
                 if r.kind == kind and (channel == nil or r.device == channel) then values[#values + 1] = r end
             end
             return values

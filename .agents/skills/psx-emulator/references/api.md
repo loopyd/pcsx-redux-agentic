@@ -73,6 +73,26 @@ more than 100000 tags/scalars and nesting beyond 64 levels. Strict `snapshot`
 decoding uses this call before bundled `pb.decode`. Version and checked-restore
 validation remain separate; valid wire bytes alone do not authorize restoration.
 
+`PCSX.selectSaveStateWire(bytes, path, strict?)` validates the whole input and returns
+the selected original field occurrences in a parent-message envelope. Its metadata
+includes `wire`, `version_wire`, `parent_type`, `field_name`, `kind`, `repeated`,
+`indexed` and `parent_present`. `snapshot.decodeSelected` delegates scalar/default
+decoding to bundled `pb`, preserving exact integers and encoded presence. Dotted
+paths use one-based indices up to one million. Empty path selects the root. Strict
+mode uses the full validator above; query mode skips unknown fields and retains
+the last singular occurrence while rejecting malformed known fields anywhere.
+The same size, value-count and nesting bounds apply. Full checked restore admission
+remains separate.
+
+`PCSX.packMMIOProbe(scratch, width, operations)` returns an immutable little-endian
+MIPS store program from a contiguous array of `{address, value}` U32 pairs.
+Widths are 8, 16 or 32 bits; 1–262000 stores consume `52 + 8*N` bytes. Scratch is
+aligned RAM in segments 0, 4 or 5 and the complete program must fit physical 2 MiB.
+`PCSX.packVRAMUploadProbe(scratch, x, y, width, height, pixels)` builds the same
+program directly from exact BGR555 rectangle bytes, including GPU FIFO reset and
+zero padding for an odd final pixel. Both only pack bytes. The `bus` executor
+retains checked admission, guest stores, and scratch/register restoration.
+
 `PCSX.captureCPUChecked()` returns copied PC, GPR[34], CP0[32], decimal cycles,
 last executed word, nonempty delay slots, ISR flags, exception context, and nearby memory
 words. Calls retain full checked-state refusals and return the same `savestate:`

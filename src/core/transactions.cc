@@ -514,11 +514,13 @@ bool workerStatus(WorkerStatus* out) {
     if (!out || !History::ownerThread() || g_system->running() || g_system->quitting()) return false;
     std::lock_guard guard(worker.mutex); *out = worker.status; return true;
 }
-bool workerRecord(uint32_t index, WorkerRecord* out) {
-    if (!out || !History::ownerThread() || g_system->running() || g_system->quitting()) return false;
+bool workerRecords(uint32_t first, uint32_t count, WorkerRecord* out) {
+    if (!History::ownerThread() || g_system->running() || g_system->quitting()) return false;
     std::lock_guard guard(worker.mutex);
-    if (worker.status.state != 2 || index >= worker.records.size()) return false;
-    *out = worker.records[index]; return true;
+    if (worker.status.state != 2 || count > 65536 || first > worker.records.size() ||
+        count > worker.records.size() - first || (count && !out)) return false;
+    if (count) std::memcpy(out, worker.records.data() + first, size_t(count) * sizeof(WorkerRecord));
+    return true;
 }
 
 }

@@ -47,7 +47,7 @@ These are separate from the native Make build.
 
 ## Embedded missions
 
-The binary embeds 19 entry missions and 35 shared modules. Query their names,
+The binary embeds 19 entry missions and 34 shared modules. Query their names,
 roles, compiled Lua, and native state schema without starting emulation:
 
 ```sh
@@ -69,7 +69,8 @@ belong in the integrating repository.
 
 Use native bulk operations for state capture, memory-card readback, byte-range
 comparison, VRAM, screenshot conversion, JSON encoding, GPU packet decoding,
-and strict state wire validation. Keep Lua responsible for mission composition
+strict state wire validation, recorder batches, PCM streaming, upload probe packing,
+and selective saved-state decoding. Keep Lua responsible for mission composition
 and provenance correlation. Checked v6 save states include both complete memory cards and CPU, CD,
 SPU, GPU, MDEC, scheduling, and memory state. Load validation precedes mutation;
 a later host-file commit failure is reported and paused, with no filesystem
@@ -77,12 +78,21 @@ rollback promise.
 
 `PCSX.encodeJSON` and `PCSX.jsonArray` own deterministic report encoding and array
 tagging; `support` exposes direct aliases. GPU wrappers adapt their options into
-one `PCSX.decodeGPU` or `PCSX.readGPUChain` call. Strict persisted-state inspection
-uses `PCSX.validateSaveStateWire` before the existing native `pb.decode`; it does
-not change checked restore admission. The former Lua bulk implementations are
-removed. See [API](.agents/skills/psx-emulator/references/api.md) for bounds and
-[native execution](.agents/skills/psx-emulator/references/native.md) for remaining
-measurement candidates. The mission catalogue is not fully performance-qualified.
+one `PCSX.decodeGPU` or `PCSX.readGPUChain` call. Saved-state queries and comparisons
+use `PCSX.selectSaveStateWire` to validate the complete input and decode only the
+requested envelope with native `pb.decode`. Empty paths still decode the full
+state; checked restore admission remains intact. Comparison shares cached schema
+descriptors and uses native byte scanning throughout.
+
+`History.records` and `History.cdWorkerRecords` copy frozen ranges into owning
+zero-based arrays. `Audio.blocks` and `Audio.events` return batches of owning
+named tables; `Audio.exportPCM` streams raw/WAV files in fixed chunks. Native
+MMIO/VRAM packers construct complete store probes while Lua retains checked
+admission, guest execution and scratch/register restoration. The scalar recorder
+readers, Lua upload assembly and unused WAV helper are removed. See
+[API](.agents/skills/psx-emulator/references/api.md) for bounds and
+[native execution](.agents/skills/psx-emulator/references/native.md) for validation
+rules. The mission catalogue is not fully performance-qualified.
 
 Seven samples on one Linux x86-64 Release build, with host Lua JIT disabled,
 compared the same inputs and file write/close operations:

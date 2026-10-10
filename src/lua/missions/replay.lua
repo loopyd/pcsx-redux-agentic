@@ -64,24 +64,23 @@ m.begin('runs,depth,limit', function()
     end
     local function sample(event)
         local bytes = m.stateBytes()
-        local state = snapshot.decode(bytes, true)
-        local value, kind, repeated = snapshot.select(state, event.path, true)
+        local value, kind, repeated = snapshot.decodeSelected(bytes, event.path, true, true)
+        local cycles = snapshot.decodeSelected(bytes, 'registers.cycle', true, true)
         local observed = buttons()
         if current == 1 then
             local name = string.format('baseline-%03d.pbuf', event.index)
             capture(name, bytes)
             baselines[event.index], baselineButtons[event.index] = name, observed
-            baselineCycles[event.index] = state.registers.cycle
+            baselineCycles[event.index] = cycles
             result.checkpoints[#result.checkpoints + 1] = {index = event.index, path = event.path,
-                frame = frame, capture = name, cycles = state.registers.cycle, buttons = observed}
+                frame = frame, capture = name, cycles = cycles, buttons = observed}
         else
-            local baseline = snapshot.read(baselines[event.index], true)
-            local before = snapshot.select(baseline, event.path, true)
+            local before = snapshot.readSelected(baselines[event.index], event.path, true, true)
             local report = difference.compare(before, value, kind, repeated, event.path, options)
             local buttonsEqual = observed == baselineButtons[event.index]
-            local cyclesEqual = state.registers.cycle == baselineCycles[event.index]
+            local cyclesEqual = cycles == baselineCycles[event.index]
             run.comparisons[#run.comparisons + 1] = {index = event.index, frame = frame,
-                cycles = state.registers.cycle, cycles_equal = cyclesEqual, state = report,
+                cycles = cycles, cycles_equal = cyclesEqual, state = report,
                 buttons_equal = buttonsEqual, buttons = observed}
             if not report.equal or not buttonsEqual or not cyclesEqual then
                 divergence('checkpoint', {index = event.index, path = event.path,

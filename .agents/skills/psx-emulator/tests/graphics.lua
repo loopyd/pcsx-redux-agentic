@@ -22,7 +22,8 @@ end
 PCSX={History={status=function()
     return {version=1,state=2,events=#rows,bytes=0,beginCycle=cycle,endCycle=cycle,
         failures=0,firstFailure=0,dropped=0}
-end,bytes=function() return '' end,record=function(index) return rows[index+1] end}}
+end,bytes=function() return '' end,records=function(first,count)
+    local records={};for n=0,count-1 do records[n]=rows[first+n+1] end;return records end}}
 m.write=function(name,bytes) outputs[name]=bytes end
 m.report=function(name,value) reports[name]=value end
 local old_open=io.open

@@ -199,8 +199,9 @@ function M.export()
     local total, offset, previous = 0, 0, status.beginCycle
     local kinds, channels = {}, {}
     local ok, err = pcall(function()
+        local records = h.records(0, count)
         for index = 0, count - 1 do
-            local record = h.record(index)
+            local record = records[index]
             local kind, data, decoded = M.describe(record)
             assert(record.sequence == index + 1, 'noncontiguous native event sequence')
             assert(record.cycle >= previous and record.cycle <= status.endCycle,

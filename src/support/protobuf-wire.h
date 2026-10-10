@@ -118,6 +118,7 @@ struct Slice {
 struct Context {
     WireValidationResult result;
     size_t values = 0;
+    bool strict = true;
 
     bool fail(WireError error) {
         result.error = error;
@@ -137,13 +138,39 @@ struct Context {
         for (unsigned index = 0; index < 10; ++index) {
             if (!slice.remaining()) return fail(WireError::TruncatedVarint);
             const uint8_t byte = slice.bytes[slice.position++];
-            if (index == 9 && byte > 1) return fail(WireError::VarintOverflow);
+            if (index == 9 && (strict ? byte > 1 : byte & 0x80)) return fail(WireError::VarintOverflow);
             value |= uint64_t(byte & 0x7f) << (index * 7);
             if (byte & 0x80) continue;
             if (narrow && value > UINT32_MAX) return fail(WireError::UInt32Overflow);
             return true;
         }
         return fail(WireError::VarintOverflow);
+    }
+    bool skip(Slice& slice, unsigned wire, uint32_t number, unsigned depth) {
+        uint64_t value;
+        if (wire == 0) return count() && varint(slice, value);
+        if (wire == 1 || wire == 5) {
+            const size_t size = wire == 1 ? 8 : 4;
+            if (slice.remaining() < size) return fail(WireError::TruncatedScalar);
+            slice.position += size;
+            return count();
+        }
+        if (wire == 2) {
+            if (!varint(slice, value)) return false;
+            if (value > slice.remaining()) return fail(WireError::TruncatedLength);
+            slice.position += size_t(value);
+            return true;
+        }
+        if (wire != 3) return fail(WireError::InvalidTag);
+        if (depth >= 64) return fail(WireError::DepthLimit);
+        while (slice.remaining()) {
+            if (!count() || !varint(slice, value)) return false;
+            const uint32_t tag = uint32_t(value);
+            if ((tag & 7) == 4) return tag >> 3 == number || fail(WireError::InvalidTag);
+            if (tag < 8) return fail(WireError::InvalidTag);
+            if (!skip(slice, tag & 7, tag >> 3, depth + 1)) return false;
+        }
+        return fail(WireError::TruncatedLength);
     }
 };
 
@@ -162,12 +189,13 @@ bool scalar(Context& context, Slice& slice) {
         static_assert(Value::wireType == 0);
         constexpr std::string_view kind = Value::typeName;
         uint64_t value;
-        if (!context.varint(slice, value, kind == "uint32" || kind == "sint32")) return false;
+        if (!context.varint(slice, value, context.strict && (kind == "uint32" || kind == "sint32"))) return false;
         if constexpr (kind == "bool") {
-            if (value > 1) return context.fail(WireError::InvalidBoolean);
+            if (context.strict && value > 1) return context.fail(WireError::InvalidBoolean);
         }
         if constexpr (kind == "int32") {
-            if (value > INT32_MAX && value < UINT64_MAX - INT32_MAX) return context.fail(WireError::InvalidInt32);
+            if (context.strict && value > INT32_MAX && value < UINT64_MAX - INT32_MAX)
+                return context.fail(WireError::InvalidInt32);
         }
         return true;
     }
@@ -180,7 +208,7 @@ bool field(Context& context, Slice& slice, unsigned wire, unsigned depth) {
         return context.fail(WireError::IncompatibleWire);
     }
     uint64_t length;
-    if (!context.varint(slice, length, true)) return false;
+    if (!context.varint(slice, length, context.strict)) return false;
     if (length > slice.remaining()) return context.fail(WireError::TruncatedLength);
     Slice nested{slice.bytes + slice.position, size_t(length)};
     slice.position += size_t(length);
@@ -194,19 +222,43 @@ bool field(Context& context, Slice& slice, unsigned wire, unsigned depth) {
     return true;
 }
 
+struct SchemaView;
+
 struct Descriptor {
     uint32_t number;
     unsigned wire;
     bool repeated;
     const char* name;
+    const char* kind;
     bool (*read)(Context&, Slice&, unsigned, unsigned);
+    const SchemaView* (*child)();
 };
+
+struct SchemaView {
+    const char* name;
+    const Descriptor* fields;
+    size_t size;
+
+    const Descriptor* find(std::string_view name) const {
+        for (size_t index = 0; index < size; ++index) {
+            if (name == fields[index].name) return fields + index;
+        }
+        return nullptr;
+    }
+};
+
+template <typename Value>
+const SchemaView* childSchema() {
+    if constexpr (IsMessage<Value>::value) return &Schema<Value>::view;
+    return nullptr;
+}
 
 template <typename Name, typename... Fields>
 struct Schema<Message<Name, Fields...>> {
     inline static constexpr std::array<Descriptor, sizeof...(Fields)> descriptors{{
         {uint32_t(Fields::fieldNumber), ValueType<Fields>::type::wireType, Fields::repeated,
-         Fields::fieldName::data(), &field<typename ValueType<Fields>::type>}...
+         Fields::fieldName::data(), ValueType<Fields>::type::typeName,
+         &field<typename ValueType<Fields>::type>, &childSchema<typename ValueType<Fields>::type>}...
     }};
 
     static bool read(Context& context, Slice& slice, unsigned depth) {
@@ -217,7 +269,8 @@ struct Schema<Message<Name, Fields...>> {
         std::array<bool, sizeof...(Fields)> seen{};
         while (slice.remaining()) {
             uint64_t tag;
-            if (!context.count() || !context.varint(slice, tag, true)) return context.identify(Name::data());
+            if (!context.count() || !context.varint(slice, tag, context.strict)) return context.identify(Name::data());
+            if (!context.strict) tag = uint32_t(tag);
             if (tag < 8) {
                 context.fail(WireError::InvalidTag);
                 return context.identify(Name::data());
@@ -227,11 +280,15 @@ struct Schema<Message<Name, Fields...>> {
             size_t index = 0;
             while (index < descriptors.size() && descriptors[index].number != number) ++index;
             if (index == descriptors.size()) {
+                if (!context.strict) {
+                    if (!context.skip(slice, wire, number, depth)) return context.identify(Name::data(), nullptr, number);
+                    continue;
+                }
                 context.fail(WireError::UnknownField);
                 return context.identify(Name::data(), nullptr, number);
             }
             const auto& descriptor = descriptors[index];
-            if (!descriptor.repeated && seen[index]) {
+            if (context.strict && !descriptor.repeated && seen[index]) {
                 context.fail(WireError::DuplicateField);
                 return context.identify(Name::data(), descriptor.name, number);
             }
@@ -246,6 +303,8 @@ struct Schema<Message<Name, Fields...>> {
         }
         return true;
     }
+
+    inline static constexpr SchemaView view{Name::data(), descriptors.data(), descriptors.size()};
 };
 
 template <typename Name>

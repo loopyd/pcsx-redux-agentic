@@ -10,7 +10,7 @@
 #include "lua/luawrapper.h"
 
 namespace {
-static int lualoader = 54;
+static int lualoader = 53;
 static const std::string_view bus = (
 #include "lua/missions/bus.lua"
 );
@@ -170,9 +170,6 @@ static const std::string_view vram = (
 static const std::string_view watch = (
 #include "lua/missions/watch.lua"
 );
-static const std::string_view wave = (
-#include "lua/missions/wave.lua"
-);
 
 const PCSX::Missions::Resource resources[] = {
     {"bus", PCSX::Missions::Role::Module, "src/lua/missions/bus.lua", bus.data(), bus.size()},
@@ -228,7 +225,6 @@ const PCSX::Missions::Resource resources[] = {
     {"video", PCSX::Missions::Role::Module, "src/lua/missions/video.lua", video.data(), video.size()},
     {"vram", PCSX::Missions::Role::Mission, "src/lua/missions/vram.lua", vram.data(), vram.size()},
     {"watch", PCSX::Missions::Role::Mission, "src/lua/missions/watch.lua", watch.data(), watch.size()},
-    {"wave", PCSX::Missions::Role::Module, "src/lua/missions/wave.lua", wave.data(), wave.size()},
 };
 }
 

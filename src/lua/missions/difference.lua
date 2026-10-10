@@ -1,7 +1,10 @@
 -- lualoader, R"EOF(--
 -- Exact bounded schema comparisons; no equality claim after omitted work.
-local pb, m = require 'pb', require 'support'
+local snapshot, m = require 'snapshot', require 'support'
 local M = {}
+local function integer(value, minimum, maximum)
+    return type(value) == 'number' and value >= minimum and value <= maximum and value == math.floor(value)
+end
 function M.compare(before, after, kind, repeated, path, options)
     options = options or {}
     local report = {schema = 'psx.runtime-comparison/v2', path = path,
@@ -10,6 +13,10 @@ function M.compare(before, after, kind, repeated, path, options)
         changed_bytes = 0, differences = m.array()}
     local limit, depth = options.limit or 1024, options.depth or 16
     local nodes, bytes = options.nodes or 100000, options.bytes or 67108864
+    assert(integer(limit, 0, 65536), 'invalid comparison difference limit')
+    assert(integer(depth, 0, 64), 'invalid comparison depth')
+    assert(integer(nodes, 1, 100000), 'invalid comparison node limit')
+    assert(integer(bytes, 0, 67108864), 'invalid comparison byte limit')
     local function add(entry)
         assert(#report.differences < limit, 'comparison difference limit exceeded; narrow the path or increase limit')
         report.equal = false
@@ -26,9 +33,6 @@ function M.compare(before, after, kind, repeated, path, options)
             return string.format('%02x', c:byte())
         end)
     end
-    local function integer(value, minimum, maximum)
-        return type(value) == 'number' and value >= minimum and value <= maximum and value == math.floor(value)
-    end
     local function compare(a, b, fieldType, array, fieldPath, remaining)
         report.compared_nodes = report.compared_nodes + 1
         assert(report.compared_nodes <= nodes, 'comparison node limit exceeded')
@@ -41,64 +45,20 @@ function M.compare(before, after, kind, repeated, path, options)
             local count = math.max(#a, #b)
             report.compared_bytes = report.compared_bytes + count
             assert(report.compared_bytes <= bytes, 'comparison byte limit exceeded')
-            if type(a) == 'string' and type(b) == 'string' and count <= 67108864 and
-                integer(limit, 0, 65536) and #report.differences <= limit then
-                local scanner = type(PCSX) == 'table' and PCSX.scanByteRanges
-                assert(type(scanner) == 'function', 'native byte scanner unavailable')
-                local allowance = limit - #report.differences
-                local found, refusal = scanner(a, b, allowance)
-                if found == nil and refusal == 'limit' then
-                    error('comparison difference limit exceeded; narrow the path or increase limit')
-                end
-                local invalid = 'invalid native byte scanner result'
-                assert(type(found) == 'table' and refusal == nil and getmetatable(found) == nil, invalid)
-                local changed, ranges = rawget(found, 'changed_bytes'), rawget(found, 'ranges')
-                assert(integer(changed, 0, count) and type(ranges) == 'table' and getmetatable(ranges) == nil, invalid)
-                local rangeCount = #ranges
-                assert(rangeCount <= allowance, invalid)
-                for index in pairs(ranges) do assert(integer(index, 1, rangeCount), invalid) end
-                local last, sum = -1, 0
-                for i = 1, rangeCount do
-                    local range = rawget(ranges, i)
-                    assert(type(range) == 'table' and getmetatable(range) == nil, invalid)
-                    local offset, length = rawget(range, 'offset'), rawget(range, 'length')
-                    assert(integer(offset, 0, count - 1) and integer(length, 1, count - offset) and offset > last, invalid)
-                    last, sum = offset + length, sum + length
-                end
-                assert(sum == changed, invalid)
-                for i = 1, rangeCount do
-                    local range = ranges[i]
-                    local first, last = range.offset + 1, range.offset + range.length
-                    add({path = fieldPath, kind = 'bytes', offset = range.offset,
-                        length = range.length, before_bytes = #a, after_bytes = #b,
-                        before_hex = preview(a, first, last), after_hex = preview(b, first, last),
-                        preview_truncated = range.length > 32})
-                end
-                report.changed_bytes = report.changed_bytes + changed
-            else
-                local first
-                local function flush(last)
-                    if not first then return end
-                    add({path = fieldPath, kind = 'bytes', offset = first - 1,
-                        length = last - first + 1, before_bytes = #a, after_bytes = #b,
-                        before_hex = preview(a, first, last), after_hex = preview(b, first, last),
-                        preview_truncated = last - first + 1 > 32})
-                    first = nil
-                end
-                for start = 1, count, 4096 do
-                    local finish = math.min(start + 4095, count)
-                    if a:sub(start, finish) == b:sub(start, finish) then flush(start - 1)
-                    else
-                        for i = start, finish do
-                            if a:byte(i) ~= b:byte(i) then
-                                first = first or i
-                                report.changed_bytes = report.changed_bytes + 1
-                            else flush(i - 1) end
-                        end
-                    end
-                end
-                flush(count)
+            assert(type(a) == 'string' and type(b) == 'string', 'incompatible decoded field: ' .. fieldPath)
+            local found, refusal = PCSX.scanByteRanges(a, b, limit - #report.differences)
+            if found == nil and refusal == 'limit' then
+                error('comparison difference limit exceeded; narrow the path or increase limit')
             end
+            assert(found and refusal == nil, 'invalid native byte scanner result')
+            for _, range in ipairs(found.ranges) do
+                local first, last = range.offset + 1, range.offset + range.length
+                add({path = fieldPath, kind = 'bytes', offset = range.offset,
+                    length = range.length, before_bytes = #a, after_bytes = #b,
+                    before_hex = preview(a, first, last), after_hex = preview(b, first, last),
+                    preview_truncated = range.length > 32})
+            end
+            report.changed_bytes = report.changed_bytes + found.changed_bytes
         elseif type(a) ~= 'table' and type(b) ~= 'table' then
             if a ~= b then add({path = fieldPath, kind = 'value',
                 before = summary(a, fieldType), after = summary(b, fieldType)}) end
@@ -110,13 +70,7 @@ function M.compare(before, after, kind, repeated, path, options)
                     compare(a[i], b[i], fieldType, false, fieldPath .. '[' .. i .. ']', remaining - 1)
                 end
             else
-                local fields = {}
-                for name, number, childType, _, label in pb.fields(fieldType) do
-                    fields[#fields + 1] = {name = name, number = number, type = childType,
-                        repeated = label == 'repeated' or label == 'packed'}
-                end
-                table.sort(fields, function(x, y) return x.number < y.number end)
-                for _, field in ipairs(fields) do
+                for _, field in ipairs(snapshot.fields(fieldType)) do
                     local childPath = fieldPath == '' and field.name or fieldPath .. '.' .. field.name
                     compare(a[field.name], b[field.name], field.type, field.repeated, childPath, remaining - 1)
                 end

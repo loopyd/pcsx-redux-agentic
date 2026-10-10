@@ -1,6 +1,6 @@
 -- lualoader, R"EOF(--
 -- Export frozen native PCM, callback boundaries and already-named SPU records.
-local m, wave, bit = require 'support', require 'wave', require 'bit'
+local m, bit = require 'support', require 'bit'
 local M = {}
 local block_flags = {mono=1, muted=2, submitted=4}
 local faults = {'frames', 'blocks', 'events', 'thread', 'bounds', 'clock',
@@ -24,17 +24,18 @@ local function less(a, b)
     return #a < #b or (#a == #b and a < b)
 end
 
-local function sequence(name, count, read, validate)
+local function writeJournalBeforeValidation(name, count, read, validate)
     local file = assert(io.open(name, 'wb'))
     local bytes, rows = 0, 0
     local ok, err = pcall(function()
-        for index = 0, count - 1 do
-            local record = read(index)
-            -- Retain the offending native row as evidence if semantic checks fail.
-            local line = m.json(record) .. '\n'
-            assert(bytes + #line <= 16777216, 'audio journal exceeds 16 MiB')
-            assert(file:write(line)); bytes, rows = bytes + #line, rows + 1
-            validate(record, index)
+        for first = 0, count - 1, 1024 do
+            local records = read(first, math.min(1024, count - first))
+            for n, record in ipairs(records) do
+                local line = m.json(record) .. '\n'
+                assert(bytes + #line <= 16777216, 'audio journal exceeds 16 MiB')
+                assert(file:write(line)); bytes, rows = bytes + #line, rows + 1
+                validate(record, first + n - 1)
+            end
         end
     end)
     local closed, why = file:close()
@@ -94,19 +95,18 @@ function M.export()
         assert(status.failures ~= 0 or (status.dropped_events == 0 and status.dropped_frames == '0' and
             status.streaming_dropped == '0'), 'native loss without failure')
 
-        local chunks = {}
-        for offset = 0, status.frames - 1, 65536 do
-            local frames = math.min(65536, status.frames - offset)
-            local bytes = h.samples(offset, frames)
-            assert(type(bytes) == 'string' and #bytes == frames * 8, 'short native PCM copy')
-            chunks[#chunks + 1] = bytes
+        for _, capture in ipairs(m.captures) do
+            assert(capture.path ~= 'audio.f32' and capture.path ~= 'audio.wav', 'duplicate capture')
         end
-        local pcm = table.concat(chunks)
-        m.write('audio.f32', pcm); m.write('audio.wav', wave.encode(pcm))
-        result.pcm_bytes, result.duration = #pcm, status.frames / 44100
+        local exported = h.exportPCM('audio.f32', 'audio.wav')
+        assert(exported.frames == status.frames and exported.pcm_bytes == status.frames * 8 and
+            exported.wav_bytes == exported.pcm_bytes + 58, 'native PCM export counts differ')
+        m.captures[#m.captures + 1] = {path = 'audio.f32', bytes = exported.pcm_bytes}
+        m.captures[#m.captures + 1] = {path = 'audio.wav', bytes = exported.wav_bytes}
+        result.pcm_bytes, result.duration = exported.pcm_bytes, status.frames / 44100
         local offset, previous = 0, status.begin_cycle
         local voice_fill, disc_fill = 0, 0
-        result.blocks = sequence('blocks.ndjson', status.blocks, h.block, function(b, index)
+        result.blocks = writeJournalBeforeValidation('blocks.ndjson', status.blocks, h.blocks, function(b, index)
             assert(b.index == index and b.offset == offset, 'noncontiguous native PCM block')
             integer(b.frames, 1, 2048, 'block frames')
             integer(b.voice_frames, 0, b.frames, 'voice frames')
@@ -126,7 +126,7 @@ function M.export()
         result.zero_fill = {voice_frames = voice_fill, disc_frames = disc_fill}
         previous = status.begin_cycle
         local observed = '0'
-        result.events = sequence('spu.ndjson', status.events, h.event, function(e, index)
+        result.events = writeJournalBeforeValidation('spu.ndjson', status.events, h.events, function(e, index)
             assert(e.id == index + 1, 'noncontiguous native SPU event')
             integer(e.kind, 1, 6, 'event kind')
             local cycle, frame, parent = decimal(e.cycle), decimal(e.observed_frame), decimal(e.parent)

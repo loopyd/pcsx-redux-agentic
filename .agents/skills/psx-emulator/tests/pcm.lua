@@ -1,5 +1,5 @@
 -- Standalone LuaJIT contract checks; these do not establish native capture fidelity.
-local m, pcm, wave = require 'support', require 'pcm', require 'wave'
+local m, pcm = require 'support', require 'pcm'
 local original_open = io.open
 local files, reports, fault, status, blocks, events, bytes
 local function copy(value)
@@ -38,9 +38,18 @@ io.open = function(name, mode)
     end, close=function() return true end}
 end
 PCSX = {Audio={status=function() return copy(status) end,
-    samples=function(offset, frames) return bytes:sub(offset*8+1, (offset+frames)*8) end,
-    block=function(index) return copy(blocks[index+1]) end,
-    event=function(index) return copy(events[index+1]) end}}
+    exportPCM=function(raw,wav)
+        assert(type(bytes)=='string' and #bytes==status.frames*8,'short native PCM copy')
+        if raw==fault then error('injected publication failure') end
+        files[raw]=bytes
+        if wav==fault then error('injected publication failure') end
+        files[wav]='RIFF'..string.rep('\0',54)..bytes
+        return {frames=status.frames,pcm_bytes=#bytes,wav_bytes=#files[wav]}
+    end,
+    blocks=function(first,count)
+        local records={};for n=1,count do records[n]=copy(blocks[first+n]) end;return records end,
+    events=function(first,count)
+        local records={};for n=1,count do records[n]=copy(events[first+n]) end;return records end}}
 reset()
 local result = pcm.export()
 assert(result.complete and result.pcm_bytes == 16 and result.zero_fill.disc_frames == 1)
@@ -48,7 +57,6 @@ assert(files['audio.f32'] == sample and files['audio.wav']:sub(59) == sample)
 assert(#files['audio.wav'] == 74 and files['audio.wav']:sub(1,4) == 'RIFF')
 assert(files['spu.ndjson']:find(clock, 1, true) and reports['audio.json'].native.begin_cycle == clock)
 local wav = files['audio.wav']
-assert(not pcall(wave.encode, 'bad') and not pcall(wave.encode, 3))
 reset(); status.failures, status.first_failure, blocks[1].flags = 256, 256, 0
 result = pcm.export(); assert(not result.complete and not result.export_error and result.failures[1] == 'output')
 reset(); status.failures, status.first_failure, status.end_cycle = 32, 32, '0'

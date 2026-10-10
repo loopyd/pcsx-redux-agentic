@@ -9,10 +9,11 @@ m.begin('target,stop,precapture', function()
         timer:stop(); timer:close(); h.stop()
         local report = events.export()
         assert(report.complete)
+        local records = h.records(0, report.events)
         local function select(kind, channel)
             local values = {}
             for i = 0, report.events - 1 do
-                local r = h.record(i)
+                local r = records[i]
                 if r.kind == kind and (channel == nil or r.device == channel) then values[#values + 1] = r end
             end
             return values

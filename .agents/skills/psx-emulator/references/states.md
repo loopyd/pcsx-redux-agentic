@@ -51,8 +51,12 @@ Before comparison, `PCSX.validateSaveStateWire` rejects unknown fields, incompat
 duplicate singular fields, truncation, overflowing varints/
 narrow integers and non-0/1 booleans. Tags plus scalar elements (including packed)
 cap at 100000. Native wire validation is bounded to 64 MiB and 64 nesting levels;
-bundled `pb.decode` still supplies presence and exact uint64 values. Version
-validation follows decoding. Wire inspection does not load a state or replace
+Native selection retains only the requested field's wire occurrences; bundled
+`pb.decode` supplies presence, defaults and exact uint64 values without decoding
+unrelated state buffers. Empty paths still decode the whole state. Query mode
+retains unknown-field skipping and last singular occurrence behavior; malformed
+known fields elsewhere still reject. Defaults apply only inside present parents.
+Version validation uses a separate small envelope. Wire inspection does not load a state or replace
 checked-restore admission.
 
 ## Application

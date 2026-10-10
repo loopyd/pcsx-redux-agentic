@@ -57,7 +57,7 @@ function M.run()
                 if audio_started then sound=attempt('audio export',pcm.export) end
                 if started then
                     correlation=attempt('CD correlation',function()
-                        return transactions.export(h,limits,native,joined and {report=sound,event=a.event} or nil,bindings)
+                        return transactions.export(h,limits,native,joined and {report=sound,events=a.events} or nil,bindings)
                     end)
                 end
                 if started or audio_started then

@@ -8,7 +8,7 @@ Capture bounded native mixed PCM and SPU accesses with [spu.lua](../../../../src
 
 ## Procedure
 
-Declare `support`, `snapshot`, `sound`, `pcm`, `wave` from `src/lua/missions/`. Supply state
+Declare `support`, `snapshot`, `sound`, `pcm` from `src/lua/missions/`. Supply state
 and matching origin receipt, or executable/target. Set `action=capture` and
 `identity=LABEL` (1–160 bytes); the receipt identifies input/tool hashes.
 
@@ -55,9 +55,17 @@ requires owner thread, not pause.
 | `begin(samples, blocks, events)` | Paused interpreter, empty recorder, initialized stream, positive capacities, no MSAN |
 | `stop()` | Freeze active recorder, retaining failures; defer outside device/Pause callbacks |
 | `status()` | Owner-thread snapshot; only frozen state has a terminal end cycle |
-| `block(index)`, `event(index)` | Frozen capture, zero-based index, owning named table |
+| `blocks(first, count)`, `events(first, count)` | Frozen capture; zero-based range, at most 1024 rows; owning one-based named tables |
 | `samples(offset, frames)` | Frozen capture, at most 65536 stereo frames per call, copied binary string |
+| `exportPCM(raw, wav)` | Stream the frozen complete range to distinct simple capture filenames; return frame/raw/WAV byte counts |
 | `clear()` | Release inactive capture explicitly before another begin |
+
+Record ranges validate before copying; zero rows at the retained end are valid.
+PCM export accepts ASCII filenames of 1–255 bytes, starting with a letter or digit,
+then letters, digits, `_`, `.` or `-`. It writes 2048-frame chunks without a full
+Lua PCM string, preserving float bits and the 58-byte IEEE-float WAV header. Files
+close before success or error; failed output prefixes remain on disk. Successful
+`pcm.export` registers both captures. Failed frozen recorder prefixes remain readable.
 
 Native Audio ABI and `psx.native-audio` report version: 2. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,

@@ -9,10 +9,11 @@ m.begin('scenario,stop', function()
         timer:stop(); timer:close(); h.stop()
         local report = events.export()
         assert(report.complete)
+        local records = h.records(0, report.events)
         local function select(kind, device)
             local rows = {}
             for i = 0, report.events - 1 do
-                local r = h.record(i)
+                local r = records[i]
                 if r.kind == kind and (device == nil or r.device == device) then rows[#rows + 1] = r end
             end
             return rows

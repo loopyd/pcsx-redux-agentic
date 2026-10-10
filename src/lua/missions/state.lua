@@ -9,8 +9,7 @@ m.begin('action,path,depth,offset,length,limit', function()
     assert(action == 'query' or action == 'export' or action == 'compare', 'unknown state action')
     local path = m.argument('path', '')
     local comparison = action == 'compare'
-    local before = snapshot.read(m.input('state', true), comparison)
-    local value, kind, repeated = snapshot.select(before, path, comparison)
+    local value, kind, repeated, beforeVersion = snapshot.readSelected(m.input('state', true), path, comparison, comparison)
     if action == 'export' then
         assert(kind == 'bytes' and not repeated, 'export requires a bytes field')
         local offset = m.integer('offset', 0, 0, #value)
@@ -20,12 +19,11 @@ m.begin('action,path,depth,offset,length,limit', function()
             offset = offset, bytes = length, source_bytes = #value})
     elseif action == 'compare' then
         assert(not m.argument('offset') and not m.argument('length'), 'compare selects whole schema fields; offset/length are export-only')
-        local after = snapshot.read(m.input('other', true), true)
-        assert(before.save_state_info.version == after.save_state_info.version, 'mixed state versions cannot be compared')
-        local other = snapshot.select(after, path, true)
+        local other, _, _, afterVersion = snapshot.readSelected(m.input('other', true), path, true, true)
+        assert(beforeVersion == afterVersion, 'mixed state versions cannot be compared')
         local report = require('difference').compare(value, other, kind, repeated, path,
             {depth = m.integer('depth', 16, 0, 64), limit = m.integer('limit', 1024, 1, 65536)})
-        report.schema_compatibility = 'all encoded fields validated against running schema; version ' .. before.save_state_info.version
+        report.schema_compatibility = 'all encoded fields validated against running schema; version ' .. beforeVersion
         report.identities = 'input and emulator hashes in receipt.json; exact schema in state.proto'
         m.write('state.proto', snapshot.schema)
         m.report('comparison.json', report)

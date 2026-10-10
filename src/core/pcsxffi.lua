@@ -90,13 +90,13 @@ typedef struct {
 bool historyCDLimits(uint32_t flags, HistoryCDLimits* out);
 bool historyBeginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, uint32_t flags);
 bool historyCDWorkerStatus(CDWorkerStatus* out);
-bool historyCDWorkerRecord(uint32_t index, CDWorkerRecord* out);
+bool historyCDWorkerRecords(uint32_t first, uint32_t count, CDWorkerRecord* out);
 bool historyBegin(uint32_t events, uint32_t bytes);
 bool historyBeginCD(uint32_t events, uint32_t bytes, bool audio);
 bool historyStop();
 bool historyClear();
 bool historyStatus(HistoryStatus* out);
-bool historyRecord(uint32_t index, HistoryRecord* out);
+bool historyRecords(uint32_t first, uint32_t count, HistoryRecord* out);
 bool historyBytes(uint32_t offset, uint32_t length, void* out);
 
 void softResetEmulator();
@@ -177,11 +177,12 @@ local history = {
         assert(C.historyCDWorkerStatus(result), 'CD worker status requires a paused owner')
         return ffi.new('CDWorkerStatus', result[0])
     end,
-    cdWorkerRecord = function(index)
-        historyInteger(index, 65535, 'worker record index')
-        local result = ffi.new('CDWorkerRecord[1]')
-        assert(C.historyCDWorkerRecord(index, result), 'CD worker record requires a frozen lane and valid index')
-        return ffi.new('CDWorkerRecord', result[0])
+    cdWorkerRecords = function(first, count)
+        historyInteger(first, 65536, 'worker record first index')
+        historyInteger(count, 65536, 'worker record count')
+        local result = ffi.new('CDWorkerRecord[?]', count)
+        assert(C.historyCDWorkerRecords(first, count, result), 'CD worker records require a frozen lane and valid range')
+        return result
     end,
     beginCD = function(events, bytes, audio)
         historyInteger(events, 65536, 'event limit')
@@ -203,11 +204,12 @@ local history = {
         assert(C.historyStatus(result), 'history status requires the owner thread')
         return ffi.new("HistoryStatus", result[0])
     end,
-    record = function(index)
-        historyInteger(index, 65535, 'record index')
-        local result = ffi.new('HistoryRecord[1]')
-        assert(C.historyRecord(index, result), 'history record requires paused frozen capture and a valid index')
-        return ffi.new("HistoryRecord", result[0])
+    records = function(first, count)
+        historyInteger(first, 65536, 'record first index')
+        historyInteger(count, 65536, 'record count')
+        local result = ffi.new('HistoryRecord[?]', count)
+        assert(C.historyRecords(first, count, result), 'history records require paused frozen capture and a valid range')
+        return result
     end,
     bytes = function(offset, length)
         historyInteger(offset, 8388608, 'payload offset')

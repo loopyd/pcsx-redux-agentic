@@ -27,14 +27,15 @@ function M.new(controller,h)
     end
     function tracker.finish()
         if not first then assert(not final and #result.handoffs==0,'worker evidence without profile');result.enabled=false;return result end
-        assert(final and type(h.cdWorkerRecord)=='function','worker lane not frozen')
+        assert(final and type(h.cdWorkerRecords)=='function','worker lane not frozen')
         local native=h.cdWorkerStatus()
         assert(native.version==3 and native.state==2 and native.failures==0 and native.dropped==0 and native.epoch==m.uint64(final.epoch) and
             native.events==final.events and native.limit==final.limit and native.beginBatch==m.uint64(final.begin_batch) and native.endBatch==m.uint64(final.end_batch),
             'native worker status differs from CPU freeze receipt')
         local batch,open,previous,producers=nil,false,nil,{}
+        local records=h.cdWorkerRecords(0,final.events)
         for index=0,final.events-1 do
-            local row=h.cdWorkerRecord(index);local kind,flags=tonumber(row.kind),tonumber(row.flags);local data={}
+            local row=records[index];local kind,flags=tonumber(row.kind),tonumber(row.flags);local data={}
             for n=0,5 do data[n+1]=tonumber(row.data[n]) end
             assert(row.sequence==index+1 and row.epoch==native.epoch and kind>=1 and kind<=6 and flags<=1 and
                 (not previous or row.cpuPublicationCycle>=previous),'invalid native worker chronology')

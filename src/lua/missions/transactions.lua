@@ -10,8 +10,9 @@ function M.scan(h,limits,audio,bindings)
         require('delivery').new(controller),require('transfers').new(controller),require('command').new(controller),
         require('submission').new(controller),require('playback').new(controller),require('decoded').new(controller,h),require('lid').new(controller)}
     local images,geometry,previous,boundaries={}
+    local records=h.records(0,tonumber(status.events))
     for index=0,tonumber(status.events)-1 do
-        local row=h.record(index);events.describe(row)
+        local row=records[index];events.describe(row)
         local offset,length=tonumber(row.offset),tonumber(row.length)
         assert(offset>=0 and length>=0 and offset%1==0 and length%1==0 and offset+length<=tonumber(status.bytes),
             'native CD payload exceeds frozen journal')

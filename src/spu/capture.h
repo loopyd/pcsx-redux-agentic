@@ -37,6 +37,7 @@ class Capture {
     };
     static constexpr uint32_t MAX_FRAMES = 44100 * 60;
     static constexpr uint32_t MAX_RECORDS = 65536;
+    static constexpr uint32_t MAX_BATCH = 1024;
     static constexpr uint32_t MAX_CHUNK = 2048;
 
     Capture() : m_owner(std::this_thread::get_id()) {}
@@ -158,16 +159,23 @@ class Capture {
         }
     }
 
-    bool block(uint32_t index, Block& out) {
-        if (!frozen() || index >= m_status.blocks) return false;
-        out = m_blocks[index]; return true;
+    bool blocks(uint32_t first, uint32_t count, Block* out) {
+        if (!frozen() || count > MAX_BATCH || first > m_status.blocks || count > m_status.blocks - first ||
+            (count && !out)) return false;
+        if (count) std::memcpy(out, m_blocks.data() + first, size_t(count) * sizeof(Block));
+        return true;
     }
-    bool event(uint32_t index, Event& out) {
-        if (!frozen() || index >= m_status.events) return false;
-        out = m_events[index]; return true;
+    bool events(uint32_t first, uint32_t count, Event* out) {
+        if (!frozen() || count > MAX_BATCH || first > m_status.events || count > m_status.events - first ||
+            (count && !out)) return false;
+        if (count) std::memcpy(out, m_events.data() + first, size_t(count) * sizeof(Event));
+        return true;
+    }
+    bool sampleRange(uint32_t offset, uint32_t frames) {
+        return frozen() && offset <= m_status.frames && frames <= m_status.frames - offset;
     }
     bool samples(uint32_t offset, uint32_t frames, float* out) {
-        if (!frozen() || offset > m_status.frames || frames > m_status.frames - offset || (!out && frames)) return false;
+        if (!sampleRange(offset, frames) || (!out && frames)) return false;
         if (frames) std::memcpy(out, m_pcm.data() + size_t(offset) * 2, size_t(frames) * 2 * sizeof(float));
         return true;
     }

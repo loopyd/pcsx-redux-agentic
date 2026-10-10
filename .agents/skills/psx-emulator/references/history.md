@@ -40,7 +40,7 @@ For custom Lua, use `PCSX.History`:
 | `begin(events, bytes)` | Empty recorder, paused owner-thread interpreter, MSAN disabled |
 | `stop()` | Pause first; freeze active recording without clearing failures |
 | `status()` | Owner-thread copy of version, state, cycles, counts and failures |
-| `record(index)` | Paused frozen capture; zero-based index; owning cdata copy |
+| `records(first, count)` | Paused frozen capture; zero-based owning cdata array; at most 65536 rows |
 | `bytes(offset, length)` | Paused frozen capture; bounded copied binary string |
 | `clear()` | Explicit paused release of inactive evidence before another begin |
 
@@ -49,6 +49,9 @@ frozen=2. Keep uint64 sequence/cycle/request/related values as cdata or decimal
 strings, never doubles. Failure bits: events=1, bytes=2, thread=4, unsupported=8,
 association=16, discontinuity=32, bounds=64, clock regression=128. Failures are
 sticky; prefix/first failure survive, dropped attempts saturate, buffers never wrap.
+Ranges validate completely before copying. Zero rows at the retained end are valid.
+Keep the returned array alive while using its rows; failed frozen prefixes remain readable.
+`cdWorkerRecords(first, count)` follows the same bounds for the separate worker lane.
 
 ## Application
 

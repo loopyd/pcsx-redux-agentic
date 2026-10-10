@@ -15,8 +15,9 @@ function M.requireBinding(h)
     h.begin(128, 0); h.stop()
     local status, phases=h.status(),{}
     assert(status.failures == 0, 'GPU history capability probe failed')
+    local records=h.records(0,tonumber(status.events))
     for n=0,tonumber(status.events)-1 do
-        local row=h.record(n)
+        local row=records[n]
         if row.kind == 30 then phases[tonumber(row.device)]=true end
     end
     assert(phases[0] and phases[1], 'native GPU history binding required')
@@ -61,8 +62,9 @@ function M.scan(h, limits)
         end
         count=count+#decoded
     end
+    local records=h.records(0,tonumber(status.events))
     for n=0,tonumber(status.events)-1 do
-        local row=h.record(n); local kind=tonumber(row.kind); local d=values(row)
+        local row=records[n]; local kind=tonumber(row.kind); local d=values(row)
         assert(row.sequence==n+1 and row.cycle>=previous and row.cycle<=status.endCycle,
             'GPU history sequence/cycle mismatch')
         assert(row.offset==payload and payload+row.length<=status.bytes, 'GPU history payload mismatch')

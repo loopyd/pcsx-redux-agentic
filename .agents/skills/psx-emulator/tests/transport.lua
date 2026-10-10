@@ -82,7 +82,7 @@ local function reset(arguments,failures)
         if options.freeze then error('injected history freeze failure') end
         history.state=2
     end
-    local a={status=function() return audio end,event=function() end}
+    local a={status=function() return audio end,events=function() end}
     a.begin=function()
         assert(history.state==0 and audio.state==0);record('audio begin');audio.state=1
     end

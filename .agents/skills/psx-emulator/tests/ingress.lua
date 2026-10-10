@@ -45,7 +45,8 @@ local function reset(prefix)
     fixture.final=row(30,1,{0,0,1024,0x1ffffc,0,1});row(31,1)
     status={version=1,state=2,events=#rows,bytes=#payload,failures=0,beginCycle=cycle,endCycle=cycle}
 end
-local h={status=function() return status end,record=function(n) return rows[n+1] end,
+local h={status=function() return status end,records=function(first,count)
+    local records={};for n=0,count-1 do records[n]=rows[first+n+1] end;return records end,
     bytes=function(offset,count) return payload:sub(offset+1,offset+count) end}
 local function scan(options) return ingress.scan(h,options or {words=32,packets=16}) end
 reset()
@@ -88,9 +89,12 @@ fails(function() rows[4].cycle=cycle-1 end,'sequence/cycle mismatch')
 reset(); local state=0
 local probe={status=function() return {state=state,events=2,failures=0} end,
     begin=function() assert(state==0);state=1 end,stop=function() assert(state==1);state=2 end,
-    record=function(n) return {kind=30,device=n} end,clear=function() assert(state==2);state=0 end}
+    records=function(first,count)
+        local records={};for n=0,count-1 do records[n]={kind=30,device=first+n} end;return records end,
+    clear=function() assert(state==2);state=0 end}
 ingress.requireBinding(probe); assert(state==0)
-probe.record=function() return {kind=25,device=0} end
+probe.records=function(first,count)
+    local records={};for n=0,count-1 do records[n]={kind=25,device=0} end;return records end
 local ok,err=pcall(ingress.requireBinding,probe)
 assert(not ok and tostring(err):find('native GPU history binding required',1,true) and state==2)
 print('GPU ingress checks passed: split CPU/DMA packets, control interleaving, exact identities, payloads and failures')

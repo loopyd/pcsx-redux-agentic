@@ -61,7 +61,8 @@ function M.pack(j)
     local chunks,size={},0
     for i,row in ipairs(j.rows) do row.sequence=ffi.new('uint64_t',i);row.offset=size;row.length=#row.payload;chunks[i]=row.payload;size=size+row.length end
     j.payload=table.concat(chunks);j.status={version=1,state=2,failures=0,dropped=0,firstFailure=0,events=#j.rows,bytes=size,beginCycle=j.cycle,endCycle=j.cycle}
-    j.h={status=function() return j.status end,record=function(i) return assert(j.rows[i+1]) end,
+    j.h={status=function() return j.status end,records=function(first,count)
+        local records={};for n=0,count-1 do records[n]=assert(j.rows[first+n+1]) end;return records end,
         bytes=function(offset,length) return j.payload:sub(offset+1,offset+length) end}
     return j
 end

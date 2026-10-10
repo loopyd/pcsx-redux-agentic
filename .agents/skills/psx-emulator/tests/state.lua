@@ -19,8 +19,8 @@ m.begin('', function()
         return pb.encode('SaveState', value)
     end
     local function compare(a, b, path, options)
-        local left, kind, array = snapshot.select(snapshot.decode(a, true), path or '', true)
-        local right = snapshot.select(snapshot.decode(b, true), path or '', true)
+        local left, kind, array = snapshot.decodeSelected(a, path or '', true, true)
+        local right = snapshot.decodeSelected(b, path or '', true, true)
         return diff.compare(left, right, kind, array, path or '', options)
     end
     check('native full state equality', function()

@@ -6,6 +6,27 @@ M.schema = PCSX.getSaveStateProtoSchema()
 assert(require('protoc').new():load(M.schema))
 pb.option('int64_as_string') -- Large integers retain the library's exact #decimal form.
 
+local schemas = {}
+function M.fields(kind)
+    local schema = schemas[kind]
+    if not schema then
+        local canonical = pb.type(kind) or kind
+        schema = schemas[canonical]
+        if not schema then
+            schema = {fields = {}, names = {}}
+            for name, number, fieldType, _, label in pb.fields(canonical) do
+                local field = {name = name, number = number, type = fieldType, label = label,
+                    repeated = label == 'repeated' or label == 'packed'}
+                schema.fields[#schema.fields + 1], schema.names[name] = field, field
+            end
+            table.sort(schema.fields, function(a, b) return a.number < b.number end)
+            schemas[canonical] = schema
+        end
+        schemas[kind] = schema
+    end
+    return schema.fields, schema.names
+end
+
 function M.live()
     return M.decode(require('support').stateBytes())
 end
@@ -22,23 +43,60 @@ function M.observe(callback)
     end
 end
 
-function M.decode(bytes, strict)
-    if strict then PCSX.validateSaveStateWire(bytes) end
+local function decodeMessage(kind, bytes, strict)
     pb.option(strict and 'no_default_values' or 'auto_default_values')
-    local ok, decoded = pcall(pb.decode, 'SaveState', bytes)
+    local ok, decoded = pcall(pb.decode, kind, bytes)
     pb.option('auto_default_values')
     assert(ok and decoded, 'invalid state protobuf: ' .. tostring(decoded))
-    assert(decoded.save_state_info and decoded.save_state_info.version == PCSX.getSaveStateInfo().version,
-        'unsupported/missing state version')
     return decoded
 end
 
-function M.read(path, strict)
+local function version(decoded)
+    assert(decoded.save_state_info and decoded.save_state_info.version == PCSX.getSaveStateInfo().version,
+        'unsupported/missing state version')
+    return decoded.save_state_info.version
+end
+
+function M.decode(bytes, strict)
+    if strict then PCSX.validateSaveStateWire(bytes) end
+    local decoded = decodeMessage('SaveState', bytes, strict)
+    version(decoded)
+    return decoded
+end
+
+function M.readBytes(path)
     local file = assert(io.open(path, 'rb'))
     local bytes = assert(file:read(67108865)); file:close()
     assert(#bytes <= 67108864, 'state exceeds 64 MiB')
     assert(bytes:sub(1, 2) ~= '\31\139', 'gzip GUI state: supply raw API protobuf')
-    return M.decode(bytes, strict)
+    return bytes
+end
+
+function M.read(path, strict)
+    return M.decode(M.readBytes(path), strict)
+end
+
+function M.decodeSelected(bytes, path, strict, missing)
+    local selected = PCSX.selectSaveStateWire(bytes, path, strict or false)
+    local stateVersion = version(decodeMessage('SaveState', selected.version_wire, strict))
+    local value, kind = nil, selected.kind
+    if selected.field_name then
+        local _, fields = M.fields(selected.parent_type)
+        kind = fields[selected.field_name].type
+    end
+    if selected.parent_present then
+        local parent = decodeMessage(selected.parent_type, selected.wire, strict)
+        if selected.field_name then value = parent[selected.field_name]
+        else value = parent end
+        if selected.indexed then value = value and value[1] end
+    end
+    assert(value ~= nil or missing, selected.indexed and 'state index out of range (indices start at 1)' or
+        'field absent in state: ' .. path)
+    return value, kind, selected.repeated, stateVersion
+end
+
+function M.readSelected(file, path, strict, missing)
+    return M.decodeSelected(M.readBytes(file), path, strict, missing)
 end
 
 function M.select(value, path, missing)
@@ -49,9 +107,10 @@ function M.select(value, path, missing)
         local name, index = part:match('^([%a_][%w_]*)%[(%d+)%]$')
         name = name or part:match('^([%a_][%w_]*)$')
         assert(name and not repeated, 'invalid query path: ' .. path)
-        local found, _, fieldType, _, label = pb.field(kind, name)
-        assert(found, 'unknown schema field: ' .. part)
-        value, kind, repeated = value and value[name], fieldType, label == 'repeated' or label == 'packed'
+        local _, fields = M.fields(kind)
+        local field = fields[name]
+        assert(field, 'unknown schema field: ' .. part)
+        value, kind, repeated = value and value[name], field.type, field.repeated
         assert(value ~= nil or missing, 'field absent in state: ' .. part)
         if index then
             assert(repeated, 'index requires a repeated field')
@@ -105,16 +164,15 @@ function M.describe(value, kind, repeated, depth, budget)
         return {type = kind, count = #value, items = items}
     end
     local fields = {}
-    for name, number, fieldType, _, label in pb.fields(kind) do
-        local item = {name = name, number = number, type = fieldType, label = label,
-            present = value[name] ~= nil}
-        if depth > 0 and value[name] ~= nil then
-            item.value = M.describe(value[name], fieldType, label == 'repeated' or label == 'packed',
+    for _, field in ipairs(M.fields(kind)) do
+        local item = {name = field.name, number = field.number, type = field.type, label = field.label,
+            present = value[field.name] ~= nil}
+        if depth > 0 and value[field.name] ~= nil then
+            item.value = M.describe(value[field.name], field.type, field.repeated,
                 depth - 1, budget)
         end
         fields[#fields + 1] = item
     end
-    table.sort(fields, function(a, b) return a.number < b.number end)
     return {type = kind, fields = fields}
 end
 

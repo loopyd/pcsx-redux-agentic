@@ -40,6 +40,7 @@
 #include "core/psxmem.h"
 #include "core/r3000a.h"
 #include "core/sstate.h"
+#include "core/stateprojection.h"
 #include "lua/luafile.h"
 #include "lua/luawrapper.h"
 #include "support/protobuf-wire.h"
@@ -367,6 +368,127 @@ int convertScreenshot(lua_State* state) {
     return 1;
 }
 
+uint32_t probeInteger(lua_State* state, int index, const char* label) {
+    if (lua_type(state, index) != LUA_TNUMBER)
+        luaL_error(state, "%s must be a uint32 integer", label);
+    const lua_Number number = lua_tonumber(state, index);
+    if (!std::isfinite(number) || number < 0 || number > UINT32_MAX || std::floor(number) != number)
+        luaL_error(state, "%s must be a uint32 integer", label);
+    return static_cast<uint32_t>(number);
+}
+
+uint32_t probeScratch(lua_State* state) {
+    const uint32_t start = probeInteger(state, 1, "scratch");
+    const uint32_t segment = start >> 29;
+    if (segment != 0 && segment != 4 && segment != 5)
+        luaL_error(state, "scratch must use a RAM address in KUSEG, KSEG0 or KSEG1");
+    if (start & 3) luaL_error(state, "scratch must be 4-byte aligned");
+    return start;
+}
+
+void probeSequence(lua_State* state, int index, size_t length, const char* message) {
+    if (index < 0) index = lua_gettop(state) + index + 1;
+    size_t entries = 0;
+    lua_pushnil(state);
+    while (lua_next(state, index)) {
+        if (lua_type(state, -2) != LUA_TNUMBER) luaL_error(state, "%s", message);
+        const lua_Number key = lua_tonumber(state, -2);
+        if (!std::isfinite(key) || key < 1 || key > length || std::floor(key) != key)
+            luaL_error(state, "%s", message);
+        ++entries;
+        lua_pop(state, 1);
+    }
+    if (entries != length) luaL_error(state, "%s", message);
+}
+
+void writeProbeWord(uint8_t* output, size_t offset, uint32_t word) noexcept {
+    for (unsigned byte = 0; byte < 4; ++byte) output[offset + byte] = word >> (byte * 8);
+}
+
+uint8_t* newProbe(lua_State* state, uint32_t start, uint32_t width, size_t operations) {
+    if (operations == 0 || operations > 262000) luaL_error(state, "invalid MMIO operation count");
+    uint32_t store = 0;
+    switch (width) {
+        case 8: store = 0xa14b0000; break;
+        case 16: store = 0xa54b0000; break;
+        case 32: store = 0xad4b0000; break;
+        default: luaL_error(state, "MMIO store width must be 8, 16, or 32");
+    }
+    const size_t bytes = 52 + operations * 8;
+    const uint32_t physical = start & 0x1fffffff;
+    if (physical > 2097152 || bytes > 2097152 - physical)
+        luaL_error(state, "scratch region does not fit RAM");
+    const uint32_t data = start + 52;
+    const uint32_t words[] = {
+        0x3c080000 | (data >> 16), 0x35080000 | (data & 65535),
+        0x3c090000 | (uint32_t(operations) >> 16), 0x35290000 | (uint32_t(operations) & 65535),
+        0x8d0a0000, 0x8d0b0004, 0, store, 0x25080008, 0x2529ffff, 0x1520fff9, 0, 0,
+    };
+    auto* output = static_cast<uint8_t*>(lua_newuserdata(state, bytes));
+    for (size_t index = 0; index < std::size(words); ++index) writeProbeWord(output, index * 4, words[index]);
+    return output;
+}
+
+int packMMIOProbe(lua_State* state) {
+    if (lua_gettop(state) != 3 || lua_type(state, 3) != LUA_TTABLE)
+        return luaL_error(state, "packMMIOProbe: expected scratch, store width and operations table");
+    const uint32_t start = probeScratch(state);
+    const uint32_t width = probeInteger(state, 2, "MMIO store width");
+    const size_t count = lua_objlen(state, 3);
+    luaL_checkstack(state, 4, "packMMIOProbe: insufficient stack");
+    auto* output = newProbe(state, start, width, count);
+    probeSequence(state, 3, count, "packMMIOProbe: operations must be a contiguous array");
+    for (size_t index = 0; index < count; ++index) {
+        lua_rawgeti(state, 3, index + 1);
+        if (lua_type(state, -1) != LUA_TTABLE || lua_objlen(state, -1) != 2)
+            return luaL_error(state, "packMMIOProbe: operations must be address/value pairs");
+        probeSequence(state, -1, 2, "packMMIOProbe: operations must be address/value pairs");
+        lua_rawgeti(state, -1, 1);
+        const uint32_t address = probeInteger(state, -1, "MMIO address");
+        lua_pop(state, 1);
+        lua_rawgeti(state, -1, 2);
+        const uint32_t value = probeInteger(state, -1, "MMIO value");
+        lua_pop(state, 2);
+        writeProbeWord(output, 52 + index * 8, address);
+        writeProbeWord(output, 56 + index * 8, value);
+    }
+    lua_pushlstring(state, reinterpret_cast<const char*>(output), 52 + count * 8);
+    return 1;
+}
+
+int packVRAMUploadProbe(lua_State* state) {
+    if (lua_gettop(state) != 6 || lua_type(state, 6) != LUA_TSTRING)
+        return luaL_error(state, "packVRAMUploadProbe: expected scratch, x, y, width, height and pixels");
+    const uint32_t start = probeScratch(state);
+    const uint32_t x = probeInteger(state, 2, "VRAM x");
+    const uint32_t y = probeInteger(state, 3, "VRAM y");
+    const uint32_t width = probeInteger(state, 4, "VRAM width");
+    const uint32_t height = probeInteger(state, 5, "VRAM height");
+    if (x > 1023 || y > 511 || width == 0 || width > 1024 - x || height == 0 || height > 512 - y)
+        return luaL_error(state, "packVRAMUploadProbe: rectangle out of range");
+    size_t size;
+    const auto* pixels = reinterpret_cast<const uint8_t*>(lua_tolstring(state, 6, &size));
+    if (size != size_t(width) * height * 2)
+        return luaL_error(state, "pixels input must exactly fit rectangle");
+    const size_t count = 4 + (size + 3) / 4;
+    luaL_checkstack(state, 2, "packVRAMUploadProbe: insufficient stack");
+    auto* output = newProbe(state, start, 32, count);
+    const uint32_t commands[] = {0x01000000, 0xa0000000, (y << 16) | x, (height << 16) | width};
+    for (size_t index = 0; index < std::size(commands); ++index) {
+        writeProbeWord(output, 52 + index * 8, index == 0 ? 0x1f801814 : 0x1f801810);
+        writeProbeWord(output, 56 + index * 8, commands[index]);
+    }
+    for (size_t offset = 0; offset < size; offset += 4) {
+        uint32_t word = 0;
+        for (size_t byte = 0; byte < std::min(size_t(4), size - offset); ++byte)
+            word |= uint32_t(pixels[offset + byte]) << (byte * 8);
+        writeProbeWord(output, 84 + offset * 2, 0x1f801810);
+        writeProbeWord(output, 88 + offset * 2, word);
+    }
+    lua_pushlstring(state, reinterpret_cast<const char*>(output), 52 + count * 8);
+    return 1;
+}
+
 char jsonArrayMetatableMarker;
 char jsonWriterMetatableMarker;
 
@@ -684,13 +806,15 @@ bool historyBeginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, ui
 bool historyCDWorkerStatus(PCSX::History::CD::WorkerStatus* out) noexcept {
     try { return PCSX::History::CD::workerStatus(out); } catch (...) { return false; }
 }
-bool historyCDWorkerRecord(uint32_t index, PCSX::History::CD::WorkerRecord* out) noexcept {
-    try { return PCSX::History::CD::workerRecord(index, out); } catch (...) { return false; }
+bool historyCDWorkerRecords(uint32_t first, uint32_t count, PCSX::History::CD::WorkerRecord* out) noexcept {
+    try { return PCSX::History::CD::workerRecords(first, count, out); } catch (...) { return false; }
 }
 bool historyStop() { return PCSX::History::stop(); }
 bool historyClear() { return PCSX::History::clear(); }
 bool historyStatus(PCSX::History::Status* status) { return PCSX::History::status(status); }
-bool historyRecord(uint32_t index, PCSX::History::Record* record) { return PCSX::History::record(index, record); }
+bool historyRecords(uint32_t first, uint32_t count, PCSX::History::Record* out) {
+    return PCSX::History::records(first, count, out);
+}
 bool historyBytes(uint32_t offset, uint32_t length, void* output) { return PCSX::History::bytes(offset, length, output); }
 void softResetEmulator() { PCSX::g_system->softReset(); }
 void hardResetEmulator() { PCSX::g_system->hardReset(); }
@@ -931,11 +1055,11 @@ static void registerAllSymbols(PCSX::Lua L) {
     REGISTER(L, historyCDLimits);
     REGISTER(L, historyBeginCDV3);
     REGISTER(L, historyCDWorkerStatus);
-    REGISTER(L, historyCDWorkerRecord);
+    REGISTER(L, historyCDWorkerRecords);
     REGISTER(L, historyStop);
     REGISTER(L, historyClear);
     REGISTER(L, historyStatus);
-    REGISTER(L, historyRecord);
+    REGISTER(L, historyRecords);
     REGISTER(L, historyBytes);
 
     REGISTER(L, softResetEmulator);
@@ -1011,9 +1135,12 @@ void PCSX::LuaFFI::open_pcsx(Lua L) {
     L.declareFunc("scanByteRanges", scanByteRanges, -1);
     L.declareFunc("convertVRAM", convertVRAM, -1);
     L.declareFunc("convertScreenshot", convertScreenshot, -1);
+    L.declareFunc("packMMIOProbe", packMMIOProbe, -1);
+    L.declareFunc("packVRAMUploadProbe", packVRAMUploadProbe, -1);
     L.declareFunc("encodeJSON", encodeJSON, -1);
     L.declareFunc("jsonArray", jsonArray, -1);
     L.declareFunc("validateSaveStateWire", validateSaveStateWire, -1);
+    L.declareFunc("selectSaveStateWire", selectSaveStateWire, -1);
     L.declareFunc("decodeGPU", PCSX::LuaFFI::decodeGPU, -1);
     L.declareFunc("readGPUChain", PCSX::LuaFFI::readGPUChain, -1);
     L.push("execSlots");

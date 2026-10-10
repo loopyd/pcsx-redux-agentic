@@ -11,7 +11,7 @@ function M.new(controller,audio)
         assert(joined==(audio~=nil),'Audio export differs from native CD profile')
         if not joined then return end
         native=assert(audio.report and audio.report.native,'missing joined native Audio report')
-        assert(audio.report.complete and type(audio.event)=='function' and native.version==2 and native.state==2 and
+        assert(audio.report.complete and type(audio.events)=='function' and native.version==2 and native.state==2 and
             native.failures==0 and native.dropped_events==0 and native.dropped_frames=='0' and native.streaming_dropped=='0' and
             native.epoch==epoch and m.uint64(native.begin_cycle)<=row.cycle,'joined Audio lifecycle mismatch')
         for i,name in ipairs(settings) do assert(ffi.cast('int64_t',m.u64le(environment,i*8-8))==native.settings[name],
@@ -52,7 +52,7 @@ function M.new(controller,audio)
                 if d[1]>=6 then
                     local id=m.exact(row.related);assert(d[7]==2 and id~='0' and not joins[id] and row.related<=native.events,
                         'joined feed lacks unique retained Audio event')
-                    local event=audio.event(tonumber(row.related)-1)
+                    local event=audio.events(tonumber(row.related)-1,1)[1]
                     assert(event.id==tonumber(row.related) and event.kind==3 and event.parent=='0' and m.uint64(event.cycle)==row.cycle and
                         event.source_rate==d[2] and event.source_frames==d[3] and event.stereo==d[4] and
                         event.output_frames==d[5] and event.accepted==(d[1]==6 and 1 or 0) and event.cdda==d[8],

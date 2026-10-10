@@ -110,10 +110,11 @@ class Journal {
         out = m_status;
         return true;
     }
-    bool record(uint32_t index, Record& out) const {
+    bool records(uint32_t first, uint32_t count, Record* out) const {
         std::lock_guard guard(m_mutex);
-        if (!owner() || m_status.state != 2 || index >= m_records.size()) return false;
-        out = m_records[index];
+        if (!owner() || m_status.state != 2 || count > 65536 || first > m_records.size() ||
+            count > m_records.size() - first || (count && !out)) return false;
+        if (count) std::memcpy(out, m_records.data() + first, size_t(count) * sizeof(Record));
         return true;
     }
     bool bytes(uint32_t offset, uint32_t length, void* out) const {

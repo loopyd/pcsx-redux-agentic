@@ -18,7 +18,8 @@ local j=f.journal(function(j)
     j.emit(45,17,nil,nil,nil,status(2,4))
 end)
 j.h.cdWorkerStatus=function() return {epoch=ffi.new('uint64_t',7),beginBatch=ffi.new('uint64_t',1),endBatch=ffi.new('uint64_t',1),version=3,state=2,events=4,limit=16,failures=0,dropped=0} end
-j.h.cdWorkerRecord=function(index) return assert(rows[index+1]) end
+j.h.cdWorkerRecords=function(first,count)
+    local records={};for n=0,count-1 do records[n]=assert(rows[first+n+1]) end;return records end
 local function scan() return f.scan(j,function(c) return decoded.new(c,j.h) end) end
 local result=scan();assert(result.enabled and #result.records==4 and #result.handoffs==1 and #result.unconsumed_publications==0)
 predicate.data[4]=0;f.reject(scan,'decoded-buffer native eligibility predicate mismatch');predicate.data[4]=1

@@ -30,7 +30,7 @@ bool beginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, uint32_t 
 bool stop();
 bool clear();
 bool status(Status* out);
-bool record(uint32_t index, Record* out);
+bool records(uint32_t first, uint32_t count, Record* out);
 bool bytes(uint32_t offset, uint32_t length, void* out);
 void fail(Failure reason);
 void emit(Kind kind, uint32_t device, std::array<uint32_t, 8> data = {},

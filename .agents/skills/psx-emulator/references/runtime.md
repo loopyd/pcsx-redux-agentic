@@ -17,7 +17,7 @@ Follow [Native](native.md) for build customizations and dependency authorization
 <a id="invocation"></a>
 
 Run `bin/harness runtime missions` to query the verified native catalogue.
-The binary owns 19 entry missions and 35 helper modules. Both launch routes preload helpers from compiled bytes. Builtin selection
+The binary owns 19 entry missions and 34 helper modules. Both launch routes preload helpers from compiled bytes. Builtin selection
 rejects helper entries; external modules cannot shadow canonical helper names.
 Select exactly one of `--mission NAME` and `--script TRUSTED_LUA`. Only the external
 route accepts explicit noncanonical `--module NAME=PATH` inputs.
@@ -108,7 +108,7 @@ unowned directories and unrelated symlinks. `check` and `remove` are explicit
 idempotent operations on those links, with no global installation.
 Follow [API](api.md) for extensions, declaring inputs, observations, stop and exclusions.
 
-Both v2 launch routes bind all 54 physical resource files and their separate compiled
+Both v2 launch routes bind all 53 physical resource files and their separate compiled
 chunk hashes, sorted bundle digest, native schema, source forest, binary and SDL.
 The harness queries immutable catalogue data without guest execution and hashes
 the binary before/after that query. Historical external v1 receipts retain their

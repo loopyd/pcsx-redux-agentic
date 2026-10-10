@@ -39,14 +39,7 @@ m.begin('action,target,x,y,width,height,bpp,clut_x,clut_y,savestate,scratch', fu
     local pixels = assert(file:read(rowBytes * height + 1)); file:close()
     assert(#pixels == rowBytes * height, 'pixels input must exactly fit rectangle')
     m.atTarget(function()
-        local operations = {{0x1f801814, 0x01000000}, {0x1f801810, 0xa0000000},
-            {0x1f801810, y * 65536 + x}, {0x1f801810, height * 65536 + width}}
-        pixels = pixels .. string.rep('\0', (4 - #pixels % 4) % 4)
-        for i = 1, #pixels, 4 do
-            operations[#operations + 1] = {0x1f801810, pixels:byte(i) + pixels:byte(i + 1) * 256 +
-                pixels:byte(i + 2) * 65536 + pixels:byte(i + 3) * 16777216}
-        end
-        require('bus').write(32, operations, function(probe) extract(s.live(), 'live', probe) end)
+        require('bus').upload(x, y, width, height, pixels, function(probe) extract(s.live(), 'live', probe) end)
     end)
 end)
 -- )EOF"
