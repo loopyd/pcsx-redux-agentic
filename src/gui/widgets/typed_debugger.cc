@@ -141,8 +141,8 @@ void PCSX::Widgets::TypedDebugger::import(std::string_view fileContents, ImportT
 PCSX::Widgets::TypedDebugger::TypedDebugger(bool& show, std::vector<std::string>& favorites)
     : m_show(show),
       m_listener(g_system->m_eventBus),
-      m_importDataTypesFileDialog(l_("Import data types"), favorites),
-      m_importFunctionsFileDialog(l_("Import functions"), favorites) {
+      m_importDataTypesFileDialog([]() { return "Import data types"; }, favorites),
+      m_importFunctionsFileDialog([]() { return "Import functions"; }, favorites) {
     m_listener.listen<PCSX::Events::ExecutionFlow::Reset>([this](const auto& event) {
         m_displayedWatchData.clear();
         for (const auto* bp : m_watchBreakpoints) {
@@ -258,34 +258,34 @@ void PCSX::Widgets::TypedDebugger::displayBreakpointOptions(WatchTreeNode* node,
             return true;
         };
 
-    const auto logReadsWritesButtonName = fmt::format(f_("Log reads and writes##{}{}"), node->name.c_str(), address);
+    const auto logReadsWritesButtonName = fmt::format("Log reads and writes##{}{}", node->name.c_str(), address);
     if (ImGui::Button(logReadsWritesButtonName.c_str())) {
         auto* newReadBreakpoint = PCSX::g_emulator->m_debug->addBreakpoint(
-            address, PCSX::Debug::BreakpointType::Read, node->size, _("Read"), logReadsWritesInvoker);
+            address, PCSX::Debug::BreakpointType::Read, node->size, "Read", logReadsWritesInvoker);
         auto* newWriteBreakpoint = PCSX::g_emulator->m_debug->addBreakpoint(
-            address, PCSX::Debug::BreakpointType::Write, node->size, _("Write"), logReadsWritesInvoker);
+            address, PCSX::Debug::BreakpointType::Write, node->size, "Write", logReadsWritesInvoker);
         m_watchBreakpoints.push_back(newReadBreakpoint);
         m_watchBreakpoints.push_back(newWriteBreakpoint);
     }
     ImGui::SameLine();
-    const auto readBreakpointButtonName = fmt::format(f_("Add read breakpoint##{}{}"), node->name.c_str(), address);
+    const auto readBreakpointButtonName = fmt::format("Add read breakpoint##{}{}", node->name.c_str(), address);
     if (ImGui::Button(readBreakpointButtonName.c_str())) {
         auto* newBreakpoint = PCSX::g_emulator->m_debug->addBreakpoint(
-            address, PCSX::Debug::BreakpointType::Read, node->size, _("ReadPause"), logReadsWritesInvoker);
+            address, PCSX::Debug::BreakpointType::Read, node->size, "ReadPause", logReadsWritesInvoker);
         m_watchBreakpoints.push_back(newBreakpoint);
     }
     ImGui::SameLine();
-    const auto writeBreakpointButtonName = fmt::format(f_("Add write breakpoint##{}{}"), node->name.c_str(), address);
+    const auto writeBreakpointButtonName = fmt::format("Add write breakpoint##{}{}", node->name.c_str(), address);
     if (ImGui::Button(writeBreakpointButtonName.c_str())) {
         auto* newBreakpoint = PCSX::g_emulator->m_debug->addBreakpoint(
-            address, PCSX::Debug::BreakpointType::Write, node->size, _("WritePause"), logReadsWritesInvoker);
+            address, PCSX::Debug::BreakpointType::Write, node->size, "WritePause", logReadsWritesInvoker);
         m_watchBreakpoints.push_back(newBreakpoint);
     }
 
     if (node->logEntries.size() > 0) {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();  // Name.
-        bool open = ImGui::TreeNodeEx(fmt::format(f_("Display log entries##{}{}"), node->name.c_str(), address).c_str(),
+        bool open = ImGui::TreeNodeEx(fmt::format("Display log entries##{}{}", node->name.c_str(), address).c_str(),
                                       ImGuiTreeNodeFlags_SpanFullWidth);
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         ImGui::TableNextColumn();  // Type.
@@ -312,8 +312,8 @@ void PCSX::Widgets::TypedDebugger::displayBreakpointOptions(WatchTreeNode* node,
                 ImGui::TextUnformatted(magic_enum::enum_name(logEntry.accessType).data());
                 ImGui::TableNextColumn();  // Value.
                 const bool functionToggledOff = m_disabledInstructions.contains(instructionAddress);
-                auto toggleButtonName = functionToggledOff ? fmt::format(f_("Re-enable##{}"), instructionAddress)
-                                                           : fmt::format(f_("Disable##{}"), instructionAddress);
+                auto toggleButtonName = functionToggledOff ? fmt::format("Re-enable##{}", instructionAddress)
+                                                           : fmt::format("Disable##{}", instructionAddress);
                 if (ImGui::Button(toggleButtonName.c_str())) {
                     IO<File> memFile = g_emulator->m_mem->getMemoryAsFile();
                     if (functionToggledOff) {
@@ -388,7 +388,7 @@ void PCSX::Widgets::TypedDebugger::displayNode(WatchTreeNode* node, const uint32
         if (isPointer) {
             ImGui::Text("0x%x", startAddress);
             ImGui::SameLine();
-            const auto showMemButtonName = fmt::format(f_("Show in memory editor##{}{}"), currentAddress, extraImGuiId);
+            const auto showMemButtonName = fmt::format("Show in memory editor##{}{}", currentAddress, extraImGuiId);
             if (ImGui::Button(showMemButtonName.c_str())) {
                 g_system->m_eventBus->signal(PCSX::Events::GUI::JumpToMemory{startAddress, 4});
             }
@@ -405,7 +405,7 @@ void PCSX::Widgets::TypedDebugger::displayNode(WatchTreeNode* node, const uint32
         if (watchView) {
             displayBreakpointOptions(node, currentAddress);
         } else {
-            auto addToWatchButtonName = fmt::format(f_("Add to Watch tab##{}{}"), currentAddress, extraImGuiId);
+            auto addToWatchButtonName = fmt::format("Add to Watch tab##{}{}", currentAddress, extraImGuiId);
             if (ImGui::Button(addToWatchButtonName.c_str())) {
                 m_displayedWatchData.push_back({currentAddress, addressOfPointer, *node});
             }
@@ -432,7 +432,7 @@ void PCSX::Widgets::TypedDebugger::displayNode(WatchTreeNode* node, const uint32
             ImGui::TableNextColumn();  // Value.
             ImGui::Text("0x%x", startAddress);
             ImGui::SameLine();
-            const auto showMemButtonName = fmt::format(f_("Show in memory editor##{}{}"), currentAddress, extraImGuiId);
+            const auto showMemButtonName = fmt::format("Show in memory editor##{}{}", currentAddress, extraImGuiId);
             if (ImGui::Button(showMemButtonName.c_str())) {
                 g_system->m_eventBus->signal(PCSX::Events::GUI::JumpToMemory{startAddress, 4});
             }
@@ -456,7 +456,7 @@ void PCSX::Widgets::TypedDebugger::displayNode(WatchTreeNode* node, const uint32
             ImGui::TableNextColumn();  // Value.
             ImGui::Text("%s", str.c_str());
             ImGui::SameLine();
-            const auto showMemButtonName = fmt::format(f_("Show in memory editor##{}{}"), currentAddress, extraImGuiId);
+            const auto showMemButtonName = fmt::format("Show in memory editor##{}{}", currentAddress, extraImGuiId);
             if (ImGui::Button(showMemButtonName.c_str())) {
                 const uint32_t editorAddress = startAddress;
                 g_system->m_eventBus->signal(PCSX::Events::GUI::JumpToMemory{editorAddress, strLength});
@@ -620,7 +620,7 @@ void PCSX::Widgets::TypedDebugger::draw(const char* title, GUI* gui) {
     bool showImportDataTypesFileDialog = false;
     GUI::MarkDown md(gui);
     if (m_structs.empty()) {
-        md.print(_(R"(
+        md.print(R"(
 Data types can be imported from Ghidra using tools/ghidra_scripts/export_redux.py, which will
 generate a redux_data_types.txt file in its folder, or from any text file where each line specifies the
 data type's name and fields, separated by semi-colons; fields are specified in type-name-size tuples
@@ -631,8 +631,8 @@ For example:
 CdlLOC;u_char,minute,1;u_char,second,1;u_char,sector,1;u_char,track,1;
 ```
 
-Arrays are specified as `type[number]` and pointers as `type *`.)"));
-        showImportDataTypesFileDialog = ImGui::Button(_("Import data types"));
+Arrays are specified as `type[number]` and pointers as `type *`.)");
+        showImportDataTypesFileDialog = ImGui::Button("Import data types");
         if (showImportDataTypesFileDialog) {
             m_importDataTypesFileDialog.openDialog();
         }
@@ -650,7 +650,7 @@ Arrays are specified as `type[number]` and pointers as `type *`.)"));
 
     bool showImportFunctionsFileDialog = false;
     if (m_functions.empty()) {
-        md.print(_(R"(
+        md.print(R"(
 Functions can be imported from Ghidra using tools/ghidra_scripts/export_redux.py, which will generate
 a redux_funcs.txt file in its folder, or from any text file where each line specifies the function
 address, name and arguments, separated by semi-colons; arguments are specified in type-name-size tuples
@@ -661,8 +661,8 @@ For example:
 800148b8;task_main_800148B8;int,param_1,4;int,param_2,1;
 ```
 
-Arrays and pointers are specified as for data types)"));
-        showImportFunctionsFileDialog = ImGui::Button(_("Import functions"));
+Arrays and pointers are specified as for data types)");
+        showImportFunctionsFileDialog = ImGui::Button("Import functions");
         if (showImportFunctionsFileDialog) {
             m_importFunctionsFileDialog.openDialog();
         }
@@ -727,9 +727,9 @@ Arrays and pointers are specified as for data types)"));
         }
     };
 
-    showReimportButton(_("Reimport data types from updated file"), m_dataTypesFile, ImportType::DataTypes);
+    showReimportButton("Reimport data types from updated file", m_dataTypesFile, ImportType::DataTypes);
     ImGui::SameLine();
-    showReimportButton(_("Reimport functions from updated file"), m_functionsFile, ImportType::Functions);
+    showReimportButton("Reimport functions from updated file", m_functionsFile, ImportType::Functions);
 
     uint8_t* const memData = g_emulator->m_mem->m_wram;
     const uint32_t memSize = 1024 * 1024 * (g_emulator->settings.get<PCSX::Emulator::Setting8MB>() ? 8 : 2);
@@ -742,8 +742,8 @@ Arrays and pointers are specified as for data types)"));
                                             ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_Resizable |
                                             ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
 
-    if (ImGui::BeginTabBar(_("TypedDebuggerTabBar"))) {
-        if (ImGui::BeginTabItem(_("Watch"))) {
+    if (ImGui::BeginTabBar("TypedDebuggerTabBar")) {
+        if (ImGui::BeginTabItem("Watch")) {
             ImGuiInputTextFlags textFlags = ImGuiInputTextFlags_CharsHexadecimal |
                                             ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll |
                                             ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_CallbackAlways;
@@ -792,7 +792,7 @@ Arrays and pointers are specified as for data types)"));
                 m_displayedWatchData.push_back({addressInputValue, true, rootNode});
             }
             ImGui::SameLine();
-            if (ImGui::Button(_("Clear"))) {
+            if (ImGui::Button("Clear")) {
                 m_displayedWatchData.clear();
                 for (const auto* bp : m_watchBreakpoints) {
                     g_emulator->m_debug->removeBreakpoint(bp);
@@ -801,7 +801,7 @@ Arrays and pointers are specified as for data types)"));
             }
             if (m_watchBreakpoints.size() > 0) {
                 ImGui::SameLine();
-                if (ImGui::Button(_("Clear breakpoints"))) {
+                if (ImGui::Button("Clear breakpoints")) {
                     for (const auto* bp : m_watchBreakpoints) {
                         g_emulator->m_debug->removeBreakpoint(bp);
                     }
@@ -810,7 +810,7 @@ Arrays and pointers are specified as for data types)"));
             }
             if (m_disabledInstructions.size() > 0) {
                 ImGui::SameLine();
-                if (ImGui::Button(_("Restore disabled instructions"))) {
+                if (ImGui::Button("Restore disabled instructions")) {
                     for (const auto& instruction : m_disabledInstructions) {
                         const auto instructionAddress = instruction.first;
                         const auto& instructions = instruction.second;
@@ -824,12 +824,12 @@ Arrays and pointers are specified as for data types)"));
 
             gui->useMonoFont();
             if (ImGui::BeginTable("WatchTable", 6, treeTableFlags)) {
-                ImGui::TableSetupColumn(_("Name"));
-                ImGui::TableSetupColumn(_("Type"));
-                ImGui::TableSetupColumn(_("Size"));
-                ImGui::TableSetupColumn(_("Value"));
-                ImGui::TableSetupColumn(_("New value"));
-                ImGui::TableSetupColumn(_("Breakpoints"), ImGuiTableColumnFlags_NoHide);
+                ImGui::TableSetupColumn("Name");
+                ImGui::TableSetupColumn("Type");
+                ImGui::TableSetupColumn("Size");
+                ImGui::TableSetupColumn("Value");
+                ImGui::TableSetupColumn("New value");
+                ImGui::TableSetupColumn("Breakpoints", ImGuiTableColumnFlags_NoHide);
                 ImGui::TableHeadersRow();
 
                 for (auto& addressNodePair : m_displayedWatchData) {
@@ -842,13 +842,13 @@ Arrays and pointers are specified as for data types)"));
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem(_("Functions"))) {
-            if (ImGui::Button(_("Clear log"))) {
+        if (ImGui::BeginTabItem("Functions")) {
+            if (ImGui::Button("Clear log")) {
                 m_displayedFunctionData.clear();
             }
             if (m_functionBreakpoints.size() > 0) {
                 ImGui::SameLine();
-                if (ImGui::Button(_("Clear breakpoints"))) {
+                if (ImGui::Button("Clear breakpoints")) {
                     for (const auto* bp : m_functionBreakpoints) {
                         g_emulator->m_debug->removeBreakpoint(bp);
                     }
@@ -857,7 +857,7 @@ Arrays and pointers are specified as for data types)"));
             }
             if (m_disabledFunctions.size() > 0) {
                 ImGui::SameLine();
-                if (ImGui::Button(_("Restore disabled functions"))) {
+                if (ImGui::Button("Restore disabled functions")) {
                     for (const auto& function : m_disabledFunctions) {
                         const auto functionAddress = function.first;
                         const auto& instructionsToRestore = function.second;
@@ -869,20 +869,20 @@ Arrays and pointers are specified as for data types)"));
 
             gui->useMonoFont();
             ImVec2 outerSize{0.f, TEXT_BASE_HEIGHT * 30.f};
-            if (ImGui::BeginTable(_("FunctionBreakpoints"), 6, treeTableFlags, outerSize)) {
-                ImGui::TableSetupColumn(_("Name"));
-                ImGui::TableSetupColumn(_("Type"));
-                ImGui::TableSetupColumn(_("Size"));
-                ImGui::TableSetupColumn(_("Value"));
-                ImGui::TableSetupColumn(_("New value"));
-                ImGui::TableSetupColumn(_("Breakpoints"), ImGuiTableColumnFlags_NoHide);
+            if (ImGui::BeginTable("FunctionBreakpoints", 6, treeTableFlags, outerSize)) {
+                ImGui::TableSetupColumn("Name");
+                ImGui::TableSetupColumn("Type");
+                ImGui::TableSetupColumn("Size");
+                ImGui::TableSetupColumn("Value");
+                ImGui::TableSetupColumn("New value");
+                ImGui::TableSetupColumn("Breakpoints", ImGuiTableColumnFlags_NoHide);
                 ImGui::TableHeadersRow();
 
                 for (auto& functionData : m_displayedFunctionData) {
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();  // Name.
                     const std::string nameColumnString =
-                        fmt::format(f_("{}\t(called from {}\t@ {:#x})##{}"), functionData.functionName,
+                        fmt::format("{}\t(called from {}\t@ {:#x})##{}", functionData.functionName,
                                     functionData.callerName, functionData.callerAddress, functionData.id);
                     ImGui::TextUnformatted(nameColumnString.c_str());
                     ImGui::TableNextColumn();  // Type.
@@ -925,11 +925,11 @@ Arrays and pointers are specified as for data types)"));
                                                         ImGuiTableFlags_Hideable;
 
             gui->useMonoFont();
-            if (ImGui::BeginTable(_("Functions"), 4, functionTableFlags)) {
-                ImGui::TableSetupColumn(_("Address"));
-                ImGui::TableSetupColumn(_("Name"));
-                ImGui::TableSetupColumn(_("Breakpoints"));
-                ImGui::TableSetupColumn(_("Toggle"));
+            if (ImGui::BeginTable("Functions", 4, functionTableFlags)) {
+                ImGui::TableSetupColumn("Address");
+                ImGui::TableSetupColumn("Name");
+                ImGui::TableSetupColumn("Breakpoints");
+                ImGui::TableSetupColumn("Toggle");
                 ImGui::TableHeadersRow();
 
                 ImGuiListClipper clipper;
@@ -944,7 +944,7 @@ Arrays and pointers are specified as for data types)"));
                         ImGui::TableSetColumnIndex(1);
                         ImGui::Text("%s", m_functions[currentAddress].name.c_str());
                         ImGui::TableSetColumnIndex(2);
-                        auto breakpointButtonName = fmt::format(f_("Add breakpoint##{}"), row);
+                        auto breakpointButtonName = fmt::format("Add breakpoint##{}", row);
                         PCSX::Debug::BreakpointInvoker invoker = [this, memBase, memData, memSize, currentAddress](
                                                                      const PCSX::Debug::Breakpoint* self,
                                                                      uint32_t address, unsigned width,
@@ -1025,13 +1025,13 @@ Arrays and pointers are specified as for data types)"));
                         };
                         if (ImGui::Button(breakpointButtonName.c_str())) {
                             auto* newBreakpoint = g_emulator->m_debug->addBreakpoint(
-                                currentAddress, Debug::BreakpointType::Exec, 4, _("Typed Debugger"), invoker);
+                                currentAddress, Debug::BreakpointType::Exec, 4, "Typed Debugger", invoker);
                             m_functionBreakpoints.push_back(newBreakpoint);
                         }
                         ImGui::TableSetColumnIndex(3);
                         const bool functionToggledOff = m_disabledFunctions.contains(currentAddress);
-                        auto toggleButtonName = functionToggledOff ? fmt::format(f_("Re-enable##{}"), row)
-                                                                   : fmt::format(f_("Disable##{}"), row);
+                        auto toggleButtonName = functionToggledOff ? fmt::format("Re-enable##{}", row)
+                                                                   : fmt::format("Disable##{}", row);
                         if (ImGui::Button(toggleButtonName.c_str())) {
                             IO<File> memFile = g_emulator->m_mem->getMemoryAsFile();
                             if (functionToggledOff) {

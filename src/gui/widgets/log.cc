@@ -65,13 +65,13 @@ bool PCSX::Widgets::Log::draw(GUI* gui, const char* title) {
     }
     bool changed = false;
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu(_("Enabled"))) {
+        if (ImGui::BeginMenu("Enabled")) {
             ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
-            if (ImGui::MenuItem(_("Enable all"))) {
+            if (ImGui::MenuItem("Enable all")) {
                 for (auto& c : m_classes) c.enabled = true;
                 changed = true;
             }
-            if (ImGui::MenuItem(_("Disable all"))) {
+            if (ImGui::MenuItem("Disable all")) {
                 for (auto& c : m_classes) c.enabled = false;
                 changed = true;
             }
@@ -84,13 +84,13 @@ bool PCSX::Widgets::Log::draw(GUI* gui, const char* title) {
             ImGui::PopItemFlag();
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu(_("Displayed"))) {
+        if (ImGui::BeginMenu("Displayed")) {
             ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
-            if (ImGui::MenuItem(_("Display all"))) {
+            if (ImGui::MenuItem("Display all")) {
                 for (auto& c : m_classes) c.displayed = true;
                 changed = true;
             }
-            if (ImGui::MenuItem(_("Hide all"))) {
+            if (ImGui::MenuItem("Hide all")) {
                 for (auto& c : m_classes) c.displayed = false;
                 changed = true;
             }
@@ -103,18 +103,18 @@ bool PCSX::Widgets::Log::draw(GUI* gui, const char* title) {
             ImGui::PopItemFlag();
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu(_("Special"))) {
+        if (ImGui::BeginMenu("Special")) {
             ImGui::PushItemFlag(ImGuiItemFlags_AutoClosePopups, false);
             auto& debugSettings = g_emulator->settings.get<Emulator::SettingDebugSettings>();
-            changed |= ImGui::MenuItem(_("Log CD-ROM commands"), nullptr,
+            changed |= ImGui::MenuItem("Log CD-ROM commands", nullptr,
                                        &debugSettings.get<Emulator::DebugSettings::LoggingCDROM>().value);
-            changed |= ImGui::MenuItem(_("Log CD-ROM hardware access"), nullptr,
+            changed |= ImGui::MenuItem("Log CD-ROM hardware access", nullptr,
                                        &debugSettings.get<Emulator::DebugSettings::LoggingHWCDROM>().value);
             changed |=
-                ImGui::MenuItem(_("CPU trace"), nullptr, &debugSettings.get<Emulator::DebugSettings::Trace>().value);
-            changed |= ImGui::MenuItem(_("Skip ISR during CPU traces"), nullptr,
+                ImGui::MenuItem("CPU trace", nullptr, &debugSettings.get<Emulator::DebugSettings::Trace>().value);
+            changed |= ImGui::MenuItem("Skip ISR during CPU traces", nullptr,
                                        &debugSettings.get<Emulator::DebugSettings::SkipISR>().value);
-            changed |= ImGui::MenuItem(_("Log kernel calls"), nullptr,
+            changed |= ImGui::MenuItem("Log kernel calls", nullptr,
                                        &debugSettings.get<Emulator::DebugSettings::KernelLog>().value);
             ImGui::PopItemFlag();
             ImGui::EndMenu();
@@ -124,13 +124,13 @@ bool PCSX::Widgets::Log::draw(GUI* gui, const char* title) {
         ImGui::EndMenuBar();
     }
 
-    ImGui::Checkbox(_("Follow"), &m_follow);
+    ImGui::Checkbox("Follow", &m_follow);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Monospace"), &m_mono);
+    ImGui::Checkbox("Monospace", &m_mono);
     ImGui::SameLine();
-    if (ImGui::Button(_("Clear"))) clear();
+    if (ImGui::Button("Clear")) clear();
     ImGui::SameLine();
-    bool copy = ImGui::Button(_("Copy"));
+    bool copy = ImGui::Button("Copy");
     ImGui::SameLine();
     ImGuiTextFilter filter;
     // filter.Draw by default puts the label to the right side of the input box.

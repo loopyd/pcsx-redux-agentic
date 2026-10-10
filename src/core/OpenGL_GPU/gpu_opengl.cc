@@ -460,12 +460,12 @@ bool PCSX::OpenGL_GPU::configure() {
         }
     }
 
-    if (ImGui::Begin(_("OpenGL GPU configuration"), &m_showCfg)) {
-        static std::function<const char *()> const c_polygonModeNames[] = {l_("Fill polygons"), l_("Wireframe"),
-                                                                           l_("Vertices only")};
+    if (ImGui::Begin("OpenGL GPU configuration", &m_showCfg)) {
+        static std::function<const char *()> const c_polygonModeNames[] = {
+            []() { return "Fill polygons"; }, []() { return "Wireframe"; }, []() { return "Vertices only"; }};
         constexpr OpenGL::FillMode polygonModes[] = {OpenGL::FillPoly, OpenGL::DrawWire, OpenGL::DrawPoints};
 
-        if (ImGui::BeginCombo(_("Polygon rendering mode"), c_polygonModeNames[m_polygonModeIndex]())) {
+        if (ImGui::BeginCombo("Polygon rendering mode", c_polygonModeNames[m_polygonModeIndex]())) {
             for (auto i = 0; i < 3; i++) {
                 if (ImGui::Selectable(c_polygonModeNames[i]())) {
                     m_polygonMode = polygonModes[i];
@@ -476,12 +476,12 @@ bool PCSX::OpenGL_GPU::configure() {
         }
 
         int msaaSampleCount = g_emulator->settings.get<Emulator::SettingMSAA>();
-        const auto msaaString = msaaSampleCount == 1 ? _("No MSAA") : fmt::format(f_("{}x MSAA"), msaaSampleCount);
+        const auto msaaString = msaaSampleCount == 1 ? "No MSAA" : fmt::format("{}x MSAA", msaaSampleCount);
 
         if (ImGui::BeginCombo("MSAA", msaaString.c_str())) {
             const int maxMSAA = OpenGL::maxSamples();
 
-            if (ImGui::Selectable(_("No MSAA"))) {
+            if (ImGui::Selectable("No MSAA")) {
                 g_emulator->settings.get<Emulator::SettingMSAA>() = 1;
                 changed = true;
             }
@@ -496,12 +496,12 @@ bool PCSX::OpenGL_GPU::configure() {
             ImGui::EndCombo();
         }
 
-        if (ImGui::Checkbox(_("Use linear filtering"),
+        if (ImGui::Checkbox("Use linear filtering",
                             &g_emulator->settings.get<Emulator::SettingLinearFiltering>().value)) {
             changed = true;
             setLinearFiltering();
         }
-        ImGui::Checkbox(_("Edit OpenGL GPU shaders"), &m_shaderEditor.m_show);
+        ImGui::Checkbox("Edit OpenGL GPU shaders", &m_shaderEditor.m_show);
         ImGui::End();
     }
 
@@ -509,19 +509,19 @@ bool PCSX::OpenGL_GPU::configure() {
 }
 
 void PCSX::OpenGL_GPU::debug() {
-    if (ImGui::Begin(_("OpenGL GPU Debugger"), &m_showDebug)) {
+    if (ImGui::Begin("OpenGL GPU Debugger", &m_showDebug)) {
         const auto width = m_display.size.x();
         const auto height = m_display.size.y();
         const auto startX = m_display.start.x();
         const auto startY = m_display.start.y();
 
-        ImGui::Text(_("Display horizontal range: %d-%d"), startX, startX + width);
-        ImGui::Text(_("Display vertical range: %d-%d"), startY, startY + height);
-        ImGui::Text(_("Drawing area offset: (%d, %d)"), m_drawingOffset.x(), m_drawingOffset.y());
-        ImGui::Text(_("Resolution: %dx%d"), width, height);
+        ImGui::Text("Display horizontal range: %d-%d", startX, startX + width);
+        ImGui::Text("Display vertical range: %d-%d", startY, startY + height);
+        ImGui::Text("Drawing area offset: (%d, %d)", m_drawingOffset.x(), m_drawingOffset.y());
+        ImGui::Text("Resolution: %dx%d", width, height);
 
-        ImGui::ColorEdit3(_("Clear colour"), &m_clearColour[0]);
-        if (ImGui::Button(_("Clear VRAM"))) {
+        ImGui::ColorEdit3("Clear colour", &m_clearColour[0]);
+        if (ImGui::Button("Clear VRAM")) {
             clearVRAM(m_clearColour.r(), m_clearColour.g(), m_clearColour.b());
         }
     }

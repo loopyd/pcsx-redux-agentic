@@ -92,7 +92,7 @@ void PCSX::Widgets::LuaInspector::draw(const char* title, Lua L, PCSX::GUI* gui)
 
     static const char* displays[] = {"Globals", "Stack", "Registry"};
 
-    if (ImGui::BeginCombo(_("Display"), displays[int(m_display)])) {
+    if (ImGui::BeginCombo("Display", displays[int(m_display)])) {
         for (int i = 0; i < (sizeof(displays) / sizeof(displays[0])); i++) {
             if (ImGui::Selectable(displays[i], int(m_display) == i)) {
                 m_display = decltype(m_display)(i);
@@ -101,7 +101,7 @@ void PCSX::Widgets::LuaInspector::draw(const char* title, Lua L, PCSX::GUI* gui)
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    ImGui::Checkbox(_("Raw"), &m_raw);
+    ImGui::Checkbox("Raw", &m_raw);
 
     ImGui::BeginChild("tree");
     gui->useMonoFont();

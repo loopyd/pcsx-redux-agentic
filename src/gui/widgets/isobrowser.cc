@@ -82,7 +82,7 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemTree(const ISO9660LowLevel::DirEnt
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("%u", lba);
             ImGui::TableSetColumnIndex(2);
-            ImGui::TextUnformatted(_("<DIR>"));
+            ImGui::TextUnformatted("<DIR>");
             if (open) {
                 // Guard against malformed ISOs with directory cycles pointing back to an ancestor.
                 if (visitedDirs.insert(lba).second) {
@@ -106,7 +106,7 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemTree(const ISO9660LowLevel::DirEnt
                 m_selectedIsGap = false;
             }
             if (ImGui::BeginPopupContextItem()) {
-                if (ImGui::MenuItem(_("Extract"))) {
+                if (ImGui::MenuItem("Extract")) {
                     m_selectedPath = fullPath;
                     m_selectedLBA = lba;
                     m_selectedSize = size;
@@ -114,7 +114,7 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemTree(const ISO9660LowLevel::DirEnt
                     m_hasSelection = true;
                     m_saveFileDialog.openDialog();
                 }
-                if (ImGui::MenuItem(_("Replace"))) {
+                if (ImGui::MenuItem("Replace")) {
                     m_selectedPath = fullPath;
                     m_selectedLBA = lba;
                     m_selectedSize = size;
@@ -122,13 +122,13 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemTree(const ISO9660LowLevel::DirEnt
                     m_hasSelection = true;
                     m_openReplaceFileDialog.openDialog();
                 }
-                if (ImGui::MenuItem(_("Hex Edit"))) {
+                if (ImGui::MenuItem("Hex Edit")) {
                     auto isoPtr = m_cachedIso.lock();
                     if (isoPtr) {
                         openHexEditor(fullPath, IO<File>(new CDRIsoFile(isoPtr, lba, size)));
                     }
                 }
-                if (hasFileViewers() && ImGui::MenuItem(_("View"))) {
+                if (hasFileViewers() && ImGui::MenuItem("View")) {
                     auto isoPtr = m_cachedIso.lock();
                     if (isoPtr) openFileViewer(fullPath, IO<File>(new CDRIsoFile(isoPtr, lba, size)));
                 }
@@ -192,7 +192,7 @@ PCSX::Coroutine<> PCSX::Widgets::IsoBrowser::scanAllGaps(std::shared_ptr<CDRIso>
             uint8_t sector[2352];
             if (iso->readSectors(lba, sector, 1) != 1) {
                 uint32_t remaining = end - lba;
-                auto label = fmt::format(f_("<gap {} sectors>"), remaining);
+                auto label = fmt::format("<gap {} sectors>", remaining);
                 scanned.push_back({label, lba, remaining * 2352, remaining, FlatEntry::Gap, {}});
                 scannedSectors += remaining;
                 break;
@@ -216,7 +216,7 @@ PCSX::Coroutine<> PCSX::Widgets::IsoBrowser::scanAllGaps(std::shared_ptr<CDRIso>
                     }
                 }
                 uint32_t count = lba - gapStart;
-                auto label = fmt::format(f_("<gap {} sectors>"), count);
+                auto label = fmt::format("<gap {} sectors>", count);
                 scanned.push_back({label, gapStart, count * 2352, count, FlatEntry::Gap, {}});
                 continue;
             }
@@ -237,7 +237,7 @@ PCSX::Coroutine<> PCSX::Widgets::IsoBrowser::scanAllGaps(std::shared_ptr<CDRIso>
                     }
                 }
                 uint32_t count = lba - fileStart;
-                auto label = fmt::format(f_("<hidden M1 {} sectors>"), count);
+                auto label = fmt::format("<hidden M1 {} sectors>", count);
                 scanned.push_back({label, fileStart, count * 2048, count, FlatEntry::HiddenM1, {}});
                 continue;
             }
@@ -272,7 +272,7 @@ PCSX::Coroutine<> PCSX::Widgets::IsoBrowser::scanAllGaps(std::shared_ptr<CDRIso>
 
                 uint32_t count = lba - fileStart;
                 uint32_t dataSize = isForm2 ? count * 2324 : count * 2048;
-                auto label = fmt::format(f_("<hidden {} f={} ch={} {} sectors>"), isForm2 ? "M2F2" : "M2F1", fileNum,
+                auto label = fmt::format("<hidden {} f={} ch={} {} sectors>", isForm2 ? "M2F2" : "M2F1", fileNum,
                                          channelNum, count);
                 scanned.push_back({label, fileStart, dataSize, count, type, {}});
                 continue;
@@ -295,7 +295,7 @@ PCSX::Coroutine<> PCSX::Widgets::IsoBrowser::scanAllGaps(std::shared_ptr<CDRIso>
                 }
             }
             uint32_t unknownCount = lba - unknownStart;
-            auto unknownLabel = fmt::format(f_("<gap {} sectors>"), unknownCount);
+            auto unknownLabel = fmt::format("<gap {} sectors>", unknownCount);
             scanned.push_back({unknownLabel, unknownStart, unknownCount * 2352, unknownCount, FlatEntry::Gap, {}});
         }
     }
@@ -312,34 +312,34 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemFlat() {
         // Add ISO9660 system structures
         auto& pvd = m_reader->getPVD();
         uint32_t vdEnd = m_reader->getVDEnd();
-        m_flatEntries.push_back({_("<License/System Area>"), 0, 16 * 2352, 16, FlatEntry::System, {}});
+        m_flatEntries.push_back({"<License/System Area>", 0, 16 * 2352, 16, FlatEntry::System, {}});
         // Volume descriptor set spans from LBA 16 up to (but not including) vdEnd,
         // including the PVD, any SVDs, and the terminator.
         uint32_t vdSectors = vdEnd > 16 ? vdEnd - 16 : 1;
-        m_flatEntries.push_back({_("<Volume Descriptors>"), 16, vdSectors * 2048, vdSectors, FlatEntry::System, {}});
+        m_flatEntries.push_back({"<Volume Descriptors>", 16, vdSectors * 2048, vdSectors, FlatEntry::System, {}});
         uint32_t lPathLoc = pvd.get<ISO9660LowLevel::PVD_LPathTableLocation>();
         uint32_t pathTableSize = pvd.get<ISO9660LowLevel::PVD_PathTableSize>();
         uint32_t pathTableSectors = (pathTableSize + 2047) / 2048;
         m_flatEntries.push_back(
-            {_("<L Path Table>"), lPathLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
+            {"<L Path Table>", lPathLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
         uint32_t lPathOptLoc = pvd.get<ISO9660LowLevel::PVD_LPathTableOptLocation>();
         if (lPathOptLoc != 0) {
             m_flatEntries.push_back(
-                {_("<L Path Table (opt)>"), lPathOptLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
+                {"<L Path Table (opt)>", lPathOptLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
         }
         uint32_t mPathLoc = pvd.get<ISO9660LowLevel::PVD_MPathTableLocation>();
         m_flatEntries.push_back(
-            {_("<M Path Table>"), mPathLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
+            {"<M Path Table>", mPathLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
         uint32_t mPathOptLoc = pvd.get<ISO9660LowLevel::PVD_MPathTableOptLocation>();
         if (mPathOptLoc != 0) {
             m_flatEntries.push_back(
-                {_("<M Path Table (opt)>"), mPathOptLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
+                {"<M Path Table (opt)>", mPathOptLoc, pathTableSize, pathTableSectors, FlatEntry::System, {}});
         }
         auto& rootDir = m_reader->getRootDirEntry();
         uint32_t rootLBA = rootDir.get<ISO9660LowLevel::DirEntry_LBA>();
         uint32_t rootSize = rootDir.get<ISO9660LowLevel::DirEntry_Size>();
         uint32_t rootSectors = (rootSize + 2047) / 2048;
-        m_flatEntries.push_back({_("<Root Directory>"), rootLBA, rootSize, rootSectors, FlatEntry::System, {}});
+        m_flatEntries.push_back({"<Root Directory>", rootLBA, rootSize, rootSectors, FlatEntry::System, {}});
 
         std::unordered_set<uint32_t> visitedDirs;
         visitedDirs.insert(rootLBA);
@@ -353,7 +353,7 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemFlat() {
         for (auto& entry : m_flatEntries) {
             if (entry.lba > nextExpected) {
                 uint32_t gapSectors = entry.lba - nextExpected;
-                auto label = fmt::format(f_("<gap {} sectors>"), gapSectors);
+                auto label = fmt::format("<gap {} sectors>", gapSectors);
                 withGaps.push_back({label, nextExpected, gapSectors * 2352, gapSectors, FlatEntry::Gap, {}});
             }
             withGaps.push_back(entry);
@@ -369,7 +369,7 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemFlat() {
         }
         if (discEnd > nextExpected) {
             uint32_t gapSectors = discEnd - nextExpected;
-            auto label = fmt::format(f_("<gap {} sectors>"), gapSectors);
+            auto label = fmt::format("<gap {} sectors>", gapSectors);
             withGaps.push_back({label, nextExpected, gapSectors * 2352, gapSectors, FlatEntry::Gap, {}});
         }
         m_flatEntries = std::move(withGaps);
@@ -379,17 +379,17 @@ void PCSX::Widgets::IsoBrowser::drawFilesystemFlat() {
 
     if (!m_gapsScanned) {
         if (m_gapScanCoroutine.done()) {
-            if (ImGui::Button(_("Scan gaps for hidden files"))) {
+            if (ImGui::Button("Scan gaps for hidden files")) {
                 auto iso = m_cachedIso.lock();
                 if (iso) {
                     m_gapScanProgress = 0.0f;
                     m_gapScanCoroutine = scanAllGaps(iso);
                 }
             }
-            ImGuiHelpers::ShowHelpMarker(_(R"(Reads sector headers in gap regions to detect
+            ImGuiHelpers::ShowHelpMarker(R"(Reads sector headers in gap regions to detect
 hidden files that were removed from the ISO9660
 directory but still have intact Mode 1/2 sector
-headers and subheader file boundary markers.)"));
+headers and subheader file boundary markers.)");
         } else {
             ImGui::ProgressBar(m_gapScanProgress);
             m_gapScanCoroutine.resume();
@@ -400,10 +400,10 @@ headers and subheader file boundary markers.)"));
                           ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY,
                           ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing() -
                                         ImGui::GetStyle().ItemSpacing.y))) {
-        ImGui::TableSetupColumn(_("Path"), ImGuiTableColumnFlags_NoHide);
+        ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_NoHide);
         ImGui::TableSetupColumn("LBA", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-        ImGui::TableSetupColumn(_("Size"), ImGuiTableColumnFlags_WidthFixed, 100.0f);
-        ImGui::TableSetupColumn(_("Type"), ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 60.0f);
         ImGui::TableHeadersRow();
 
         for (size_t i = 0; i < m_flatEntries.size(); i++) {
@@ -460,7 +460,7 @@ headers and subheader file boundary markers.)"));
                     default:
                         break;
                 }
-                if (ImGui::MenuItem(_("Extract"))) {
+                if (ImGui::MenuItem("Extract")) {
                     m_selectedPath = entry.path;
                     m_selectedLBA = entry.lba;
                     m_selectedSize = entry.size;
@@ -468,7 +468,7 @@ headers and subheader file boundary markers.)"));
                     m_hasSelection = true;
                     m_saveFileDialog.openDialog();
                 }
-                if (ImGui::MenuItem(_("Replace"))) {
+                if (ImGui::MenuItem("Replace")) {
                     m_selectedPath = entry.path;
                     m_selectedLBA = entry.lba;
                     m_selectedSize = entry.size;
@@ -476,13 +476,13 @@ headers and subheader file boundary markers.)"));
                     m_hasSelection = true;
                     m_openReplaceFileDialog.openDialog();
                 }
-                if (ImGui::MenuItem(_("Hex Edit"))) {
+                if (ImGui::MenuItem("Hex Edit")) {
                     auto isoPtr = m_cachedIso.lock();
                     if (isoPtr) {
                         openHexEditor(entry.path, IO<File>(new CDRIsoFile(isoPtr, entry.lba, entry.size, entryMode)));
                     }
                 }
-                if (hasFileViewers() && ImGui::MenuItem(_("View"))) {
+                if (hasFileViewers() && ImGui::MenuItem("View")) {
                     auto isoPtr = m_cachedIso.lock();
                     if (isoPtr) {
                         openFileViewer(entry.path, IO<File>(new CDRIsoFile(isoPtr, entry.lba, entry.size, entryMode)));
@@ -499,13 +499,13 @@ headers and subheader file boundary markers.)"));
             const char* typeStr;
             switch (entry.type) {
                 case FlatEntry::File:
-                    typeStr = _("File");
+                    typeStr = "File";
                     break;
                 case FlatEntry::Directory:
-                    typeStr = _("<DIR>");
+                    typeStr = "<DIR>";
                     break;
                 case FlatEntry::Gap:
-                    typeStr = _("Gap");
+                    typeStr = "Gap";
                     break;
                 case FlatEntry::HiddenM1:
                     typeStr = "M1";
@@ -517,7 +517,7 @@ headers and subheader file boundary markers.)"));
                     typeStr = "M2F2";
                     break;
                 case FlatEntry::System:
-                    typeStr = _("System");
+                    typeStr = "System";
                     break;
             }
             ImGui::TextUnformatted(typeStr);
@@ -535,9 +535,9 @@ void PCSX::Widgets::IsoBrowser::draw(CDRom* cdrom, const char* title) {
     bool showOpenIsoFileDialog = false;
 
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu(_("File"))) {
-            showOpenIsoFileDialog = ImGui::MenuItem(_("Open Disk Image"));
-            if (ImGui::MenuItem(_("Close Disk Image"))) {
+        if (ImGui::BeginMenu("File")) {
+            showOpenIsoFileDialog = ImGui::MenuItem("Open Disk Image");
+            if (ImGui::MenuItem("Close Disk Image")) {
                 g_emulator->m_cdrom->setIso(new CDRIso(new FailedFile));
                 g_emulator->m_cdrom->parseIso();
             }
@@ -566,13 +566,13 @@ void PCSX::Widgets::IsoBrowser::draw(CDRom* cdrom, const char* title) {
 
     if (iso->failed()) {
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted(_("No iso or invalid iso loaded."));
+        ImGui::TextUnformatted("No iso or invalid iso loaded.");
         ImGui::PopTextWrapPos();
         ImGui::End();
         return;
     }
-    ImGui::Text(_("GAME ID: %s"), g_emulator->m_cdrom->getCDRomID().c_str());
-    ImGui::Text(_("GAME Label: %s"), g_emulator->m_cdrom->getCDRomLabel().c_str());
+    ImGui::Text("GAME ID: %s", g_emulator->m_cdrom->getCDRomID().c_str());
+    ImGui::Text("GAME Label: %s", g_emulator->m_cdrom->getCDRomLabel().c_str());
 
     bool canCache = false;
     bool isCaching = false;
@@ -588,7 +588,7 @@ void PCSX::Widgets::IsoBrowser::draw(CDRom* cdrom, const char* title) {
         ImGui::ProgressBar(cacheProgress);
     } else {
         if (!canCache) ImGui::BeginDisabled();
-        if (ImGui::Button(_("Cache files"))) {
+        if (ImGui::Button("Cache files")) {
             UvThreadOp::iterateOverAllOps([](UvThreadOp* f) {
                 if (!f->caching() && f->canCache()) f->startCaching();
             });
@@ -597,30 +597,30 @@ void PCSX::Widgets::IsoBrowser::draw(CDRom* cdrom, const char* title) {
     }
 
     if (m_crcCalculator.done()) {
-        if (ImGui::Button(_("Compute CRCs"))) {
+        if (ImGui::Button("Compute CRCs")) {
             m_crcProgress = 0.0f;
             m_crcCalculator = computeCRC(iso);
         }
 
-        ImGuiHelpers::ShowHelpMarker(_(R"(Computes the CRC32 of each track, and of
+        ImGuiHelpers::ShowHelpMarker(R"(Computes the CRC32 of each track, and of
 the whole disk. The CRC32 is computed on the raw data,
 after decompression of the tracks. This is useful to
 check the disk image against redump's information.
 
 The computation can be slow, and can be sped up
-significantly by caching the files beforehand.)"));
+significantly by caching the files beforehand.)");
     } else {
         ImGui::ProgressBar(m_crcProgress);
         m_crcCalculator.resume();
     }
 
-    auto str = fmt::format(f_("Disc size: {} ({}) - CRC32: {:08x}"), iso->getTD(0), iso->getTD(0).toLBA(), m_fullCRC);
+    auto str = fmt::format("Disc size: {} ({}) - CRC32: {:08x}", iso->getTD(0), iso->getTD(0).toLBA(), m_fullCRC);
     ImGui::TextUnformatted(str.c_str());
     if (ImGui::BeginTable("Tracks", 5, ImGuiTableFlags_Resizable)) {
-        ImGui::TableSetupColumn(_("Track"));
-        ImGui::TableSetupColumn(C_("Track position", "Start"));
-        ImGui::TableSetupColumn(_("Length"));
-        ImGui::TableSetupColumn(_("Pregap"));
+        ImGui::TableSetupColumn("Track");
+        ImGui::TableSetupColumn("Start");
+        ImGui::TableSetupColumn("Length");
+        ImGui::TableSetupColumn("Pregap");
         ImGui::TableSetupColumn("CRC32");
         ImGui::TableHeadersRow();
         for (unsigned t = 1; t <= iso->getTN(); t++) {
@@ -658,7 +658,7 @@ significantly by caching the files beforehand.)"));
         }
     }
 
-    if (m_reader && ImGui::CollapsingHeader(_("Filesystem"), ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (m_reader && ImGui::CollapsingHeader("Filesystem", ImGuiTreeNodeFlags_DefaultOpen)) {
         bool extracting = !m_extractionCoroutine.done();
 
         if (extracting) {
@@ -683,12 +683,12 @@ significantly by caching the files beforehand.)"));
                         auto time = std::chrono::steady_clock::now();
                         IO<File> src(new CDRIsoFile(iso, lba, size, mode));
                         if (src->failed()) {
-                            g_system->printf(_("ISO extract: failed to open source region.\n"));
+                            g_system->printf("ISO extract: failed to open source region.\n");
                             co_return;
                         }
                         IO<File> out(new UvFile(dest, FileOps::TRUNCATE));
                         if (out->failed()) {
-                            g_system->printf(_("ISO extract: failed to open destination file.\n"));
+                            g_system->printf("ISO extract: failed to open destination file.\n");
                             co_return;
                         }
                         uint8_t buffer[2048];
@@ -698,12 +698,12 @@ significantly by caching the files beforehand.)"));
                             uint32_t chunk = std::min(remaining, (uint32_t)sizeof(buffer));
                             auto read = src->read(buffer, chunk);
                             if (read <= 0) {
-                                g_system->printf(_("ISO extract: failed while reading ISO data.\n"));
+                                g_system->printf("ISO extract: failed while reading ISO data.\n");
                                 co_return;
                             }
                             auto wrote = out->write(buffer, read);
                             if (wrote != read) {
-                                g_system->printf(_("ISO extract: failed while writing destination file.\n"));
+                                g_system->printf("ISO extract: failed while writing destination file.\n");
                                 co_return;
                             }
                             remaining -= static_cast<uint32_t>(read);
@@ -737,7 +737,7 @@ significantly by caching the files beforehand.)"));
                         auto time = std::chrono::steady_clock::now();
                         IO<File> replacement(new UvFile(src));
                         if (replacement->failed()) {
-                            g_system->printf(_("ISO replace: failed to open replacement file.\n"));
+                            g_system->printf("ISO replace: failed to open replacement file.\n");
                             co_return;
                         }
                         IO<File> isoFile(new CDRIsoFile(iso, lba, originalSize, mode));
@@ -746,7 +746,7 @@ significantly by caching the files beforehand.)"));
                             replacementSize > originalSize ? originalSize : static_cast<uint32_t>(replacementSize);
                         if (replacementSize > originalSize) {
                             g_system->printf(
-                                _("ISO replace: replacement file is larger than target (%zu > %u). Truncating.\n"),
+                                "ISO replace: replacement file is larger than target (%zu > %u). Truncating.\n",
                                 replacementSize, originalSize);
                         }
                         uint8_t buffer[2048];
@@ -756,12 +756,12 @@ significantly by caching the files beforehand.)"));
                             uint32_t chunk = std::min(remaining, (uint32_t)sizeof(buffer));
                             auto read = replacement->read(buffer, chunk);
                             if (read <= 0) {
-                                g_system->printf(_("ISO replace: failed while reading replacement file.\n"));
+                                g_system->printf("ISO replace: failed while reading replacement file.\n");
                                 co_return;
                             }
                             auto wrote = isoFile->write(buffer, read);
                             if (wrote != read) {
-                                g_system->printf(_("ISO replace: failed while writing to ISO.\n"));
+                                g_system->printf("ISO replace: failed while writing to ISO.\n");
                                 co_return;
                             }
                             remaining -= static_cast<uint32_t>(read);
@@ -781,7 +781,7 @@ significantly by caching the files beforehand.)"));
                                 uint32_t chunk = std::min(padRemaining, (uint32_t)sizeof(zeros));
                                 auto wrote = isoFile->write(zeros, chunk);
                                 if (wrote != static_cast<ssize_t>(chunk)) {
-                                    g_system->printf(_("ISO replace: failed while zero-padding ISO.\n"));
+                                    g_system->printf("ISO replace: failed while zero-padding ISO.\n");
                                     co_return;
                                 }
                                 padRemaining -= static_cast<uint32_t>(wrote);
@@ -799,7 +799,7 @@ significantly by caching the files beforehand.)"));
             }
         }
 
-        ImGui::Checkbox(_("Flat view (by sector)"), &m_flatView);
+        ImGui::Checkbox("Flat view (by sector)", &m_flatView);
 
         if (m_flatView) {
             drawFilesystemFlat();
@@ -808,9 +808,9 @@ significantly by caching the files beforehand.)"));
                                   ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY,
                                   ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing() -
                                                 ImGui::GetStyle().ItemSpacing.y))) {
-                ImGui::TableSetupColumn(_("Name"), ImGuiTableColumnFlags_NoHide);
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
                 ImGui::TableSetupColumn("LBA", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableSetupColumn(_("Size"), ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 100.0f);
                 ImGui::TableHeadersRow();
                 std::unordered_set<uint32_t> visitedDirs;
                 visitedDirs.insert(m_reader->getRootDirEntry().get<ISO9660LowLevel::DirEntry_LBA>());
@@ -821,11 +821,11 @@ significantly by caching the files beforehand.)"));
 
         // PPF patch controls
         ImGui::Separator();
-        if (ImGui::Button(_("Clear Patches"))) {
+        if (ImGui::Button("Clear Patches")) {
             currentIso->getPPF()->clear();
         }
         ImGui::SameLine();
-        if (ImGui::Button(_("Save PPF"))) {
+        if (ImGui::Button("Save PPF")) {
             currentIso->getPPF()->save(currentIso->getIsoPath());
         }
     }
@@ -899,7 +899,7 @@ void PCSX::Widgets::IsoBrowser::openFileViewer(const std::string& title, IO<File
         return;
     }
     // luaL_ref pops the object.
-    auto* inst = new FileViewerInstance(fmt::format(f_("View - {}"), title), L.ref(LUA_REGISTRYINDEX));
+    auto* inst = new FileViewerInstance(fmt::format("View - {}", title), L.ref(LUA_REGISTRYINDEX));
     m_fileViewers.push_back(inst);
 }
 
@@ -917,7 +917,7 @@ void PCSX::Widgets::IsoBrowser::drawFileViewers() {
         ImGui::SetNextWindowSize(ImVec2(600, 500), ImGuiCond_FirstUseEver);
         if (ImGui::Begin(inst.m_title.c_str(), &inst.m_open)) {
             if (inst.m_failed) {
-                ImGui::TextUnformatted(_("The viewer failed, see the Lua console."));
+                ImGui::TextUnformatted("The viewer failed, see the Lua console.");
             } else if (!callFileViewer(inst, "draw")) {
                 inst.m_failed = true;
             }
@@ -945,7 +945,7 @@ bool PCSX::Widgets::IsoBrowser::callFileViewer(FileViewerInstance& inst, const c
 }
 
 void PCSX::Widgets::IsoBrowser::openHexEditor(const std::string& title, IO<File> file) {
-    auto label = fmt::format(f_("Hex Editor - {}"), title);
+    auto label = fmt::format("Hex Editor - {}", title);
     auto* inst = new HexEditorInstance(label, file, m_monoFont);
     m_hexEditors.push_back(inst);
 }

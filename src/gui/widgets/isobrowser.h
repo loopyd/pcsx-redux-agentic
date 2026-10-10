@@ -47,9 +47,9 @@ class IsoBrowser {
   public:
     IsoBrowser(bool& show, std::vector<std ::string>& favorites, std::function<void()> monoFont = nullptr)
         : m_show(show),
-          m_openIsoFileDialog(l_("Open Disk Image"), favorites),
-          m_saveFileDialog(l_("Extract File"), favorites),
-          m_openReplaceFileDialog(l_("Replace File"), favorites),
+          m_openIsoFileDialog([]() { return "Open Disk Image"; }, favorites),
+          m_saveFileDialog([]() { return "Extract File"; }, favorites),
+          m_openReplaceFileDialog([]() { return "Replace File"; }, favorites),
           m_monoFont(monoFont) {}
     ~IsoBrowser() {
         m_hexEditors.destroyAll();

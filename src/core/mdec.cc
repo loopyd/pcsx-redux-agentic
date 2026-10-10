@@ -725,8 +725,8 @@ void PCSX::MDEC::dma0(uint32_t adr, uint32_t bcr, uint32_t chcr) {
             if (!scaleTableUploaded && !warnedNoScaleTable) {
                 warnedNoScaleTable = true;
                 g_system->log(LogClass::HARDWARE,
-                              _("MDEC decode issued with no scale table uploaded. Real hardware has no default "
-                                "here and will decode this to flat grey; send MDEC(3) before MDEC(1).\n"));
+                              "MDEC decode issued with no scale table uploaded. Real hardware has no default "
+                                "here and will decode this to flat grey; send MDEC(3) before MDEC(1).\n");
             }
             mdec.rl = g_emulator->m_mem->getPointer<uint16_t>(adr);
             History::retain();

@@ -496,7 +496,7 @@ void PCSX::Widgets::VRAMViewer::drawVRAM(GUI *gui, GLuint textureID) {
 }
 
 void PCSX::Widgets::VRAMViewer::drawEditor(GUI *gui) {
-    bool changed = m_editor.draw(gui, _("VRAM Shader Editor"));
+    bool changed = m_editor.draw(gui, "VRAM Shader Editor");
     if (!changed) return;
     compileShader(gui);
 }
@@ -598,51 +598,51 @@ void PCSX::Widgets::VRAMViewer::draw(GUI *gui, unsigned int VRAMTexture) {
             m_firstShown = true;
         }
         if (ImGui::BeginMenuBar()) {
-            if (ImGui::BeginMenu(_("File"))) {
+            if (ImGui::BeginMenu("File")) {
                 ImGui::EndMenu();
             }
             ImGui::Separator();
-            if (ImGui::BeginMenu(_("View"))) {
-                if (ImGui::MenuItem(_("Reset view"))) resetView();
+            if (ImGui::BeginMenu("View")) {
+                if (ImGui::MenuItem("Reset view")) resetView();
                 if (!m_clutDestination) {
                     ImGui::Separator();
-                    ImGui::SliderInt(_("24 bits shift"), &m_24shift, 0, 2);
-                    if (ImGui::MenuItem(_("View VRAM in 24 bits"), nullptr, m_vramMode == VRAM_24BITS)) {
+                    ImGui::SliderInt("24 bits shift", &m_24shift, 0, 2);
+                    if (ImGui::MenuItem("View VRAM in 24 bits", nullptr, m_vramMode == VRAM_24BITS)) {
                         m_vramMode = VRAM_24BITS;
                         modeChanged();
                     }
-                    if (ImGui::MenuItem(_("View VRAM in 16 bits"), nullptr, m_vramMode == VRAM_16BITS)) {
+                    if (ImGui::MenuItem("View VRAM in 16 bits", nullptr, m_vramMode == VRAM_16BITS)) {
                         m_vramMode = VRAM_16BITS;
                         modeChanged();
                     }
-                    if (ImGui::MenuItem(_("View VRAM in 8 bits"), nullptr, m_vramMode == VRAM_8BITS)) {
+                    if (ImGui::MenuItem("View VRAM in 8 bits", nullptr, m_vramMode == VRAM_8BITS)) {
                         m_vramMode = VRAM_8BITS;
                         modeChanged();
                     }
-                    if (ImGui::MenuItem(_("View VRAM in 4 bits"), nullptr, m_vramMode == VRAM_4BITS)) {
+                    if (ImGui::MenuItem("View VRAM in 4 bits", nullptr, m_vramMode == VRAM_4BITS)) {
                         m_vramMode = VRAM_4BITS;
                         modeChanged();
                     }
                 } else {
-                    ImGui::MenuItem(_("Select a CLUT"), nullptr, &m_selectingClut);
+                    ImGui::MenuItem("Select a CLUT", nullptr, &m_selectingClut);
                 }
-                ImGui::MenuItem(_("Enable Alpha channel view"), nullptr, &m_alpha);
-                ImGui::MenuItem(_("Enable greyscale"), nullptr, &m_greyscale);
+                ImGui::MenuItem("Enable Alpha channel view", nullptr, &m_alpha);
+                ImGui::MenuItem("Enable greyscale", nullptr, &m_greyscale);
                 ImGui::Separator();
-                ImGui::MenuItem(_("Show grid"), nullptr, &m_drawGrid);
-                ImGui::MenuItem(_("Select pixel grid color"), nullptr, &openPixelGridColorPicker);
-                ImGui::MenuItem(_("Select TPage grid color"), nullptr, &openTPageGridColorPicker);
+                ImGui::MenuItem("Show grid", nullptr, &m_drawGrid);
+                ImGui::MenuItem("Select pixel grid color", nullptr, &openPixelGridColorPicker);
+                ImGui::MenuItem("Select TPage grid color", nullptr, &openTPageGridColorPicker);
                 if (m_isMain) {
                     ImGui::Separator();
-                    ImGui::MenuItem(_("Show Shader Editor"), nullptr, &m_editor.m_show);
+                    ImGui::MenuItem("Show Shader Editor", nullptr, &m_editor.m_show);
                 }
                 ImGui::EndMenu();
             }
             if (m_isMain) {
                 ImGui::Separator();
-                if (ImGui::BeginMenu(_("Configuration"))) {
-                    ImGui::MenuItem(_("Select read highlight color"), nullptr, &openReadColorPicker);
-                    ImGui::MenuItem(_("Select written highlight color"), nullptr, &openWrittenColorPicker);
+                if (ImGui::BeginMenu("Configuration")) {
+                    ImGui::MenuItem("Select read highlight color", nullptr, &openReadColorPicker);
+                    ImGui::MenuItem("Select written highlight color", nullptr, &openWrittenColorPicker);
                     ImGui::EndMenu();
                 }
             }
@@ -660,49 +660,49 @@ void PCSX::Widgets::VRAMViewer::draw(GUI *gui, unsigned int VRAMTexture) {
         drawVRAM(gui, VRAMTexture);
     }
     if (openReadColorPicker) {
-        ImGui::OpenPopup(_("Read Highlight Color Picker"));
+        ImGui::OpenPopup("Read Highlight Color Picker");
     }
-    if (ImGui::BeginPopupModal(_("Read Highlight Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("Read Highlight Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##ReadColorPicker", (float *)&m_readColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) {
+        if (ImGui::Button("OK")) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
     if (openWrittenColorPicker) {
-        ImGui::OpenPopup(_("Written Highlight Color Picker"));
+        ImGui::OpenPopup("Written Highlight Color Picker");
     }
-    if (ImGui::BeginPopupModal(_("Written Highlight Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("Written Highlight Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##WrittenColorPicker", (float *)&m_writtenColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) {
+        if (ImGui::Button("OK")) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
     if (openPixelGridColorPicker) {
-        ImGui::OpenPopup(_("Pixel Grid Color Picker"));
+        ImGui::OpenPopup("Pixel Grid Color Picker");
     }
-    if (ImGui::BeginPopupModal(_("Pixel Grid Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("Pixel Grid Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##PixelGridColorPicker", (float *)&m_pixelGridColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) {
+        if (ImGui::Button("OK")) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
     if (openTPageGridColorPicker) {
-        ImGui::OpenPopup(_("TPage Grid Color Picker"));
+        ImGui::OpenPopup("TPage Grid Color Picker");
     }
-    if (ImGui::BeginPopupModal(_("TPage Grid Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("TPage Grid Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##TPageGridColorPicker", (float *)&m_tpageGridColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) {
+        if (ImGui::Button("OK")) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

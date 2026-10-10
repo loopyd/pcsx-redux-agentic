@@ -78,7 +78,7 @@ void PCSX::Widgets::NamedSaveStates::draw(GUI* gui, const char* title) {
     float posY = ImGui::GetCursorPosY();
     ImGui::SetCursorPosY(posY + verticalAlignAdjust);
 
-    ImGui::TextUnformatted(_("Filename:"));
+    ImGui::TextUnformatted("Filename:");
     ImGui::SameLine();
     ImGui::TextUnformatted(gui->getSaveStatePrefix(true).c_str());
     ImGui::SameLine(0.0f, 0.0f);
@@ -88,7 +88,7 @@ void PCSX::Widgets::NamedSaveStates::draw(GUI* gui, const char* title) {
 
     // Ensure that we don't add invalid characters to the filename
     // This also filters on pasted text
-    ImGui::InputTextWithHint("##SaveNameInput", _("Enter the name of your save state here"), m_namedSaveNameString,
+    ImGui::InputTextWithHint("##SaveNameInput", "Enter the name of your save state here", m_namedSaveNameString,
                              NAMED_SAVE_STATE_LENGTH_MAX, ImGuiInputTextFlags_CallbackCharFilter,
                              TextFilters::filterNonPathCharacters);
     ImGui::SameLine(0.0f, 0.0f);
@@ -114,23 +114,23 @@ void PCSX::Widgets::NamedSaveStates::draw(GUI* gui, const char* title) {
         if (strlen(m_namedSaveNameString) > 0) {
             // The save state doesn't exist, and the name is valid
             std::filesystem::path newPath = createSaveStatePath(gui, m_namedSaveNameString);
-            if (ImGui::Button(_("Create save"), buttonDims)) {
+            if (ImGui::Button("Create save", buttonDims)) {
                 saveSaveState(gui, newPath);
             }
         }
     } else {
         // The save state exists
-        if (ImGui::Button(_("Overwrite save"), halfDims)) {
+        if (ImGui::Button("Overwrite save", halfDims)) {
             saveSaveState(gui, found->first);
         }
         ImGui::SameLine();
-        if (ImGui::Button(_("Load save"), halfDims)) {
+        if (ImGui::Button("Load save", halfDims)) {
             loadSaveState(gui, found->first);
         }
         // Add a deliberate spacer before the delete button
         // There is no delete confirmation, and this makes a mis-click less likely to hit it
         ImGui::Dummy(buttonDims);
-        if (ImGui::Button(_("Delete save"), buttonDims)) {
+        if (ImGui::Button("Delete save", buttonDims)) {
             deleteSaveState(gui, found->first);
         }
     }

@@ -365,7 +365,7 @@ void PCSX::SIO::scheduledCallback() {
 
 void PCSX::SIO::getMcdBlockInfo(int mcd, int block, McdBlock& info) {
     if (block < 1 || block > 15) {
-        throw std::runtime_error(_("Wrong block number"));
+        throw std::runtime_error("Wrong block number");
     }
 
     uint16_t clut[16];

@@ -40,8 +40,8 @@ class MemcardManager {
   public:
     MemcardManager(bool& show, std::vector<std::string>& favorites)
         : m_show(show),
-          m_importMemoryCardDialog(l_("Import Memory Card file"), favorites),
-          m_exportMemoryCardDialog(l_("Export Memory Card file"), favorites) {}
+          m_importMemoryCardDialog([]() { return "Import Memory Card file"; }, favorites),
+          m_exportMemoryCardDialog([]() { return "Export Memory Card file"; }, favorites) {}
     bool draw(GUI* gui, const char* title);
     bool& m_show;
     // The framecount from 0 to 59 inclusive. We need it to know which frame of multi-animation

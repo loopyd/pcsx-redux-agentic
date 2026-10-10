@@ -593,7 +593,7 @@ void impl::debug() {
     if (!m_showDebug) return;
     ImGui::SetNextWindowPos(ImVec2(20, 40), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(1200, 430), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin(_("SPU Debug"), &m_showDebug)) {
+    if (!ImGui::Begin("SPU Debug", &m_showDebug)) {
         ImGui::End();
         return;
     }

@@ -347,7 +347,7 @@ void PCSX::MemoryCard::loadMcd(PCSX::u8string mcd) {
 
     FILE *f = fopen(fname, "rb");
     if (f == nullptr) {
-        PCSX::g_system->printf(_("The memory card %s doesn't exist - creating it\n"), fname);
+        PCSX::g_system->printf("The memory card %s doesn't exist - creating it\n", fname);
         createMcd(mcd);
         f = fopen(fname, "rb");
         if (f != nullptr) {
@@ -366,14 +366,14 @@ void PCSX::MemoryCard::loadMcd(PCSX::u8string mcd) {
             bytesRead = fread(data, 1, c_cardSize, f);
             fclose(f);
             if (bytesRead != c_cardSize) {
-                throw std::runtime_error(_("Error reading memory card."));
+                throw std::runtime_error("Error reading memory card.");
             }
         } else {
-            PCSX::g_system->message(_("Memory card %s failed to load!\n"), fname);
+            PCSX::g_system->message("Memory card %s failed to load!\n", fname);
         }
     } else {
         struct stat buf;
-        PCSX::g_system->printf(_("Loading memory card %s\n"), fname);
+        PCSX::g_system->printf("Loading memory card %s\n", fname);
         if (stat(fname, &buf) != -1) {
             if (buf.st_size == c_cardSize + 64) {
                 fseek(f, 64, SEEK_SET);
@@ -384,7 +384,7 @@ void PCSX::MemoryCard::loadMcd(PCSX::u8string mcd) {
         bytesRead = fread(data, 1, c_cardSize, f);
         fclose(f);
         if (bytesRead != c_cardSize) {
-            throw std::runtime_error(_("Error reading memory card."));
+            throw std::runtime_error("Error reading memory card.");
         } else {
             m_savedToDisk = true;
         }
@@ -416,7 +416,7 @@ void PCSX::MemoryCard::saveMcd(PCSX::u8string mcd, const char *data, uint32_t ad
         fwrite(data + adr, 1, size, f);
         fclose(f);
         m_savedToDisk = true;
-        PCSX::g_system->printf(_("Saving memory card %s\n"), fname);
+        PCSX::g_system->printf("Saving memory card %s\n", fname);
     } else {
         // try to create it again if we can't open it
         f = fopen(fname, "wb");

@@ -44,7 +44,7 @@ namespace Widgets {
 class Assembly : private Disasm {
   public:
     Assembly(bool& show, std::vector<std::string>& favorites)
-        : m_show(show), m_listener(g_system->m_eventBus), m_symbolsFileDialog(l_("Load Symbols"), favorites) {
+        : m_show(show), m_listener(g_system->m_eventBus), m_symbolsFileDialog([]() { return "Load Symbols"; }, favorites) {
         m_listener.listen<Events::GUI::JumpToPC>([this](const auto& event) {
             m_jumpToPC = event.pc;
             m_show = true;

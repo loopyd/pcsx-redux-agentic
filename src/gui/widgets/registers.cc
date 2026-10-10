@@ -31,15 +31,15 @@
 #include "imgui_stdlib.h"
 
 void PCSX::Widgets::Registers::contextMenu(const char* name, uint32_t reg, uint32_t radix) {
-    std::string contextLabel = fmt::format(f_("Context##{}"), name);
+    std::string contextLabel = fmt::format("Context##{}", name);
     if (ImGui::BeginPopupContextItem(contextLabel.c_str())) {
-        if (ImGui::MenuItem(_("Go to in Assembly"))) {
+        if (ImGui::MenuItem("Go to in Assembly")) {
             g_system->m_eventBus->signal(PCSX::Events::GUI::JumpToPC{reg});
         }
-        if (ImGui::MenuItem(_("Go to in Memory Editor"))) {
+        if (ImGui::MenuItem("Go to in Memory Editor")) {
             g_system->m_eventBus->signal(PCSX::Events::GUI::JumpToMemory{reg, 1});
         }
-        if (ImGui::MenuItem(_("Copy Value"))) {
+        if (ImGui::MenuItem("Copy Value")) {
             char strVal[20];
             if (radix == 16) {
                 std::snprintf(strVal, sizeof(strVal), "%8.8x", reg);
@@ -81,7 +81,7 @@ void PCSX::Widgets::Registers::draw(PCSX::GUI* gui, PCSX::psxRegisters* register
         return;
     }
 
-    if (ImGui::BeginTabBar(_("Registers"))) {
+    if (ImGui::BeginTabBar("Registers")) {
         gui->useMonoFont();
         if (ImGui::BeginTabItem("GPR")) {
             unsigned counter = 0;
@@ -175,7 +175,7 @@ void PCSX::Widgets::Registers::draw(PCSX::GUI* gui, PCSX::psxRegisters* register
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("CP2D")) {
-            ImGui::Checkbox(_("Show fixed point"), &m_showFixed);
+            ImGui::Checkbox("Show fixed point", &m_showFixed);
             auto v0 = registers->CP2D.n.v0;
             if (m_showFixed) {
                 ImGui::Text("v0  : {% 3.5f, % 3.5f, % 3.5f}", fixedToFloat(v0.x), fixedToFloat(v0.y),
@@ -271,7 +271,7 @@ void PCSX::Widgets::Registers::draw(PCSX::GUI* gui, PCSX::psxRegisters* register
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("CP2C")) {
-            ImGui::Checkbox(_("Show fixed point"), &m_showFixed);
+            ImGui::Checkbox("Show fixed point", &m_showFixed);
             auto showFixed = m_showFixed;
             auto displayMatrixPlain = [](SMatrix3D matrix, const char* name) {
                 ImGui::Text("   [%5i, %5i, %5i]", matrix.m11, matrix.m12, matrix.m13);
@@ -363,7 +363,7 @@ void PCSX::Widgets::Registers::draw(PCSX::GUI* gui, PCSX::psxRegisters* register
             ImGui::Text("flag: 0x%08x", registers->CP2C.n.flag);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem(_("Misc"))) {
+        if (ImGui::BeginTabItem("Misc")) {
             ImGui::Text("pc   :");
             ImGui::SameLine();
             ImGui::PushItemWidth(100);

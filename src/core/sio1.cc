@@ -71,7 +71,7 @@ void PCSX::SIO1::sendFlowControlMessage() {
     transmitMessage(std::move(message));
 
     if (initialMessage) {
-        if (!connecting() && !fifoError()) g_system->printf("%s", _("SIO1 client connected\n"));
+        if (!connecting() && !fifoError()) g_system->printf("%s", "SIO1 client connected\n");
         initialMessage = false;
     }
 }
@@ -87,7 +87,7 @@ void PCSX::SIO1::decodeMessage() {
     } catch (...) {
         g_system->message(
             "%s",
-            _("SIO1 TCP session closing due to unreliable connection.\nRestart SIO1 server/client and try again."));
+            "SIO1 TCP session closing due to unreliable connection.\nRestart SIO1 server/client and try again.");
         g_system->log(LogClass::SIO1, "SIO1 TCP session closing due to unreliable connection\n");
         stopSIO1Connection();
         return;

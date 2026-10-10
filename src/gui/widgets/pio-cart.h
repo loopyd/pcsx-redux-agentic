@@ -30,7 +30,7 @@ namespace Widgets {
 class PIOCart {
   public:
     PIOCart(bool& show, std::vector<std::string>& favorites)
-        : m_show(show), m_selectEXP1Dialog(l_("Select EXP1"), favorites) {}
+        : m_show(show), m_selectEXP1Dialog([]() { return "Select EXP1"; }, favorites) {}
     bool draw(const char* title);
     bool& m_show;
 

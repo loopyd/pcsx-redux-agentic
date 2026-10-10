@@ -250,7 +250,7 @@ uint8_t *PCSX::CDRIso::getBuffer() {
 
 void PCSX::CDRIso::printTracks() {
     for (int i = 1; i <= m_numtracks; i++) {
-        PCSX::g_system->printf(_("Track %.2d (%s) - Start %.2d:%.2d:%.2d, Length %.2d:%.2d:%.2d\n"), i,
+        PCSX::g_system->printf("Track %.2d (%s) - Start %.2d:%.2d:%.2d, Length %.2d:%.2d:%.2d\n", i,
                                (m_ti[i].type == TrackType::DATA        ? "DATA"
                                 : m_ti[i].cddatype == trackinfo::CCDDA ? "CZDA"
                                                                        : "CDDA"),
@@ -270,7 +270,7 @@ bool PCSX::CDRIso::open(IO<File> isoFile) {
         m_cdHandle.asA<UvFile>()->startCaching();
     }
 
-    PCSX::g_system->printf(_("Loaded CD Image: %s"), m_isoPath.string());
+    PCSX::g_system->printf("Loaded CD Image: %s", m_isoPath.string());
 
     m_cddaBigEndian = false;
     m_subChanMixed = false;

@@ -211,7 +211,7 @@ uint8_t PCSX::PIOCart::PAL::read8(uint32_t address) {
         }
     }
 
-    g_system->log(LogClass::CPU, _("Unknown 8-bit read in EXP1/PIO: %8.8lx\n"), address);
+    g_system->log(LogClass::CPU, "Unknown 8-bit read in EXP1/PIO: %8.8lx\n", address);
     return 0xff;
 };
 
@@ -225,7 +225,7 @@ void PCSX::PIOCart::PAL::write8(uint32_t address, uint8_t value) {
     } else if (address == 0x1f060001) {  // Bank select
         setLUTFlashBank(value);
     } else {
-        g_system->log(LogClass::CPU, _("Unknown 8-bit write in EXP1/PIO: %8.8lx\n"), address);
+        g_system->log(LogClass::CPU, "Unknown 8-bit write in EXP1/PIO: %8.8lx\n", address);
     }
 }
 

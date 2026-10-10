@@ -28,7 +28,7 @@
 PCSX::ShmDisplay::ShmDisplay() : m_listener(g_system->m_eventBus) {
     static_assert(sizeof(ShmDisplayHeader) <= c_vramOffset);
     if (!m_mem.init("display", c_vramOffset + c_vramSize, true)) {
-        g_system->message(_("Failed to create the shared display memory block\n"));
+        g_system->message("Failed to create the shared display memory block\n");
     }
     m_header = reinterpret_cast<ShmDisplayHeader*>(m_mem.getPtr());
     m_header->magic = ShmDisplayHeader::c_magic;

@@ -254,7 +254,7 @@ class GUI final : public UI {
             bool done = false;
             if (ImGui::BeginPopupModal(m_title(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
                 ImGui::TextUnformatted(m_message.c_str());
-                if (ImGui::Button(_("Ok"), ImVec2(120, 0))) {
+                if (ImGui::Button("Ok", ImVec2(120, 0))) {
                     ImGui::CloseCurrentPopup();
                     done = true;
                 }
@@ -480,7 +480,7 @@ class GUI final : public UI {
     void draculaTheme();
     void oliveTheme();
 
-    Notifier m_notifier = {l_("Notification")};
+    Notifier m_notifier = {[]() { return "Notification"; }};
     Widgets::Console m_luaConsole = {settings.get<ShowLuaConsole>().value};
     Widgets::LuaInspector m_luaInspector = {settings.get<ShowLuaInspector>().value};
 

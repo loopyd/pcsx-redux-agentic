@@ -38,21 +38,21 @@ bool PCSX::Widgets::PIOCart::draw(const char* title) {
         ImGui::SameLine();
         selectEXP1Dialog = ImGui::Button("...");
         ImGui::SameLine();
-        if (ImGui::Button(_("Clear"))) {
+        if (ImGui::Button("Clear")) {
             settings.get<Emulator::SettingEXP1Filepath>().value = "";
             g_emulator->m_mem->loadEXP1FromFile(g_emulator->settings.get<Emulator::SettingEXP1Filepath>().value);
             changed = true;
         }
 
-        ImGui::TextUnformatted(_("On/Off Switch:"));
+        ImGui::TextUnformatted("On/Off Switch:");
         ImGui::SameLine();
         if (ImGui::Checkbox("##ToggleSwitch", &m_switchOn)) {
             g_emulator->m_pioCart->setSwitch(m_switchOn);
         }
         ImGui::SameLine();
-        ImGui::TextUnformatted(m_switchOn ? _("On") : _("Off"));
+        ImGui::TextUnformatted(m_switchOn ? "On" : "Off");
 
-        if (ImGui::Checkbox(_("Connected"), &settings.get<Emulator::SettingPIOConnected>().value)) {
+        if (ImGui::Checkbox("Connected", &settings.get<Emulator::SettingPIOConnected>().value)) {
             g_emulator->m_pioCart->setLuts();
         }
 

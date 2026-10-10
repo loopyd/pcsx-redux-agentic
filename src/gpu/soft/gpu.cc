@@ -246,32 +246,32 @@ bool PCSX::SoftGPU::impl::configure() {
     bool changed = false;
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-    const char *ditherValues[] = {_("No dithering (fastest)"), _("Game-dependent dithering (slow)"),
-                                  _("Always dither g-shaded polygons (slowest)")};
+    const char *ditherValues[] = {"No dithering (fastest)", "Game-dependent dithering (slow)",
+                                  "Always dither g-shaded polygons (slowest)"};
 
-    if (ImGui::Begin(_("Soft GPU configuration"), &m_showCfg)) {
-        if (ImGui::Combo(_("Dithering"), &m_useDither, ditherValues, 3)) {
+    if (ImGui::Begin("Soft GPU configuration", &m_showCfg)) {
+        if (ImGui::Combo("Dithering", &m_useDither, ditherValues, 3)) {
             changed = true;
             g_emulator->settings.get<Emulator::SettingDither>() = m_useDither;
         }
 
-        if (ImGui::Checkbox(_("Use cached dithering tables"),
+        if (ImGui::Checkbox("Use cached dithering tables",
                             &g_emulator->settings.get<Emulator::SettingCachedDithering>().value)) {
             changed = true;
             setCachedDithering(g_emulator->settings.get<Emulator::SettingCachedDithering>());
         }
         ImGuiHelpers::ShowHelpMarker(
-            _("Dithering tables are cached in memory for faster processing. Dithering will be done much faster, at the "
-              "cost of a 512MB cache."));
+            "Dithering tables are cached in memory for faster processing. Dithering will be done much faster, at the "
+              "cost of a 512MB cache.");
 
-        if (ImGui::Checkbox(_("Use linear filtering"),
+        if (ImGui::Checkbox("Use linear filtering",
                             &g_emulator->settings.get<Emulator::SettingLinearFiltering>().value)) {
             changed = true;
             setLinearFiltering();
         }
 
-        ImGui::Checkbox(_("Disable textures for polygons"), &m_disableTexturesInPolygons);
-        ImGui::Checkbox(_("Disable textures for sprites"), &m_disableTexturesInRectangles);
+        ImGui::Checkbox("Disable textures for polygons", &m_disableTexturesInPolygons);
+        ImGui::Checkbox("Disable textures for sprites", &m_disableTexturesInRectangles);
 
         ImGui::End();
     }
@@ -280,11 +280,11 @@ bool PCSX::SoftGPU::impl::configure() {
 }
 
 void PCSX::SoftGPU::impl::debug() {
-    if (ImGui::Begin(_("Soft GPU debugger"), &m_showDebug)) {
+    if (ImGui::Begin("Soft GPU debugger", &m_showDebug)) {
         ImGui::TextUnformatted(
-            _("Debugging features are not supported when using the software renderer yet\nConsider enabling the "
+            "Debugging features are not supported when using the software renderer yet\nConsider enabling the "
               "OpenGL "
-              "GPU option instead."));
+              "GPU option instead.");
     }
     ImGui::End();
 }

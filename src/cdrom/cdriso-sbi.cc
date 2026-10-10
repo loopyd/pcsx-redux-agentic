@@ -40,7 +40,7 @@ bool PCSX::CDRIso::LoadSBI(const char *filename) {
         sbihandle->read(buffer, 11);
     }
 
-    PCSX::g_system->printf(_("Loaded SBI file: %s.\n"), filename);
+    PCSX::g_system->printf("Loaded SBI file: %s.\n", filename);
 
     return true;
 }

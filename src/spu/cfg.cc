@@ -25,7 +25,7 @@
 bool PCSX::SPU::impl::configure() {
     ImGui::SetNextWindowPos(ImVec2(70, 90), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(550, 220), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin(_("SPU configuration"), &m_showCfg)) {
+    if (!ImGui::Begin("SPU configuration", &m_showCfg)) {
         ImGui::End();
         return false;
     }
@@ -36,7 +36,7 @@ bool PCSX::SPU::impl::configure() {
 
     std::string currentBackend = settings.get<Backend>();
     std::string currentDevice = settings.get<Device>();
-    if (ImGui::BeginCombo(_("Backend"), currentBackend.c_str())) {
+    if (ImGui::BeginCombo("Backend", currentBackend.c_str())) {
         for (auto &b : backends) {
             if (ImGui::Selectable(b.c_str(), currentBackend == b)) {
                 settings.get<Backend>() = b;
@@ -45,7 +45,7 @@ bool PCSX::SPU::impl::configure() {
         }
         ImGui::EndCombo();
     }
-    if (ImGui::BeginCombo(_("Device"), currentDevice.c_str())) {
+    if (ImGui::BeginCombo("Device", currentDevice.c_str())) {
         for (auto &d : devices) {
             if (ImGui::Selectable(d.c_str(), currentDevice == d)) {
                 settings.get<Device>() = d;
@@ -54,35 +54,35 @@ bool PCSX::SPU::impl::configure() {
         }
         ImGui::EndCombo();
     }
-    deviceChanged |= ImGui::Checkbox(_("Use Null Sync"), &settings.get<NullSync>().value);
-    ImGuiHelpers::ShowHelpMarker(_(R"(More precise CPU-SPU synchronization,
-at the cost of extra power required.)"));
+    deviceChanged |= ImGui::Checkbox("Use Null Sync", &settings.get<NullSync>().value);
+    ImGuiHelpers::ShowHelpMarker(R"(More precise CPU-SPU synchronization,
+at the cost of extra power required.)");
     if (deviceChanged) {
         m_audioOut.reinit();
     }
     changed = deviceChanged;
 
-    if (ImGui::Checkbox(_("Muted"), &settings.get<Mute>().value)) {
+    if (ImGui::Checkbox("Muted", &settings.get<Mute>().value)) {
         changed = true;
         m_audioOut.updatePlaybackMute();
     }
-    changed |= ImGui::Checkbox(_("Enable streaming"), &settings.get<Streaming>().value);
-    ImGuiHelpers::ShowHelpMarker(_(R"(Uncheck this to mute the streaming channel
+    changed |= ImGui::Checkbox("Enable streaming", &settings.get<Streaming>().value);
+    ImGuiHelpers::ShowHelpMarker(R"(Uncheck this to mute the streaming channel
 from the main CPU to the SPU. This includes
-XA audio and audio tracks.)"));
-    const char *volumeValues[] = {_("Low"), _("Medium"), _("Loud"), _("Loudest")};
-    changed |= ImGui::Combo(_("Volume"), &settings.get<Volume>().value, volumeValues, IM_ARRAYSIZE(volumeValues));
-    const char *interpolationValues[] = {_("None - fastest"), _("Simple interpolation"),
-                                         _("Gaussian interpolation - good quality"),
-                                         _("Cubic interpolation - better treble")};
-    changed |= ImGui::Combo(_("Interpolation"), &settings.get<Interpolation>().value, interpolationValues,
+XA audio and audio tracks.)");
+    const char *volumeValues[] = {"Low", "Medium", "Loud", "Loudest"};
+    changed |= ImGui::Combo("Volume", &settings.get<Volume>().value, volumeValues, IM_ARRAYSIZE(volumeValues));
+    const char *interpolationValues[] = {"None - fastest", "Simple interpolation",
+                                         "Gaussian interpolation - good quality",
+                                         "Cubic interpolation - better treble"};
+    changed |= ImGui::Combo("Interpolation", &settings.get<Interpolation>().value, interpolationValues,
                             IM_ARRAYSIZE(interpolationValues));
-    changed |= ImGui::Checkbox(C_("Audio channels", "Mono"), &settings.get<Mono>().value);
-    ImGuiHelpers::ShowHelpMarker(_("Downmixes stereo to mono."));
-    changed |= ImGui::InputInt(_("Speed multiplier"), &settings.get<Speed>().value);
-    ImGuiHelpers::ShowHelpMarker(_(R"(Emulation speed, applied at the audio sink (the master clock).
+    changed |= ImGui::Checkbox("Mono", &settings.get<Mono>().value);
+    ImGuiHelpers::ShowHelpMarker("Downmixes stereo to mono.");
+    changed |= ImGui::InputInt("Speed multiplier", &settings.get<Speed>().value);
+    ImGuiHelpers::ShowHelpMarker(R"(Emulation speed, applied at the audio sink (the master clock).
 1 = realtime, N = N times faster. Frames are skipped, not resampled, so pitch is preserved.
-0 or less = unbounded: run as fast as the host allows.)"));
+0 or less = unbounded: run as fast as the host allows.)");
 
     ImGui::End();
     if (changed) invalidateCapture();

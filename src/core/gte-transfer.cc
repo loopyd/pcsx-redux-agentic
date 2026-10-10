@@ -109,7 +109,7 @@ void PCSX::GTE::LWC2(uint32_t code) {
     uint32_t addr = g_emulator->m_cpu->m_regs.GPR.r[_Rs_] + _Imm_;
     if (addr & 3) {
         g_emulator->m_cpu->m_regs.pc -= 4;
-        g_system->log(LogClass::CPU, _("Unaligned address 0x%08x in LWC2 from 0x%08x\n"), addr,
+        g_system->log(LogClass::CPU, "Unaligned address 0x%08x in LWC2 from 0x%08x\n", addr,
                       g_emulator->m_cpu->m_regs.pc);
         g_emulator->m_cpu->m_regs.CP0.n.BadVAddr = addr;
         g_emulator->m_cpu->exception(R3000Acpu::Exception::LoadAddressError, g_emulator->m_cpu->m_inDelaySlot);
@@ -122,7 +122,7 @@ void PCSX::GTE::SWC2(uint32_t code) {
     uint32_t addr = g_emulator->m_cpu->m_regs.GPR.r[_Rs_] + _Imm_;
     if (addr & 3) {
         g_emulator->m_cpu->m_regs.pc -= 4;
-        g_system->log(LogClass::CPU, _("Unaligned address 0x%08x in SWC2 from 0x%08x\n"), addr,
+        g_system->log(LogClass::CPU, "Unaligned address 0x%08x in SWC2 from 0x%08x\n", addr,
                       g_emulator->m_cpu->m_regs.pc);
         g_emulator->m_cpu->m_regs.CP0.n.BadVAddr = addr;
         g_emulator->m_cpu->exception(R3000Acpu::Exception::StoreAddressError, g_emulator->m_cpu->m_inDelaySlot);

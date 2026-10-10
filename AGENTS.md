@@ -4,7 +4,9 @@ Build a Linux emulator for agentic coding, reverse engineering, and behavioral
 analysis. Use the Make host graph; preserve PSX guest toolchains, vendor sources,
 recursive pins, license notices, and upstream authorship. Do not restore Apple,
 Windows, Visual Studio, VS Code configuration, Docker, CodeRabbit, or hosted cloud
-build/test/release automation.
+build/test/release automation. Ship English (`en_US`) only; do not restore translation
+catalogues, locale settings, language selectors, or translation wrappers. Preserve
+character decoding and fonts needed to inspect PSX guest data.
 
 Read `skills/psx-emulator/SKILL.md` for runtime work. Prefer existing missions and
 native bounded bulk APIs with thin Lua wrappers. Preserve owner-thread admission,

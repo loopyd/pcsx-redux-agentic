@@ -15,8 +15,6 @@ PACKAGES := capstone freetype2 libavcodec libavformat libavutil libswresample li
 OPTIONAL_PACKAGES := md4c fmt libllhttp libluv liburiparser
 OPTIONAL_LIBRARIES := multipart ucl
 
-LOCALES := el es_ES fr ja pt_BR sv uk zh_CN
-
 # One sentinel per submodule the build globs sources from. Checking imgui alone let a checkout
 # that had imgui but not implot report submodules present and then fail at compile time on a
 # missing implot/implot.h, which is a much worse place to find out.
@@ -290,13 +288,11 @@ install: all strip
 	$(MKDIRP) $(DESTDIR)/share/applications
 	$(MKDIRP) $(DESTDIR)/share/icons/hicolor/256x256/apps
 	$(MKDIRP) $(DESTDIR)/share/pcsx-redux/fonts
-	$(MKDIRP) $(DESTDIR)/share/pcsx-redux/i18n
 	$(MKDIRP) $(DESTDIR)/share/pcsx-redux/resources
 	$(CP) $(TARGET) $(DESTDIR)/bin
 	$(CP) resources/pcsx-redux.desktop $(DESTDIR)/share/applications
 	convert resources/pcsx-redux.ico[0] -alpha on -background none $(DESTDIR)/share/icons/hicolor/256x256/apps/pcsx-redux.png
 	$(CP) third_party/noto/* $(DESTDIR)/share/pcsx-redux/fonts
-	$(CP) i18n/*.po $(DESTDIR)/share/pcsx-redux/i18n
 	$(CP) resources/*.ico $(DESTDIR)/share/pcsx-redux/resources
 	$(CP) resources/*.lua $(DESTDIR)/share/pcsx-redux/resources
 
@@ -366,20 +362,6 @@ gitclean:
 	git clean -f -d -x
 	git submodule foreach --recursive git clean -f -d -x
 
-define msgmerge
--msgmerge --update i18n/$(1).po i18n/pcsx-redux.pot
-
-endef
-
-regen-i18n:
-	find src -name *.cc -or -name *.c -or -name *.h | sort -u > pcsx-src-list.txt
-	xgettext --from-code=utf-8 --keyword=_ --keyword=f_ --keyword=l_ --keyword=C_:1c,2 --keyword=lC_:1c,2 --language=C++ --add-comments --sort-by-file -o i18n/pcsx-redux.pot -f pcsx-src-list.txt
-	find src -name *.lua | sort -u > pcsx-src-list.txt
-	xgettext --from-code=utf-8 --keyword=t_ --language=Lua --join-existing --sort-by-file -o i18n/pcsx-redux.pot -f pcsx-src-list.txt
-	sed '/POT-Creation-Date/d' -i i18n/pcsx-redux.pot
-	rm pcsx-src-list.txt
-	$(foreach l,$(LOCALES),$(call msgmerge,$(l)))
-
 bins/$(BUILD)/pcsx-redux-tests: $(TESTS_OBJECTS) $(NONMAIN_OBJECTS) $(LIBS) objs/$(BUILD)/gtest-all.o objs/$(BUILD)/gtest_main.o
 	@$(MKDIRP) $(dir $@)
 	$(LD) -o bins/$(BUILD)/pcsx-redux-tests $(NONMAIN_OBJECTS) $(LIBS) objs/$(BUILD)/gtest-all.o objs/$(BUILD)/gtest_main.o $(TESTS_OBJECTS) -Ithird_party/googletest/googletest/include $(LDFLAGS)
@@ -406,15 +388,13 @@ tools: check_submodules dep $(TOOLS)
 
 dep: check_submodules $(DEPS)
 
-.PHONY: all dep clean gitclean regen-i18n runtests openbios install strip appimage tools $(TOOLS) $(TARGET)
+.PHONY: all dep clean gitclean runtests openbios install strip appimage tools $(TOOLS) $(TARGET)
 
-ifneq ($(MAKECMDGOALS), regen-i18n)
 ifneq ($(MAKECMDGOALS), clean)
 ifneq ($(MAKECMDGOALS), cleanall)
 ifneq ($(MAKECMDGOALS), gitclean)
 ifeq ($(HAS_SUBMODULES), true)
 -include $(DEPS)
-endif
 endif
 endif
 endif

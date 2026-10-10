@@ -60,20 +60,20 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
     bool showExportMemoryCardDialog = false;
 
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu(_("File"))) {
-            if (ImGui::MenuItem(_("Import file into memory card 1"))) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Import file into memory card 1")) {
                 showImportMemoryCardDialog = true;
                 m_memoryCardImportExportIndex = 1;
             }
-            if (ImGui::MenuItem(_("Import file into memory card 2"))) {
+            if (ImGui::MenuItem("Import file into memory card 2")) {
                 showImportMemoryCardDialog = true;
                 m_memoryCardImportExportIndex = 2;
             }
-            if (ImGui::MenuItem(_("Export memory card 1 to file"))) {
+            if (ImGui::MenuItem("Export memory card 1 to file")) {
                 showExportMemoryCardDialog = true;
                 m_memoryCardImportExportIndex = 1;
             }
-            if (ImGui::MenuItem(_("Export memory card 2 to file"))) {
+            if (ImGui::MenuItem("Export memory card 2 to file")) {
                 showExportMemoryCardDialog = true;
                 m_memoryCardImportExportIndex = 2;
             }
@@ -118,7 +118,7 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
     }
     bool isLatest = m_undo.size() == m_undoIndex;
     const bool wasLatest = isLatest;
-    if (ImGui::SliderInt(_("Undo"), &m_undoIndex, 0, m_undo.size(), "")) {
+    if (ImGui::SliderInt("Undo", &m_undoIndex, 0, m_undo.size(), "")) {
         isLatest = m_undo.size() == m_undoIndex;
         const auto dataCard1 = g_emulator->m_sio->getMcdData(1);
         const auto dataCard2 = g_emulator->m_sio->getMcdData(2);
@@ -138,49 +138,49 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
         g_emulator->m_sio->saveMcd(1);
         g_emulator->m_sio->saveMcd(2);
     }
-    ImGui::TextUnformatted(_("Undo version:"));
+    ImGui::TextUnformatted("Undo version:");
     ImGui::SameLine();
     if (isLatest) {
-        ImGui::TextUnformatted(_("Latest"));
+        ImGui::TextUnformatted("Latest");
     } else {
         ImGui::TextWrapped("%s", m_undo[m_undoIndex].first.c_str());
     }
     if (undoDisabled) {
         ImGui::EndDisabled();
     }
-    if (ImGui::Button(_("Clear Undo buffer"))) {
+    if (ImGui::Button("Clear Undo buffer")) {
         clearUndoBuffer();
     }
 
     // Insert or remove memory cards. Send a SIO IRQ to the emulator if this happens as well.
-    if (ImGui::Checkbox(_("Memory Card 1 inserted"),
+    if (ImGui::Checkbox("Memory Card 1 inserted",
                         &g_emulator->settings.get<Emulator::SettingMcd1Inserted>().value)) {
         changed = true;
     }
-    if (ImGui::Checkbox(_("Memory Card 2 inserted"),
+    if (ImGui::Checkbox("Memory Card 2 inserted",
                         &g_emulator->settings.get<Emulator::SettingMcd2Inserted>().value)) {
         changed = true;
     }
 
-    if (ImGui::Checkbox(_("Card 1 Pocketstation"),
+    if (ImGui::Checkbox("Card 1 Pocketstation",
                         &g_emulator->settings.get<Emulator::SettingMcd1Pocketstation>().value)) {
         g_emulator->m_sio->togglePocketstationMode();
         changed = true;
     }
     ImGuiHelpers::ShowHelpMarker(
-        _("Experimental. Emulator will attempt to send artificial responses to Pocketstation commands, possibly "
-          "allowing apps to be saved/exported."));
-    if (ImGui::Checkbox(_("Card 2 Pocketstation"),
+        "Experimental. Emulator will attempt to send artificial responses to Pocketstation commands, possibly "
+          "allowing apps to be saved/exported.");
+    if (ImGui::Checkbox("Card 2 Pocketstation",
                         &g_emulator->settings.get<Emulator::SettingMcd2Pocketstation>().value)) {
         g_emulator->m_sio->togglePocketstationMode();
         changed = true;
     }
     ImGuiHelpers::ShowHelpMarker(
-        _("Experimental. Emulator will attempt to send artificial responses to Pocketstation commands, possibly "
-          "allowing apps to be saved/exported."));
+        "Experimental. Emulator will attempt to send artificial responses to Pocketstation commands, possibly "
+          "allowing apps to be saved/exported.");
 
-    ImGui::SliderInt(_("Icon size"), &m_iconSize, 16, 512);
-    if (ImGui::Checkbox(_("Draw Pocketstation icons"), &m_drawPocketstationIcons)) {
+    ImGui::SliderInt("Icon size", &m_iconSize, 16, 512);
+    if (ImGui::Checkbox("Draw Pocketstation icons", &m_drawPocketstationIcons)) {
         glDeleteTextures(15, m_iconTextures);  // Recreate our textures to fit our new format
         initTextures();
     }
@@ -194,12 +194,12 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
         unsigned otherFreeSpace = g_emulator->m_sio->getFreeSpace(othercard);
 
         if (ImGui::BeginTable("Memory card information", 6, flags)) {
-            ImGui::TableSetupColumn(_("Block number"));
-            ImGui::TableSetupColumn(_("Icon"));
-            ImGui::TableSetupColumn(_("Title"));
+            ImGui::TableSetupColumn("Block number");
+            ImGui::TableSetupColumn("Icon");
+            ImGui::TableSetupColumn("Title");
             ImGui::TableSetupColumn("ID");
-            ImGui::TableSetupColumn(_("Filename"));
-            ImGui::TableSetupColumn(_("Action"));
+            ImGui::TableSetupColumn("Filename");
+            ImGui::TableSetupColumn("Action");
             ImGui::TableHeadersRow();
 
             for (auto i = 1; i < 16; i++) {
@@ -217,12 +217,12 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
                 ImGui::TableSetColumnIndex(2);
                 if (block.isChained()) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-                    ImGui::TextUnformatted(_("Chained block"));
+                    ImGui::TextUnformatted("Chained block");
                     ImGui::PopStyleColor();
                     continue;
                 } else if (block.isErased()) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-                    ImGui::TextUnformatted(_("Free block"));
+                    ImGui::TextUnformatted("Free block");
                     ImGui::PopStyleColor();
                     continue;
                 } else {
@@ -235,23 +235,23 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
                 ImGui::TableSetColumnIndex(3);
                 ImGui::TextUnformatted(block.id.c_str());
                 ImGui::TableSetColumnIndex(4);
-                ImGui::Text(_("%s (%dKB)"), block.name.c_str(), block.fileSize / 1024);
+                ImGui::Text("%s (%dKB)", block.name.c_str(), block.fileSize / 1024);
                 ImGui::TableSetColumnIndex(5);
 
                 // We have to suffix the action button names with ##number because Imgui
                 // can't handle multiple buttons with the same name well
-                auto buttonName = fmt::format(f_("Erase##{}"), i);
+                auto buttonName = fmt::format("Erase##{}", i);
                 if (ImGui::SmallButton(buttonName.c_str())) {
                     auto latest = getLatest();
                     g_emulator->m_sio->eraseMcdFile(block);
                     saveUndoBuffer(std::move(latest),
-                                   fmt::format(f_("Erased file {}({}) off card {}"), block.number,
+                                   fmt::format("Erased file {}({}) off card {}", block.number,
                                                gui->hasJapanese() ? block.titleUtf8 : block.titleAscii, block.mcd));
                     g_emulator->m_sio->saveMcd(card);
                 }
                 ImGui::SameLine();
 
-                buttonName = fmt::format(f_("Copy##{}"), i);
+                buttonName = fmt::format("Copy##{}", i);
                 if (otherFreeSpace >= size) {
                     if (ImGui::SmallButton(buttonName.c_str())) {
                         auto latest = getLatest();
@@ -261,7 +261,7 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
                         } else {
                             saveUndoBuffer(
                                 std::move(latest),
-                                fmt::format(f_("Copied file {}({}) from card {} to card {}"), block.number,
+                                fmt::format("Copied file {}({}) from card {} to card {}", block.number,
                                             gui->hasJapanese() ? block.titleUtf8 : block.titleAscii, card, othercard));
                             g_emulator->m_sio->saveMcd(othercard);
                         }
@@ -273,7 +273,7 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
                 }
                 ImGui::SameLine();
 
-                buttonName = fmt::format(f_("Move##{}"), i);
+                buttonName = fmt::format("Move##{}", i);
                 if (otherFreeSpace >= size) {
                     if (ImGui::SmallButton(buttonName.c_str())) {
                         auto latest = getLatest();
@@ -284,7 +284,7 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
                             g_emulator->m_sio->eraseMcdFile(block);
                             saveUndoBuffer(
                                 std::move(latest),
-                                fmt::format(f_("Moved file {}({}) from card {} to card {}"), block.number,
+                                fmt::format("Moved file {}({}) from card {} to card {}", block.number,
                                             gui->hasJapanese() ? block.titleUtf8 : block.titleAscii, card, othercard));
                             g_emulator->m_sio->saveMcd(1);
                             g_emulator->m_sio->saveMcd(2);
@@ -297,13 +297,13 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
                 }
                 ImGui::SameLine();
 
-                buttonName = fmt::format(f_("Export PNG##{}"), i);
+                buttonName = fmt::format("Export PNG##{}", i);
                 if (ImGui::SmallButton(buttonName.c_str())) {
                     exportPNG(block);
                 }
                 ImGui::SameLine();
 
-                buttonName = fmt::format(f_("Copy icon##{}"), i);
+                buttonName = fmt::format("Copy icon##{}", i);
                 if (ImGui::SmallButton(buttonName.c_str())) {
                     copyToClipboard(block);
                 }
@@ -313,11 +313,11 @@ bool PCSX::Widgets::MemcardManager::draw(GUI* gui, const char* title) {
     };
 
     if (ImGui::BeginTabBar("Cards")) {
-        if (ImGui::BeginTabItem(_("Memory Card 1"))) {
+        if (ImGui::BeginTabItem("Memory Card 1")) {
             draw(1, 2);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem(_("Memory Card 2"))) {
+        if (ImGui::BeginTabItem("Memory Card 2")) {
             draw(2, 1);
             ImGui::EndTabItem();
         }

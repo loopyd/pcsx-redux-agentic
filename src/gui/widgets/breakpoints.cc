@@ -37,17 +37,17 @@ static uint32_t getValueAboutToWrite(PCSX::R3000Acpu& cpu) {
 static const char* getBreakpointConditionName(PCSX::Debug::BreakpointCondition condition) {
     switch (condition) {
         case PCSX::Debug::BreakpointCondition::Always:
-            return C_("Breakpoint condition", "Always");
+            return "Always";
         case PCSX::Debug::BreakpointCondition::Greater:
-            return C_("Breakpoint condition", "Greater");
+            return "Greater";
         case PCSX::Debug::BreakpointCondition::Less:
-            return C_("Breakpoint condition", "Less");
+            return "Less";
         case PCSX::Debug::BreakpointCondition::Change:
-            return C_("Breakpoint condition", "Change");
+            return "Change";
         case PCSX::Debug::BreakpointCondition::Equal:
-            return C_("Breakpoint condition", "Equal");
+            return "Equal";
     }
-    return _("Unknown");
+    return "Unknown";
 }
 
 static uint32_t getMemoryValue(uint32_t addr, int width, bool isSigned) {
@@ -126,8 +126,8 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
                     }
                 }
                 if (ImGui::BeginPopupContextItem()) {
-                    ImGui::TextUnformatted(_("Delete Breakpoint?"));
-                    if (ImGui::Button(_("Delete"))) {
+                    ImGui::TextUnformatted("Delete Breakpoint?");
+                    if (ImGui::Button("Delete")) {
                         toErase = &*bp;
                         ImGui::CloseCurrentPopup();
                     }
@@ -173,14 +173,14 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
         }
     }
 
-    if (ImGui::Button(_("Add Breakpoint..."))) {
+    if (ImGui::Button("Add Breakpoint...")) {
         ImGui::OpenPopup("BreakpointPopup");
     }
 
     if (ImGui::BeginPopupContextItem("BreakpointPopup")) {
-        ImGui::InputText(_("Address"), m_bpAddressString, sizeof(m_bpAddressString),
+        ImGui::InputText("Address", m_bpAddressString, sizeof(m_bpAddressString),
                          ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_AutoSelectAll);
-        if (ImGui::BeginCombo(_("Type"), Debug::s_breakpoint_type_names[m_breakpointType]())) {
+        if (ImGui::BeginCombo("Type", Debug::s_breakpoint_type_names[m_breakpointType]())) {
             for (int i = 0; i < 3; i++) {
                 if (ImGui::Selectable(Debug::s_breakpoint_type_names[i](), m_breakpointType == i)) {
                     m_breakpointType = i;
@@ -192,13 +192,13 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
         static int range = 8;
         static int width = 1;
         if (m_breakpointType != (int)Debug::BreakpointType::Exec) {
-            ImGui::RadioButton(C_("Memory access width", "Byte"), &width, 1);
-            ImGui::RadioButton(C_("Memory access width", "Half"), &width, 2);
-            ImGui::RadioButton(C_("Memory access width", "Word"), &width, 4);
-            ImGui::RadioButton(_("Range"), &width, 0);
+            ImGui::RadioButton("Byte", &width, 1);
+            ImGui::RadioButton("Half", &width, 2);
+            ImGui::RadioButton("Word", &width, 4);
+            ImGui::RadioButton("Range", &width, 0);
 
             if (width == 0) {
-                ImGui::InputInt(_("Byte Width"), &range);
+                ImGui::InputInt("Byte Width", &range);
             }
         }
 
@@ -213,7 +213,7 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
         Debug::BreakpointCondition breakCondition = Debug::BreakpointCondition::Always;
         Debug::BreakpointType type = (Debug::BreakpointType)m_breakpointType;
         if (type != Debug::BreakpointType::Exec) {
-            ImGui::Combo(_("Break Condition"), &breakConditionImguiValue, _("Always\0Change\0Greater\0Less\0Equal\0"));
+            ImGui::Combo("Break Condition", &breakConditionImguiValue, "Always\0Change\0Greater\0Less\0Equal\0");
             breakCondition = (Debug::BreakpointCondition)breakConditionImguiValue;
 
             switch (breakCondition) {
@@ -225,21 +225,21 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
                 case Debug::BreakpointCondition::Equal:
                 case Debug::BreakpointCondition::Less:
                 case Debug::BreakpointCondition::Greater:
-                    ImGui::InputInt(_("Value"), &conditionVal);
+                    ImGui::InputInt("Value", &conditionVal);
                     uint32_t curVal = getMemoryValue(breakpointAddress, actualWidth, false);
                     std::string buttonStr = fmt::format("{:08x} ({})", curVal, curVal);
                     if (ImGui::Button(buttonStr.c_str())) {
                         conditionVal = curVal;
                     }
                     ImGui::SameLine();
-                    ImGui::TextUnformatted(_("Current Value"));
+                    ImGui::TextUnformatted("Current Value");
                     break;
             }
         }
 
-        ImGui::InputText(_("Label"), m_bpLabelString, sizeof(m_bpLabelString));
+        ImGui::InputText("Label", m_bpLabelString, sizeof(m_bpLabelString));
 
-        if (ImGui::Button(_("Add"))) {
+        if (ImGui::Button("Add")) {
             if (*m_bpAddressString && !*endPtr) {
                 Debug::BreakpointType bpType = Debug::BreakpointType(m_breakpointType);
 
@@ -277,7 +277,7 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
                                     break;
                             }
                             if (doBreak) {
-                                g_system->printf(_("Breakpoint condition met! Type:%s writing:%d condVal:%d\n"),
+                                g_system->printf("Breakpoint condition met! Type:%s writing:%d condVal:%d\n",
                                                  getBreakpointConditionName(self->condition()), curVal,
                                                  self->conditionData());
                                 g_system->pause();
@@ -308,7 +308,7 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
                                     break;
                             }
                             if (doBreak) {
-                                g_system->printf(_("Breakpoint condition met! Type:%s reading:%d condVal:%d\n"),
+                                g_system->printf("Breakpoint condition met! Type:%s reading:%d condVal:%d\n",
                                                  getBreakpointConditionName(self->condition()), curVal,
                                                  self->conditionData());
                                 g_system->pause();
@@ -335,7 +335,7 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
                 }
 
                 Debug::Breakpoint* bp = debugger->addBreakpoint(
-                    breakpointAddress, bpType, (bpType == Debug::BreakpointType::Exec) ? 4 : actualWidth, _("GUI"),
+                    breakpointAddress, bpType, (bpType == Debug::BreakpointType::Exec) ? 4 : actualWidth, "GUI",
                     m_bpLabelString, invoker);
 
                 bp->setCondition(breakCondition);
@@ -353,26 +353,26 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
 
     if (!tree.empty()) {
         ImGui::SameLine();
-        if (ImGui::Button(_("Activate All"))) {
+        if (ImGui::Button("Activate All")) {
             for (auto bp = tree.begin(); bp != tree.end(); bp++) {
                 bp->enable();
             }
         }
 
         ImGui::SameLine();
-        if (ImGui::Button(_("Deactivate All"))) {
+        if (ImGui::Button("Deactivate All")) {
             for (auto bp = tree.begin(); bp != tree.end(); bp++) {
                 bp->disable();
             }
         }
 
         ImGui::SameLine();
-        if (ImGui::Button(_("Delete All"))) {
+        if (ImGui::Button("Delete All")) {
             ImGui::OpenPopup("delbp_popup");
         }
         if (ImGui::BeginPopup("delbp_popup")) {
-            ImGui::TextUnformatted(_("Delete all Breakpoints?"));
-            if (ImGui::Button(_("Delete"))) {
+            ImGui::TextUnformatted("Delete all Breakpoints?");
+            if (ImGui::Button("Delete")) {
                 g_emulator->m_debug->removeAllBreakpoints();
             }
             ImGui::EndPopup();
@@ -380,44 +380,44 @@ void PCSX::Widgets::Breakpoints::draw(const char* title) {
     }
 
     ImGui::Separator();
-    if (ImGui::TreeNode(_("Execution Map"))) {
-        if (ImGui::Button(_("Clear maps"))) {
+    if (ImGui::TreeNode("Execution Map")) {
+        if (ImGui::Button("Clear maps")) {
             debugger->clearMaps();
         }
         ImGuiHelpers::ShowHelpMarker(
-            _("The mapping feature is a simple concept, but requires some amount of explanation. See the documentation "
-              "website for more details, in the Misc Features subsection of the Debugging section."));
-        ImGui::Checkbox(_("Map execution"), &debugger->m_mapping_e);
+            "The mapping feature is a simple concept, but requires some amount of explanation. See the documentation "
+              "website for more details, in the Misc Features subsection of the Debugging section.");
+        ImGui::Checkbox("Map execution", &debugger->m_mapping_e);
         if (ImGui::BeginTable("MapFlags", 3, ImGuiTableFlags_SizingFixedFit)) {
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Map byte reads"), &debugger->m_mapping_r8);
+            ImGui::Checkbox("Map byte reads", &debugger->m_mapping_r8);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Map half reads"), &debugger->m_mapping_r16);
+            ImGui::Checkbox("Map half reads", &debugger->m_mapping_r16);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Map word reads"), &debugger->m_mapping_r32);
+            ImGui::Checkbox("Map word reads", &debugger->m_mapping_r32);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Map byte writes"), &debugger->m_mapping_w8);
+            ImGui::Checkbox("Map byte writes", &debugger->m_mapping_w8);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Map half writes"), &debugger->m_mapping_w16);
+            ImGui::Checkbox("Map half writes", &debugger->m_mapping_w16);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Map word writes"), &debugger->m_mapping_w32);
+            ImGui::Checkbox("Map word writes", &debugger->m_mapping_w32);
             ImGui::EndTable();
         }
         ImGui::Separator();
-        ImGui::Checkbox(_("Break on execution map"), &debugger->m_breakmp_e);
+        ImGui::Checkbox("Break on execution map", &debugger->m_breakmp_e);
         if (ImGui::BeginTable("BreakFlags", 3, ImGuiTableFlags_SizingFixedFit)) {
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Break on byte read map"), &debugger->m_breakmp_r8);
+            ImGui::Checkbox("Break on byte read map", &debugger->m_breakmp_r8);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Break on half read map"), &debugger->m_breakmp_r16);
+            ImGui::Checkbox("Break on half read map", &debugger->m_breakmp_r16);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Break on word read map"), &debugger->m_breakmp_r32);
+            ImGui::Checkbox("Break on word read map", &debugger->m_breakmp_r32);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Break on byte write map"), &debugger->m_breakmp_w8);
+            ImGui::Checkbox("Break on byte write map", &debugger->m_breakmp_w8);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Break on half write map"), &debugger->m_breakmp_w16);
+            ImGui::Checkbox("Break on half write map", &debugger->m_breakmp_w16);
             ImGui::TableNextColumn();
-            ImGui::Checkbox(_("Break on word write map"), &debugger->m_breakmp_w32);
+            ImGui::Checkbox("Break on word write map", &debugger->m_breakmp_w32);
             ImGui::EndTable();
         }
         ImGui::TreePop();

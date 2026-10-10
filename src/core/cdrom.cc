@@ -1943,9 +1943,9 @@ void PCSX::CDRom::parseIso() {
         }
     }
 
-    g_system->printf(_("CD-ROM Label: %.32s\n"), m_cdromLabel);
-    g_system->printf(_("CD-ROM ID: %.9s\n"), m_cdromId);
-    g_system->printf(_("CD-ROM EXE Name: %.255s\n"), exename);
+    g_system->printf("CD-ROM Label: %.32s\n", m_cdromLabel);
+    g_system->printf("CD-ROM ID: %.9s\n", m_cdromId);
+    g_system->printf("CD-ROM EXE Name: %.255s\n", exename);
 }
 
 bool PCSX::CDRom::isLidOpen() {

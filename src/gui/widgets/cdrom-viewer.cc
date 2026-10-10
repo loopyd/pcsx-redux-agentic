@@ -341,34 +341,34 @@ void PCSX::Widgets::CDRomViewer::draw(GUI *gui) {
     bool openSeekColorPicker = false;
 
     auto flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_MenuBar;
-    if (ImGui::Begin(_("CD-ROM Viewer"), &m_show, flags)) {
+    if (ImGui::Begin("CD-ROM Viewer", &m_show, flags)) {
         m_DPI = ImGui::GetWindowDpiScale();
         if (!m_firstShown) {
             resetView();
             m_firstShown = true;
         }
         if (ImGui::BeginMenuBar()) {
-            if (ImGui::BeginMenu(_("View"))) {
-                if (ImGui::MenuItem(_("Reset view"))) resetView();
+            if (ImGui::BeginMenu("View")) {
+                if (ImGui::MenuItem("Reset view")) resetView();
                 ImGui::Separator();
-                ImGui::MenuItem(_("Polar disc layout"), nullptr, &m_polarMode);
+                ImGui::MenuItem("Polar disc layout", nullptr, &m_polarMode);
                 ImGui::Separator();
-                ImGui::MenuItem(_("Show data reads"), nullptr, &m_showData);
-                ImGui::MenuItem(_("Show audio (CDDA)"), nullptr, &m_showAudio);
-                ImGui::MenuItem(_("Show seeks"), nullptr, &m_showSeek);
+                ImGui::MenuItem("Show data reads", nullptr, &m_showData);
+                ImGui::MenuItem("Show audio (CDDA)", nullptr, &m_showAudio);
+                ImGui::MenuItem("Show seeks", nullptr, &m_showSeek);
                 ImGui::Separator();
-                ImGui::MenuItem(_("Show Shader Editor"), nullptr, &m_editor.m_show);
+                ImGui::MenuItem("Show Shader Editor", nullptr, &m_editor.m_show);
                 ImGui::EndMenu();
             }
             ImGui::Separator();
-            if (ImGui::BeginMenu(_("Configuration"))) {
-                ImGui::MenuItem(_("Select data color"), nullptr, &openDataColorPicker);
-                ImGui::MenuItem(_("Select audio color"), nullptr, &openAudioColorPicker);
-                ImGui::MenuItem(_("Select seek color"), nullptr, &openSeekColorPicker);
+            if (ImGui::BeginMenu("Configuration")) {
+                ImGui::MenuItem("Select data color", nullptr, &openDataColorPicker);
+                ImGui::MenuItem("Select audio color", nullptr, &openAudioColorPicker);
+                ImGui::MenuItem("Select seek color", nullptr, &openSeekColorPicker);
                 ImGui::Separator();
                 auto *logger = g_emulator->m_cdromLogger.get();
                 float halfLifeMs = logger->m_decayHalfLife / 33868.8f;
-                if (ImGui::SliderFloat(_("Decay half-life (ms)"), &halfLifeMs, 100.0f, 30000.0f, "%.0f",
+                if (ImGui::SliderFloat("Decay half-life (ms)", &halfLifeMs, 100.0f, 30000.0f, "%.0f",
                                        ImGuiSliderFlags_Logarithmic)) {
                     logger->m_decayHalfLife = halfLifeMs * 33868.8f;
                 }
@@ -390,34 +390,34 @@ void PCSX::Widgets::CDRomViewer::draw(GUI *gui) {
         drawDisc(gui);
     }
 
-    if (openDataColorPicker) ImGui::OpenPopup(_("Data Color Picker"));
-    if (ImGui::BeginPopupModal(_("Data Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (openDataColorPicker) ImGui::OpenPopup("Data Color Picker");
+    if (ImGui::BeginPopupModal("Data Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##DataColorPicker", (float *)&m_dataColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    if (openAudioColorPicker) ImGui::OpenPopup(_("Audio Color Picker"));
-    if (ImGui::BeginPopupModal(_("Audio Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (openAudioColorPicker) ImGui::OpenPopup("Audio Color Picker");
+    if (ImGui::BeginPopupModal("Audio Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##AudioColorPicker", (float *)&m_audioColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    if (openSeekColorPicker) ImGui::OpenPopup(_("Seek Color Picker"));
-    if (ImGui::BeginPopupModal(_("Seek Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (openSeekColorPicker) ImGui::OpenPopup("Seek Color Picker");
+    if (ImGui::BeginPopupModal("Seek Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##SeekColorPicker", (float *)&m_seekColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     ImGui::End();
 
     if (m_editor.m_show) {
-        bool changed = m_editor.draw(gui, _("CD-ROM Shader Editor"));
+        bool changed = m_editor.draw(gui, "CD-ROM Shader Editor");
         if (changed) compileShader(gui);
     }
 }

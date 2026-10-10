@@ -335,12 +335,12 @@ uint32_t PCSX::GPU::gpuDmaChainSize(uint32_t addr) {
             addr &= 0xfffffffc;
             switch (g_emulator->m_mem->msanGetStatus<4>(addr)) {
                 case PCSX::MsanStatus::UNINITIALIZED:
-                    g_system->log(LogClass::GPU, _("GPU DMA went into usable but uninitialized msan memory: %8.8lx\n"),
+                    g_system->log(LogClass::GPU, "GPU DMA went into usable but uninitialized msan memory: %8.8lx\n",
                                   addr);
                     g_system->testQuit(PCSX::Memory::c_msanExitCode);
                     return size;
                 case PCSX::MsanStatus::UNUSABLE:
-                    g_system->log(LogClass::GPU, _("GPU DMA went into unusable msan memory: %8.8lx\n"), addr);
+                    g_system->log(LogClass::GPU, "GPU DMA went into unusable msan memory: %8.8lx\n", addr);
                     g_system->testQuit(PCSX::Memory::c_msanExitCode);
                     return size;
                 case PCSX::MsanStatus::OK:
@@ -656,12 +656,12 @@ void PCSX::GPU::chainedDMAWrite(const uint32_t *memory, uint32_t hwAddr) {
             const uint32_t *headerPtr = (uint32_t *)(g_emulator->m_mem->m_msanRAM + (addr - PCSX::Memory::c_msanStart));
             switch (g_emulator->m_mem->msanGetStatus<4>(addr)) {
                 case PCSX::MsanStatus::UNINITIALIZED:
-                    g_system->log(LogClass::GPU, _("GPU DMA went into usable but uninitialized msan memory: %8.8lx\n"),
+                    g_system->log(LogClass::GPU, "GPU DMA went into usable but uninitialized msan memory: %8.8lx\n",
                                   addr);
                     g_system->testQuit(PCSX::Memory::c_msanExitCode);
                     return;
                 case PCSX::MsanStatus::UNUSABLE:
-                    g_system->log(LogClass::GPU, _("GPU DMA went into unusable msan memory: %8.8lx\n"), addr);
+                    g_system->log(LogClass::GPU, "GPU DMA went into unusable msan memory: %8.8lx\n", addr);
                     g_system->testQuit(PCSX::Memory::c_msanExitCode);
                     return;
                 case PCSX::MsanStatus::OK:
@@ -1103,17 +1103,17 @@ void PCSX::GPU::Poly<shading, shape, textured, blend, modulation>::drawLogNode(u
                                                                                const DrawLogSettings &settings) {
     if constexpr ((textured == Textured::No) || (modulation == Modulation::On)) {
         if constexpr (shading == Shading::Flat) {
-            ImGui::TextUnformatted(_("Shading: Flat"));
+            ImGui::TextUnformatted("Shading: Flat");
             drawColorBox(colors[0], itemIndex, 0, settings);
         } else if constexpr (shading == Shading::Gouraud) {
-            ImGui::TextUnformatted(_("Shading: Gouraud"));
+            ImGui::TextUnformatted("Shading: Gouraud");
         }
     }
     if constexpr (textured == Textured::Yes) {
-        ImGui::TextUnformatted(_("Textured"));
+        ImGui::TextUnformatted("Textured");
     }
     if constexpr (blend == Blend::Semi) {
-        ImGui::TextUnformatted(_("Semi-transparency blending"));
+        ImGui::TextUnformatted("Semi-transparency blending");
     }
     if constexpr (textured == Textured::Yes) {
         ImGui::Separator();
@@ -1130,7 +1130,7 @@ void PCSX::GPU::Poly<shading, shape, textured, blend, modulation>::drawLogNode(u
     for (unsigned i = 0; i < count; i++) {
         ImGui::PushID(i);
         ImGui::Separator();
-        ImGui::Text(_("Vertex %i"), i);
+        ImGui::Text("Vertex %i", i);
         ImGui::Text("  X: %i + %i = %i, Y: %i + %i = %i", x[i], offset.x, x[i] + offset.x, y[i], offset.y,
                     y[i] + offset.y);
         minX = std::min(minX, x[i] + offset.x);
@@ -1154,7 +1154,7 @@ void PCSX::GPU::Poly<shading, shape, textured, blend, modulation>::drawLogNode(u
         ImGui::PopID();
     }
     ImGui::Separator();
-    std::string label = fmt::format(f_("Go to primitive##{}"), itemIndex);
+    std::string label = fmt::format("Go to primitive##{}", itemIndex);
     if (ImGui::Button(label.c_str())) {
         g_system->m_eventBus->signal(Events::GUI::VRAMFocus{minX, minY, maxX, maxY});
     }
@@ -1162,7 +1162,7 @@ void PCSX::GPU::Poly<shading, shape, textured, blend, modulation>::drawLogNode(u
         unsigned tx = tpage.tx * 64;
         unsigned ty = tpage.ty * 256;
         ImGui::SameLine();
-        std::string label = fmt::format(f_("Go to texture##{}"), itemIndex);
+        std::string label = fmt::format("Go to texture##{}", itemIndex);
         if (ImGui::Button(label.c_str())) {
             const auto mode = tpage.texDepth == TexDepth::Tex16Bits  ? Events::GUI::VRAM_16BITS
                               : tpage.texDepth == TexDepth::Tex8Bits ? Events::GUI::VRAM_8BITS
@@ -1173,7 +1173,7 @@ void PCSX::GPU::Poly<shading, shape, textured, blend, modulation>::drawLogNode(u
         }
         if (tpage.texDepth != TexDepth::Tex16Bits) {
             ImGui::SameLine();
-            std::string label = fmt::format(f_("Go to CLUT##{}"), itemIndex);
+            std::string label = fmt::format("Go to CLUT##{}", itemIndex);
             if (ImGui::Button(label.c_str())) {
                 int depth = tpage.texDepth == TexDepth::Tex4Bits ? 16 : 256;
                 g_system->m_eventBus->signal(
@@ -1187,19 +1187,19 @@ template <PCSX::GPU::Shading shading, PCSX::GPU::LineType lineType, PCSX::GPU::B
 void PCSX::GPU::Line<shading, lineType, blend>::drawLogNode(unsigned itemIndex, const DrawLogSettings &settings) {
     int minX = x[0], minY = y[0], maxX = x[0], maxY = y[0];
     if constexpr (shading == Shading::Flat) {
-        ImGui::TextUnformatted(_("Shading: Flat"));
+        ImGui::TextUnformatted("Shading: Flat");
         drawColorBox(colors[0], itemIndex, 0, settings);
     } else if constexpr (shading == Shading::Gouraud) {
-        ImGui::TextUnformatted(_("Shading: Gouraud"));
+        ImGui::TextUnformatted("Shading: Gouraud");
     }
     if constexpr (blend == Blend::Semi) {
-        ImGui::TextUnformatted(_("Semi-transparency blending"));
+        ImGui::TextUnformatted("Semi-transparency blending");
     }
     for (unsigned i = 1; i < colors.size(); i++) {
         ImGui::PushID(i);
         ImGui::Separator();
         if constexpr (lineType == LineType::Poly) {
-            ImGui::Text(_("Line %i"), i);
+            ImGui::Text("Line %i", i);
         }
         ImGui::Text("  X0: %i + %i = %i, Y0: %i + %i = %i", x[i - 1], offset.x, x[i - 1] + offset.x, y[i - 1], offset.y,
                     y[i - 1] + offset.y);
@@ -1218,7 +1218,7 @@ void PCSX::GPU::Line<shading, lineType, blend>::drawLogNode(unsigned itemIndex, 
         ImGui::PopID();
     }
     ImGui::Separator();
-    std::string label = fmt::format(f_("Go to primitive##{}"), itemIndex);
+    std::string label = fmt::format("Go to primitive##{}", itemIndex);
     if (ImGui::Button(label.c_str())) {
         g_system->m_eventBus->signal(Events::GUI::VRAMFocus{minX, minY, maxX, maxY});
     }
@@ -1235,7 +1235,7 @@ void PCSX::GPU::Rect<size, textured, blend, modulation>::drawLogNode(unsigned it
         drawColorBox(color, itemIndex, 0, settings);
     }
     if constexpr (blend == Blend::Semi) {
-        ImGui::TextUnformatted(_("Semi-transparency blending"));
+        ImGui::TextUnformatted("Semi-transparency blending");
     }
     if constexpr (textured == Textured::Yes) {
         unsigned tx = tpage.tx * 64;
@@ -1248,7 +1248,7 @@ void PCSX::GPU::Rect<size, textured, blend, modulation>::drawLogNode(unsigned it
         }
     }
     ImGui::Separator();
-    std::string label = fmt::format(f_("Go to primitive##{}"), itemIndex);
+    std::string label = fmt::format("Go to primitive##{}", itemIndex);
     if (ImGui::Button(label.c_str())) {
         g_system->m_eventBus->signal(
             Events::GUI::VRAMFocus{x + offset.x, y + offset.y, x + w + offset.x, y + h + offset.y});
@@ -1258,7 +1258,7 @@ void PCSX::GPU::Rect<size, textured, blend, modulation>::drawLogNode(unsigned it
         unsigned ty = tpage.ty * 256;
         unsigned shift = tpage.texDepth == TexDepth::Tex4Bits ? 2 : tpage.texDepth == TexDepth::Tex8Bits ? 1 : 0;
         ImGui::SameLine();
-        std::string label = fmt::format(f_("Go to texture##{}"), itemIndex);
+        std::string label = fmt::format("Go to texture##{}", itemIndex);
         if (ImGui::Button(label.c_str())) {
             const auto mode = tpage.texDepth == TexDepth::Tex16Bits  ? Events::GUI::VRAM_16BITS
                               : tpage.texDepth == TexDepth::Tex8Bits ? Events::GUI::VRAM_8BITS
@@ -1269,7 +1269,7 @@ void PCSX::GPU::Rect<size, textured, blend, modulation>::drawLogNode(unsigned it
         }
         if (tpage.texDepth != TexDepth::Tex16Bits) {
             ImGui::SameLine();
-            std::string label = fmt::format(f_("Go to CLUT##{}"), itemIndex);
+            std::string label = fmt::format("Go to CLUT##{}", itemIndex);
             if (ImGui::Button(label.c_str())) {
                 g_system->m_eventBus->signal(
                     Events::GUI::VRAMFocus{int(clutX()), int(clutY()), int(clutX() + 256), int(clutY() + 1)});

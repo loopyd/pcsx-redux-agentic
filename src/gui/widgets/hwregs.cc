@@ -194,19 +194,19 @@ void PCSX::Widgets::HWRegs::draw(PCSX::GUI* gui, PCSX::Memory* memory, const cha
         if (ImGui::CollapsingHeader(dicrStr.c_str())) {
             ImGui::Indent();
             bool busError = (dicr >> 15) & 1;
-            if (ImGui::Checkbox(_("Bus Error###dicr_buserr"), &busError)) {
+            if (ImGui::Checkbox("Bus Error###dicr_buserr", &busError)) {
                 uint32_t bit = 1 << 15;
                 dicr = busError ? (dicr | bit) : (dicr & ~bit);
                 memory->writeHardwareRegister<Memory::DMA_ICR>(dicr);
             }
             bool masterEnable = (dicr >> 23) & 1;
-            if (ImGui::Checkbox(_("Master IRQ Enable###dicr_master_en"), &masterEnable)) {
+            if (ImGui::Checkbox("Master IRQ Enable###dicr_master_en", &masterEnable)) {
                 uint32_t bit = 1 << 23;
                 dicr = masterEnable ? (dicr | bit) : (dicr & ~bit);
                 memory->writeHardwareRegister<Memory::DMA_ICR>(dicr);
             }
             bool masterFlag = (dicr >> 31) & 1;
-            if (ImGui::Checkbox(_("Master IRQ Flag###dicr_master_flag"), &masterFlag)) {
+            if (ImGui::Checkbox("Master IRQ Flag###dicr_master_flag", &masterFlag)) {
                 uint32_t bit = 1 << 31;
                 dicr = masterFlag ? (dicr | bit) : (dicr & ~bit);
                 memory->writeHardwareRegister<Memory::DMA_ICR>(dicr);
@@ -215,19 +215,19 @@ void PCSX::Widgets::HWRegs::draw(PCSX::GUI* gui, PCSX::Memory* memory, const cha
                 std::string nodeStr = fmt::format("{}###dicr_ch{}", dmaName(i), i);
                 if (ImGui::TreeNode(nodeStr.c_str())) {
                     bool completion = (dicr >> i) & 1;
-                    if (ImGui::Checkbox(_("Completion###dicr_comp"), &completion)) {
+                    if (ImGui::Checkbox("Completion###dicr_comp", &completion)) {
                         uint32_t bit = 1 << i;
                         dicr = completion ? (dicr | bit) : (dicr & ~bit);
                         memory->writeHardwareRegister<Memory::DMA_ICR>(dicr);
                     }
                     bool mask = (dicr >> (i + 16)) & 1;
-                    if (ImGui::Checkbox(_("IRQ Enable###dicr_irq_en"), &mask)) {
+                    if (ImGui::Checkbox("IRQ Enable###dicr_irq_en", &mask)) {
                         uint32_t bit = 1 << (i + 16);
                         dicr = mask ? (dicr | bit) : (dicr & ~bit);
                         memory->writeHardwareRegister<Memory::DMA_ICR>(dicr);
                     }
                     bool triggered = (dicr >> (i + 24)) & 1;
-                    if (ImGui::Checkbox(_("Triggered###dicr_trig"), &triggered)) {
+                    if (ImGui::Checkbox("Triggered###dicr_trig", &triggered)) {
                         uint32_t bit = 1 << (i + 24);
                         dicr = triggered ? (dicr | bit) : (dicr & ~bit);
                         memory->writeHardwareRegister<Memory::DMA_ICR>(dicr);

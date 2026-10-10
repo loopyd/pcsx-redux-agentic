@@ -57,20 +57,20 @@ void PCSX::Widgets::Disassembly::draw(GUI* gui, const char* title) {
         return;
     }
     // Disassemble button
-    if (ImGui::Button(_("Disassemble Buffer"))) {
+    if (ImGui::Button("Disassemble Buffer")) {
         m_codeSize = disassembleBuffer();
     }
     ImGui::SameLine();
     // Save to File button
-    if (ImGui::Button(_("Save to File"))) {
+    if (ImGui::Button("Save to File")) {
         writeFile();
     }
     // Error popup
     if (m_showError) {
-        ImGui::OpenPopup(_("Disassembler Error"));
-        if (ImGui::BeginPopupModal(_("Disassembler Error"), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextUnformatted(_("Disassembly Failed.\nCheck Logs"));
-            if (ImGui::Button(_("Close"))) {
+        ImGui::OpenPopup("Disassembler Error");
+        if (ImGui::BeginPopupModal("Disassembler Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Disassembly Failed.\nCheck Logs");
+            if (ImGui::Button("Close")) {
                 ImGui::CloseCurrentPopup();
                 m_showError = false;
             }
@@ -79,7 +79,7 @@ void PCSX::Widgets::Disassembly::draw(GUI* gui, const char* title) {
     }
     // Close error popup
     if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem(_("Close Disassembler"))) {
+        if (ImGui::MenuItem("Close Disassembler")) {
             m_show = false;
         }
         ImGui::EndPopup();
@@ -87,29 +87,29 @@ void PCSX::Widgets::Disassembly::draw(GUI* gui, const char* title) {
 
     ImGui::Separator();
     // Clear items button
-    if (ImGui::SmallButton(_("Clear"))) {
+    if (ImGui::SmallButton("Clear")) {
         m_items.clear();
         m_codeSize = 0;
     }
     ImGui::SameLine();
-    bool copy_to_clipboard = ImGui::SmallButton(_("Copy"));
+    bool copy_to_clipboard = ImGui::SmallButton("Copy");
 
     // Options menu
     if (ImGui::BeginPopup("Options")) {
-        ImGui::Checkbox(_("Auto-scroll"), &m_autoScroll);
-        ImGui::Checkbox(_("Monospace"), &m_mono);
+        ImGui::Checkbox("Auto-scroll", &m_autoScroll);
+        ImGui::Checkbox("Monospace", &m_mono);
         ImGui::EndPopup();
     }
 
     ImGui::SameLine();
     // Options, Filter
-    if (ImGui::SmallButton(_("Options"))) {
+    if (ImGui::SmallButton("Options")) {
         ImGui::OpenPopup("Options");
     }
 
     ImGui::SameLine();
     // Show buffer size returned from disassembly function
-    ImGui::Text(_("Code size: %.2fMB"), (double)m_codeSize / (1024 * 1024));
+    ImGui::Text("Code size: %.2fMB", (double)m_codeSize / (1024 * 1024));
     ImGui::Separator();
 
     if (m_mono) {

@@ -87,12 +87,12 @@ class HW {
                         switch (g_emulator->m_mem->msanGetStatus<4>(madr)) {
                             case PCSX::MsanStatus::UNINITIALIZED:
                                 g_system->log(LogClass::GPU,
-                                              _("GPU DMA went into usable but uninitialized msan memory: %8.8lx\n"),
+                                              "GPU DMA went into usable but uninitialized msan memory: %8.8lx\n",
                                               madr);
                                 g_system->pause();
                                 return;
                             case PCSX::MsanStatus::UNUSABLE:
-                                g_system->log(LogClass::GPU, _("GPU DMA went into unusable msan memory: %8.8lx\n"),
+                                g_system->log(LogClass::GPU, "GPU DMA went into unusable msan memory: %8.8lx\n",
                                               madr);
                                 g_system->pause();
                                 return;

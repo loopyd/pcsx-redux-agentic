@@ -824,7 +824,7 @@ uint8_t PadsImpl::Pad::poll(uint8_t value, uint32_t& padState) {
         } else if (m_type == PadType::Analog) {
             return doDualshockCommand(padState);
         } else {
-            PCSX::g_system->log(PCSX::LogClass::SIO0, _("Unknown command for pad: %02X\n"), value);
+            PCSX::g_system->log(PCSX::LogClass::SIO0, "Unknown command for pad: %02X\n", value);
             m_cmd = magic_enum::enum_integer(PadCommands::Idle);
             m_bufferLen = 0;
             padState = PAD_STATE_BAD_COMMAND;  // Tell the SIO class we're in an invalid state
@@ -948,7 +948,7 @@ uint8_t PadsImpl::Pad::doDualshockCommand(uint32_t& padState) {
         std::memcpy(m_buf, reply, 8);
         return 0xf3;
     } else {
-        PCSX::g_system->log(PCSX::LogClass::SIO0, _("Unknown command for pad: %02X\n"), static_cast<uint8_t>(m_cmd));
+        PCSX::g_system->log(PCSX::LogClass::SIO0, "Unknown command for pad: %02X\n", static_cast<uint8_t>(m_cmd));
         m_cmd = magic_enum::enum_integer(PadCommands::Idle);
         m_bufferLen = 0;
         padState = PAD_STATE_BAD_COMMAND;  // Tell the SIO class we're in an invalid state
@@ -1049,17 +1049,17 @@ bool PadsImpl::configure(PCSX::GUI* gui) {
 
     ImGui::SetNextWindowPos(ImVec2(70, 90), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(350, 500), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin(_("Pad configuration"), &m_showCfg)) {
+    if (!ImGui::Begin("Pad configuration", &m_showCfg)) {
         ImGui::End();
         return false;
     }
 
     static std::function<const char*()> const c_padNames[] = {
-        l_("Pad 1"),
-        l_("Pad 2"),
+        []() { return "Pad 1"; },
+        []() { return "Pad 2"; },
     };
 
-    if (ImGui::Button(_("Rescan gamepads and re-read game controllers database"))) {
+    if (ImGui::Button("Rescan gamepads and re-read game controllers database")) {
         // Only the host side restarts. The emulated pads keep their protocol state,
         // so a game that set up its motors with 4Dh at boot keeps rumbling.
         for (auto& g : m_gamepads) {
@@ -1078,15 +1078,15 @@ bool PadsImpl::configure(PCSX::GUI* gui) {
     }
 
     bool changed = false;
-    changed |= ImGui::Checkbox(_("Use raw input for mouse"), &gui->isRawMouseMotionEnabled());
+    changed |= ImGui::Checkbox("Use raw input for mouse", &gui->isRawMouseMotionEnabled());
     PCSX::ImGuiHelpers::ShowHelpMarker(
-        _("When enabled, the cursor will be hidden and captured when the emulator is running. This is useful for games "
-          "that require mouse input."));
-    changed |= ImGui::Checkbox(_("Allow mouse capture toggle"), &gui->allowMouseCaptureToggle());
+        "When enabled, the cursor will be hidden and captured when the emulator is running. This is useful for games "
+          "that require mouse input.");
+    changed |= ImGui::Checkbox("Allow mouse capture toggle", &gui->allowMouseCaptureToggle());
     PCSX::ImGuiHelpers::ShowHelpMarker(
-        _("When enabled, pressing CTRL and ALT will toggle the setting above, raw input"));
+        "When enabled, pressing CTRL and ALT will toggle the setting above, raw input");
 
-    if (ImGui::BeginCombo(_("Pad"), c_padNames[m_selectedPadForConfig]())) {
+    if (ImGui::BeginCombo("Pad", c_padNames[m_selectedPadForConfig]())) {
         for (unsigned i = 0; i < 2; i++) {
             if (ImGui::Selectable(c_padNames[i](), m_selectedPadForConfig == i)) {
                 m_selectedPadForConfig = i;
@@ -1095,7 +1095,7 @@ bool PadsImpl::configure(PCSX::GUI* gui) {
         ImGui::EndCombo();
     }
 
-    if (ImGui::Button(_("Set defaults"))) {
+    if (ImGui::Button("Set defaults")) {
         changed = true;
         m_pads[m_selectedPadForConfig].setDefaults(m_selectedPadForConfig == 0);
     }
@@ -1111,33 +1111,33 @@ bool PadsImpl::configure(PCSX::GUI* gui) {
 static std::string sdlScancodeToString(int scancode) {
     switch (scancode) {
         case SDL_SCANCODE_UP:
-            return _("Keyboard Up");
+            return "Keyboard Up";
         case SDL_SCANCODE_RIGHT:
-            return _("Keyboard Right");
+            return "Keyboard Right";
         case SDL_SCANCODE_DOWN:
-            return _("Keyboard Down");
+            return "Keyboard Down";
         case SDL_SCANCODE_LEFT:
-            return _("Keyboard Left");
+            return "Keyboard Left";
         case SDL_SCANCODE_BACKSPACE:
-            return _("Keyboard Backspace");
+            return "Keyboard Backspace";
         case SDL_SCANCODE_RETURN:
-            return _("Keyboard Enter");
+            return "Keyboard Enter";
         case SDL_SCANCODE_SPACE:
-            return _("Keyboard Space");
+            return "Keyboard Space";
         case SDL_SCANCODE_ESCAPE:
-            return _("Keyboard Escape");
+            return "Keyboard Escape";
         case SDL_SCANCODE_UNKNOWN:
-            return _("Unbound");
+            return "Unbound";
     };
 
     const char* keyName = SDL_GetScancodeName(static_cast<SDL_Scancode>(scancode));
     if (!keyName || keyName[0] == '\0') {
-        return fmt::format(f_("Unknown keyboard key {}"), scancode);
+        return fmt::format("Unknown keyboard key {}", scancode);
     }
 
     auto str = std::string(keyName);
     str[0] = toupper(str[0]);
-    return fmt::format(f_("Keyboard {}"), str);
+    return fmt::format("Keyboard {}", str);
 }
 
 void PadsImpl::Pad::keyboardEvent(const PCSX::Events::Keyboard& event) {
@@ -1156,24 +1156,24 @@ void PadsImpl::Pad::keyboardEvent(const PCSX::Events::Keyboard& event) {
 
 bool PadsImpl::Pad::configure() {
     static std::function<const char*()> const c_inputDevices[] = {
-        l_("Auto"),
-        l_("Controller"),
-        l_("Keyboard"),
+        []() { return "Auto"; },
+        []() { return "Controller"; },
+        []() { return "Keyboard"; },
     };
     static std::function<const char*()> const c_buttonNames[] = {
         []() { return "╳"; },
         []() { return "□"; },
         []() { return "△"; },
         []() { return "◯"; },
-        lC_("Controller button", "Select"),
-        lC_("Controller button", "Start"),
+        []() { return "Select"; },
+        []() { return "Start"; },
         []() { return "L1"; },
         []() { return "R1"; },
         []() { return "L2"; },
         []() { return "R2"; },
         []() { return "L3"; },
         []() { return "R3"; },
-        l_("Analog Mode"),
+        []() { return "Analog Mode"; },
     };
     static std::function<const char*()> const c_dpadDirections[] = {
         []() { return "↑"; },
@@ -1182,16 +1182,16 @@ bool PadsImpl::Pad::configure() {
         []() { return "←"; },
     };
     static std::function<const char*()> const c_controllerTypes[] = {
-        l_("Digital"),
-        l_("Analog"),
-        l_("Mouse"),
-        l_("Negcon (Unimplemented)"),
-        l_("Gun (Unimplemented)"),
-        l_("Guncon (Unimplemented)"),
+        []() { return "Digital"; },
+        []() { return "Analog"; },
+        []() { return "Mouse"; },
+        []() { return "Negcon (Unimplemented)"; },
+        []() { return "Gun (Unimplemented)"; },
+        []() { return "Guncon (Unimplemented)"; },
     };
 
     bool changed = false;
-    if (ImGui::Checkbox(_("Connected"), &m_settings.get<SettingConnected>().value)) {
+    if (ImGui::Checkbox("Connected", &m_settings.get<SettingConnected>().value)) {
         changed = true;
         reset();  // Reset pad state when unplugging/replugging pad
     }
@@ -1200,7 +1200,7 @@ bool PadsImpl::Pad::configure() {
         ImGui::BeginDisabled();
     }
 
-    ImGui::Checkbox(_("Analog mode"), &m_analogMode);
+    ImGui::Checkbox("Analog mode", &m_analogMode);
 
     if (m_type != PadType::Analog) {
         ImGui::EndDisabled();
@@ -1209,17 +1209,17 @@ bool PadsImpl::Pad::configure() {
     {
         const bool capable = gamepadHasRumble(m_gamepad);
         if (!capable) ImGui::BeginDisabled();
-        if (ImGui::Checkbox(_("Rumble"), &m_settings.get<SettingRumble>().value)) changed = true;
+        if (ImGui::Checkbox("Rumble", &m_settings.get<SettingRumble>().value)) changed = true;
         if (!capable) {
             ImGui::EndDisabled();
             ImGui::SameLine();
-            ImGui::TextUnformatted(_("(no motors on this gamepad)"));
+            ImGui::TextUnformatted("(no motors on this gamepad)");
         }
     }
 
     {
         const char* currentType = c_controllerTypes[static_cast<int>(m_type)]();
-        if (ImGui::BeginCombo(_("Controller Type"), currentType)) {
+        if (ImGui::BeginCombo("Controller Type", currentType)) {
             for (int i = 0; i < 3; i++) {
                 if (ImGui::Selectable(c_controllerTypes[i]())) {
                     changed = true;
@@ -1235,7 +1235,7 @@ bool PadsImpl::Pad::configure() {
 
     auto& inputDevice = m_settings.get<SettingInputType>().value;
 
-    if (ImGui::BeginCombo(_("Device type"), c_inputDevices[magic_enum::enum_integer<InputType>(inputDevice)]())) {
+    if (ImGui::BeginCombo("Device type", c_inputDevices[magic_enum::enum_integer<InputType>(inputDevice)]())) {
         for (auto i : magic_enum::enum_values<InputType>()) {
             if (ImGui::Selectable(c_inputDevices[magic_enum::enum_integer<InputType>(i)](), i == inputDevice)) {
                 changed = true;
@@ -1246,14 +1246,14 @@ bool PadsImpl::Pad::configure() {
         ImGui::EndCombo();
     }
     changed |=
-        ImGui::SliderFloat(_("Mouse sensitivity X"), &m_settings.get<SettingMouseSensitivityX>().value, 0.f, 10.f);
+        ImGui::SliderFloat("Mouse sensitivity X", &m_settings.get<SettingMouseSensitivityX>().value, 0.f, 10.f);
     changed |=
-        ImGui::SliderFloat(_("Mouse sensitivity Y"), &m_settings.get<SettingMouseSensitivityY>().value, 0.f, 10.f);
+        ImGui::SliderFloat("Mouse sensitivity Y", &m_settings.get<SettingMouseSensitivityY>().value, 0.f, 10.f);
 
-    ImGui::TextUnformatted(_("Keyboard mapping"));
+    ImGui::TextUnformatted("Keyboard mapping");
     if (ImGui::BeginTable("Mapping", 2, ImGuiTableFlags_SizingFixedSame | ImGuiTableFlags_Resizable)) {
-        ImGui::TableSetupColumn(_("Computer button mapping"));
-        ImGui::TableSetupColumn(_("Gamepad button"));
+        ImGui::TableSetupColumn("Computer button mapping");
+        ImGui::TableSetupColumn("Gamepad button");
         ImGui::TableHeadersRow();
         for (auto i = 0; i < 13; i++) {
             ImGui::TableNextRow();
@@ -1303,7 +1303,7 @@ bool PadsImpl::Pad::configure() {
         ImGui::EndTable();
     }
 
-    const char* preview = _("No gamepad selected or connected");
+    const char* preview = "No gamepad selected or connected";
     auto& id = m_settings.get<SettingControllerID>().value;
     SDL_Gamepad* selected =
         (id >= 0 && static_cast<unsigned>(id) < sizeof(s_pads->m_gamepads) / sizeof(s_pads->m_gamepads[0]))
@@ -1327,7 +1327,7 @@ bool PadsImpl::Pad::configure() {
         if (g == selected) preview = name;
     }
 
-    if (ImGui::BeginCombo(_("Gamepad"), preview)) {
+    if (ImGui::BeginCombo("Gamepad", preview)) {
         for (const auto& entry : gamepads) {
             const auto gamepadName = fmt::format("{}##{}", entry.name, entry.slot);
             if (ImGui::Selectable(gamepadName.c_str())) {

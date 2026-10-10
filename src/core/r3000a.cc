@@ -39,8 +39,8 @@
 #include "supportpsx/memory.h"
 
 int PCSX::R3000Acpu::psxInit() {
-    g_system->printf(_("PCSX-Redux booting\n"));
-    g_system->printf(_("Copyright (C) 2019-%i PCSX-Redux authors\n"), 2025);
+    g_system->printf("PCSX-Redux booting\n");
+    g_system->printf("Copyright (C) 2019-%i PCSX-Redux authors\n", 2025);
     const auto& args = g_system->getArgs();
 
     if (g_emulator->settings.get<Emulator::SettingDynarec>()) {
@@ -50,7 +50,7 @@ int PCSX::R3000Acpu::psxInit() {
     if (!g_emulator->m_cpu) g_emulator->m_cpu = Cpus::Interpreted();
 
     PGXP_Init();
-    g_system->printf(_("CPU type: %s\n"), g_emulator->m_cpu->getName().c_str());
+    g_system->printf("CPU type: %s\n", g_emulator->m_cpu->getName().c_str());
 
     return g_emulator->m_cpu->Init();
 }

@@ -46,14 +46,14 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
     }
 
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu(_("Settings"))) {
+        if (ImGui::BeginMenu("Settings")) {
             auto& colorFormat = m_settings.colorFormat;
-            if (ImGui::BeginMenu(_("Color Format"))) {
-                if (ImGui::MenuItem(_("None"), nullptr,
+            if (ImGui::BeginMenu("Color Format")) {
+                if (ImGui::MenuItem("None", nullptr,
                                     colorFormat == GPU::Logged::DrawLogSettings::ColorFormat::None)) {
                     colorFormat = GPU::Logged::DrawLogSettings::ColorFormat::None;
                 }
-                if (ImGui::MenuItem(_("Expanded"), nullptr,
+                if (ImGui::MenuItem("Expanded", nullptr,
                                     colorFormat == GPU::Logged::DrawLogSettings::ColorFormat::Expanded)) {
                     colorFormat = GPU::Logged::DrawLogSettings::ColorFormat::Expanded;
                 }
@@ -67,7 +67,7 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
         ImGui::EndMenuBar();
     }
 
-    if (ImGui::Checkbox(_("GPU logging"), &logger->m_enabled)) {
+    if (ImGui::Checkbox("GPU logging", &logger->m_enabled)) {
         if (logger->m_enabled) {
             logger->enable();
         } else {
@@ -75,25 +75,25 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
         }
     }
     ImGuiHelpers::ShowHelpMarker(
-        _("Logs each frame's draw calls. When enabled, all the commands sent to the GPU will be logged and displayed "
+        "Logs each frame's draw calls. When enabled, all the commands sent to the GPU will be logged and displayed "
           "here. This will contain only a single frame worth of commands. The feature can be pretty demanding in CPU "
-          "and memory."));
-    ImGui::Checkbox(_("Breakpoint on vsync"), &logger->m_breakOnVSync);
+          "and memory.");
+    ImGui::Checkbox("Breakpoint on vsync", &logger->m_breakOnVSync);
     ImGui::SameLine();
-    if (ImGui::Button(C_("Emulation", "Resume"))) {
+    if (ImGui::Button("Resume")) {
         g_system->resume();
     }
-    ImGui::Checkbox(_("Replay frame"), &m_replay);
+    ImGui::Checkbox("Replay frame", &m_replay);
     ImGuiHelpers::ShowHelpMarker(
-        _("When enabled, the framebuffer will be constantly redrawned using the selected commands, allowing to see the "
+        "When enabled, the framebuffer will be constantly redrawned using the selected commands, allowing to see the "
           "resulting output immediately. This doesn't make sense to have this enabled when: (1) the CPU is running and "
           "(2) the GPU logging isn't enabled. Selection of which commands to replay is done using the first checkbox "
           "in the logger display below. The [T] button will select all commands for replay from the top and until this "
-          "command."));
-    ImGui::Checkbox(_("Show origins"), &m_showOrigins);
+          "command.");
+    ImGui::Checkbox("Show origins", &m_showOrigins);
     ImGuiHelpers::ShowHelpMarker(
-        _("When enabled, the logger display will also show where did the command come from, which can be useful to "
-          "debug or reverse engineer, but will also clutter the logger view."));
+        "When enabled, the logger display will also show where did the command come from, which can be useful to "
+          "debug or reverse engineer, but will also clutter the logger view.");
     bool collapseAll = false;
     bool expandAll = false;
     bool disableFromHere = false;
@@ -105,55 +105,53 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
     if (ImGui::BeginTable("Buttons", 2, ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (ImGui::Button(_("Collapse all nodes"))) {
+        if (ImGui::Button("Collapse all nodes")) {
             collapseAll = true;
         }
         ImGui::TableSetColumnIndex(1);
-        ImGui::Checkbox(_("Keep collapsed"), &m_collapseAll);
+        ImGui::Checkbox("Keep collapsed", &m_collapseAll);
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (ImGui::Button(_("Expand all nodes"))) {
+        if (ImGui::Button("Expand all nodes")) {
             expandAll = true;
         }
         ImGui::TableSetColumnIndex(1);
-        ImGui::Checkbox(_("Keep expanded"), &m_expandAll);
+        ImGui::Checkbox("Keep expanded", &m_expandAll);
         ImGui::EndTable();
     }
     ImGui::Separator();
-    if (ImGui::Button(_("Remove all highlight selections"))) {
+    if (ImGui::Button("Remove all highlight selections")) {
         removeHighlight = true;
     }
-    ImGui::Checkbox(_("Highlight on hover"), &m_hoverHighlight);
+    ImGui::Checkbox("Highlight on hover", &m_hoverHighlight);
     ImGuiHelpers::ShowHelpMarker(
-        _("When enabled, hovering a command in the logger view will highlight it in the vram display. Individual "
+        "When enabled, hovering a command in the logger view will highlight it in the vram display. Individual "
           "commands can be selected for highlight by using the second checkbox in the logger view. The [B] and [E] "
-          "buttons can be used to specify the beginning and the end of a span of commands to highlight."));
-    ImGui::Checkbox(_("Filter by pixel"), &m_filterEnabled);
-    ImGuiHelpers::ShowHelpMarker(_(
-        "When enabled, only the commands that are related to the specified pixel will be shown. The pixel location is "
+          "buttons can be used to specify the beginning and the end of a span of commands to highlight.");
+    ImGui::Checkbox("Filter by pixel", &m_filterEnabled);
+    ImGuiHelpers::ShowHelpMarker("When enabled, only the commands that are related to the specified pixel will be shown. The pixel location is "
         "specified in the next input fields. The [Probe VRAM] button can be used to set the pixel location by hovering "
-        "and clicking inside the VRAM viewer."));
-    ImGui::InputInt2(_("Pixel location"), m_filter.raw);
-    if (ImGui::Button(_("Probe VRAM"))) {
+        "and clicking inside the VRAM viewer.");
+    ImGui::InputInt2("Pixel location", m_filter.raw);
+    if (ImGui::Button("Probe VRAM")) {
         m_filterProbing = true;
     }
-    ImGuiHelpers::ShowHelpMarker(_(
-        "When enabled, hovering then clicking inside the VRAM viewer will set the pixel location for the filtering."));
+    ImGuiHelpers::ShowHelpMarker("When enabled, hovering then clicking inside the VRAM viewer will set the pixel location for the filtering.");
 
     std::string label;
 
     ImGui::Separator();
-    if (ImGui::TreeNode(_("VRAM breakpoints"))) {
+    if (ImGui::TreeNode("VRAM breakpoints")) {
         ImGuiHelpers::ShowHelpMarker(
-            _("Pauses emulation when a command reads from or writes to one of these VRAM rectangles. Handy to catch "
+            "Pauses emulation when a command reads from or writes to one of these VRAM rectangles. Handy to catch "
               "the texture upload that stomped an area, since those are hard to spot in a frame that redraws "
               "everything. The command that triggered gets highlighted in the logger view below. Note the footprints "
-              "are unclipped, so a primitive that ends up entirely outside the drawing area still counts as a write."));
-        if (ImGui::Button(_("Add breakpoint"))) {
+              "are unclipped, so a primitive that ends up entirely outside the drawing area still counts as a write.");
+        if (ImGui::Button("Add breakpoint")) {
             logger->m_vramBreakpoints.emplace_back();
         }
         if (!logger->m_vramBreakpoints.empty()) {
-            ImGui::TextUnformatted(_("Enable, then X, Y, width, height:"));
+            ImGui::TextUnformatted("Enable, then X, Y, width, height:");
         }
         unsigned toRemove = logger->m_vramBreakpoints.size();
         for (unsigned i = 0; i < logger->m_vramBreakpoints.size(); i++) {
@@ -164,11 +162,11 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16.0f);
             ImGui::InputInt4("##area", bp.area.raw);
             ImGui::SameLine();
-            ImGui::Checkbox(_("Read"), &bp.onRead);
+            ImGui::Checkbox("Read", &bp.onRead);
             ImGui::SameLine();
-            ImGui::Checkbox(_("Write"), &bp.onWrite);
+            ImGui::Checkbox("Write", &bp.onWrite);
             ImGui::SameLine();
-            if (ImGui::Button(_("Remove"))) toRemove = i;
+            if (ImGui::Button("Remove")) toRemove = i;
             ImGui::PopID();
         }
         if (toRemove != logger->m_vramBreakpoints.size()) {
@@ -178,23 +176,23 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
     }
 
     ImGui::Separator();
-    label = fmt::format(f_("Frame {}###FrameCounterNode"), logger->m_frameCounter - m_frameCounterOrigin);
+    label = fmt::format("Frame {}###FrameCounterNode", logger->m_frameCounter - m_frameCounterOrigin);
     if (ImGui::TreeNode(label.c_str())) {
-        if (ImGui::Button(_("Reset frame counter"))) {
+        if (ImGui::Button("Reset frame counter")) {
             m_frameCounterOrigin = logger->m_frameCounter;
         }
-        ImGui::Text(_("%i primitives"), logger->m_list.size());
+        ImGui::Text("%i primitives", logger->m_list.size());
         GPU::GPUStats stats;
         for (auto& logged : logger->m_list) {
             logged.cumulateStats(&stats);
         }
-        ImGui::Text(_("%i triangles"), stats.triangles);
-        ImGui::Text(_("%i textured triangles"), stats.texturedTriangles);
-        ImGui::Text(_("%i rectangles"), stats.rectangles);
-        ImGui::Text(_("%i sprites"), stats.sprites);
-        ImGui::Text(_("%i pixel writes"), stats.pixelWrites);
-        ImGui::Text(_("%i pixel reads"), stats.pixelReads);
-        ImGui::Text(_("%i texel reads"), stats.texelReads);
+        ImGui::Text("%i triangles", stats.triangles);
+        ImGui::Text("%i textured triangles", stats.texturedTriangles);
+        ImGui::Text("%i rectangles", stats.rectangles);
+        ImGui::Text("%i sprites", stats.sprites);
+        ImGui::Text("%i pixel writes", stats.pixelWrites);
+        ImGui::Text("%i pixel reads", stats.pixelReads);
+        ImGui::Text("%i texel reads", stats.texelReads);
 
         ImGui::TreePop();
     }
@@ -221,13 +219,13 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
                 length = logged.length;
                 switch (origin) {
                     case GPU::Logged::Origin::DATAWRITE:
-                        ImGui::Text(_("Data port write: %08x"), value);
+                        ImGui::Text("Data port write: %08x", value);
                         break;
                     case GPU::Logged::Origin::CTRLWRITE:
-                        ImGui::Text(_("Control port write: %08x"), value);
+                        ImGui::Text("Control port write: %08x", value);
                         break;
                     case GPU::Logged::Origin::DIRECT_DMA:
-                        ImGui::TextUnformatted(_("Direct DMA from"));
+                        ImGui::TextUnformatted("Direct DMA from");
                         ImGui::SameLine();
                         label = fmt::format("{:08x}", value | 0x80000000);
                         if (ImGui::Button(label.c_str())) {
@@ -235,7 +233,7 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
                         }
                         break;
                     case GPU::Logged::Origin::CHAIN_DMA:
-                        ImGui::TextUnformatted(_("Chain DMA from"));
+                        ImGui::TextUnformatted("Chain DMA from");
                         ImGui::SameLine();
                         label = fmt::format("{:08x}", value | 0x80000000);
                         if (ImGui::Button(label.c_str())) {
@@ -244,7 +242,7 @@ void PCSX::Widgets::GPULogger::draw(PCSX::GPULogger* logger, const char* title) 
                         break;
                 }
                 ImGui::SameLine();
-                ImGui::TextUnformatted(_("at PC ="));
+                ImGui::TextUnformatted("at PC =");
                 ImGui::SameLine();
                 label = fmt::format("{:08x}", logged.pc);
                 if (ImGui::Button(label.c_str())) {

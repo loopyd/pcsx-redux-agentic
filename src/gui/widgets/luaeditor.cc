@@ -55,11 +55,11 @@ void PCSX::Widgets::LuaEditor::draw(const char* title, PCSX::GUI* gui) {
 
     auto& L = g_emulator->m_lua;
 
-    ImGui::Checkbox(_("Auto run"), &m_autorun);
+    ImGui::Checkbox("Auto run", &m_autorun);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Auto save"), &m_autosave);
+    ImGui::Checkbox("Auto save", &m_autosave);
     ImGui::SameLine();
-    bool runOnce = ImGui::Button(_("> Run"));
+    bool runOnce = ImGui::Button("> Run");
     ImVec2 size(0, -ImGui::GetTextLineHeightWithSpacing() * 5);
     ImGui::BeginChild("LuaSource", size);
     m_text.draw(gui);

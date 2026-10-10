@@ -94,9 +94,9 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                                                       ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable |
                                                       ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV;
 
-        if (ImGui::BeginTabItem(_("Plain search"))) {
-            bool gotEnter = ImGui::InputText(_("Pattern"), &m_plainSearchString, ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::Checkbox(_("Hex"), &m_plainHex);
+        if (ImGui::BeginTabItem("Plain search")) {
+            bool gotEnter = ImGui::InputText("Pattern", &m_plainSearchString, ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::Checkbox("Hex", &m_plainHex);
             auto needleSize = 0;
             std::string needle;
             bool valid = true;
@@ -149,7 +149,7 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
             if (!valid) {
                 ImGui::BeginDisabled();
             }
-            if (ImGui::Button(_("Search")) || (gotEnter && valid)) {
+            if (ImGui::Button("Search") || (gotEnter && valid)) {
                 auto ptr = memData;
                 m_plainAddresses.clear();
                 while (true) {
@@ -166,9 +166,9 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
             if (!valid) {
                 ImGui::EndDisabled();
             }
-            if (ImGui::BeginTable(_("Found values"), 2, tableFlags)) {
-                ImGui::TableSetupColumn(_("Address"));
-                ImGui::TableSetupColumn(_("Access"));
+            if (ImGui::BeginTable("Found values", 2, tableFlags)) {
+                ImGui::TableSetupColumn("Address");
+                ImGui::TableSetupColumn("Access");
                 ImGui::TableHeadersRow();
 
                 ImGuiListClipper clipper;
@@ -181,7 +181,7 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text("%x", currentAddress);
                         ImGui::TableSetColumnIndex(1);
-                        auto buttonName = fmt::format(f_("Show in memory editor##{}"), row);
+                        auto buttonName = fmt::format("Show in memory editor##{}", row);
                         if (ImGui::Button(buttonName.c_str())) {
                             const uint32_t editorAddress = currentAddress - memBase;
                             g_system->m_eventBus->signal(
@@ -194,10 +194,10 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem(_("Delta-over-time search"))) {
+        if (ImGui::BeginTabItem("Delta-over-time search")) {
             const auto stride = getStrideFromValueType(m_scanValueType);
 
-            if (m_addressValuePairs.empty() && ImGui::Button(_("First scan"))) {
+            if (m_addressValuePairs.empty() && ImGui::Button("First scan")) {
                 int64_t memValue = 0;
 
                 for (uint32_t i = 0; i < memSize; ++i) {
@@ -240,7 +240,7 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                 }
             }
 
-            if (!m_addressValuePairs.empty() && ImGui::Button(_("Next scan"))) {
+            if (!m_addressValuePairs.empty() && ImGui::Button("Next scan")) {
                 auto doesntMatchCriterion = [this, memData, memSize, stride](const AddressValuePair& addressValuePair) {
                     const uint32_t address = addressValuePair.address;
                     const int64_t memValue =
@@ -280,18 +280,18 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                 }
             }
 
-            if (!m_addressValuePairs.empty() && ImGui::Button(_("New scan"))) {
+            if (!m_addressValuePairs.empty() && ImGui::Button("New scan")) {
                 m_addressValuePairs.clear();
                 m_scanType = ScanType::ExactValue;
             }
 
-            ImGui::Checkbox(_("Hex"), &m_hex);
-            ImGui::InputScalar(_("Value"), ImGuiDataType_S64, &m_value, NULL, NULL, m_hex ? "%x" : "%i",
+            ImGui::Checkbox("Hex", &m_hex);
+            ImGui::InputScalar("Value", ImGuiDataType_S64, &m_value, NULL, NULL, m_hex ? "%x" : "%i",
                                m_hex ? ImGuiInputTextFlags_CharsHexadecimal : ImGuiInputTextFlags_CharsDecimal);
             m_value = getValueAsSelectedType(m_value);
 
             const auto currentScanValueType = magic_enum::enum_name(m_scanValueType);
-            if (ImGui::BeginCombo(_("Value type"), currentScanValueType.data())) {
+            if (ImGui::BeginCombo("Value type", currentScanValueType.data())) {
                 for (auto v : magic_enum::enum_values<ScanValueType>()) {
                     bool selected = (v == m_scanValueType);
                     auto name = magic_enum::enum_name(v);
@@ -306,7 +306,7 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
             }
 
             const auto currentScanType = magic_enum::enum_name(m_scanType);
-            if (ImGui::BeginCombo(_("Scan type"), currentScanType.data())) {
+            if (ImGui::BeginCombo("Scan type", currentScanType.data())) {
                 for (auto v : magic_enum::enum_values<ScanType>()) {
                     bool selected = (v == m_scanType);
                     auto name = magic_enum::enum_name(v);
@@ -321,16 +321,16 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
             }
 
             if (!m_hex && stride > 1) {
-                ImGui::Checkbox(_("Display as fixed-point values"), &m_fixedPoint);
+                ImGui::Checkbox("Display as fixed-point values", &m_fixedPoint);
             }
 
-            if (ImGui::BeginTable(_("Found values"), 6, tableFlags)) {
-                ImGui::TableSetupColumn(_("Address"));
-                ImGui::TableSetupColumn(_("Current value"));
-                ImGui::TableSetupColumn(_("Scanned value"));
-                ImGui::TableSetupColumn(_("Access"));
-                ImGui::TableSetupColumn(_("Read breakpoint"));
-                ImGui::TableSetupColumn(_("Write breakpoint"));
+            if (ImGui::BeginTable("Found values", 6, tableFlags)) {
+                ImGui::TableSetupColumn("Address");
+                ImGui::TableSetupColumn("Current value");
+                ImGui::TableSetupColumn("Scanned value");
+                ImGui::TableSetupColumn("Access");
+                ImGui::TableSetupColumn("Read breakpoint");
+                ImGui::TableSetupColumn("Write breakpoint");
                 ImGui::TableHeadersRow();
 
                 bool as_uint = (m_scanValueType == ScanValueType::Uint);
@@ -359,7 +359,7 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                             ImGui::Text(valueDisplayFormat, memValue);
                         }
                         ImGui::SameLine();
-                        auto CheckboxName = fmt::format(f_("Freeze##{}"), row);
+                        auto CheckboxName = fmt::format("Freeze##{}", row);
                         if (ImGui::Checkbox(CheckboxName.c_str(), &addressValuePair.frozen)) {
                             addressValuePair.frozenValue = memValue;
                         }
@@ -370,22 +370,22 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                             ImGui::Text(valueDisplayFormat, scannedValue);
                         }
                         ImGui::TableSetColumnIndex(3);
-                        auto showInMemEditorButtonName = fmt::format(f_("Show in memory editor##{}"), row);
+                        auto showInMemEditorButtonName = fmt::format("Show in memory editor##{}", row);
                         if (ImGui::Button(showInMemEditorButtonName.c_str())) {
                             const uint32_t editorAddress = currentAddress - memBase;
                             g_system->m_eventBus->signal(PCSX::Events::GUI::JumpToMemory{editorAddress, stride});
                         }
                         ImGui::TableSetColumnIndex(4);
-                        auto addReadBreakpointButtonName = fmt::format(f_("Add read breakpoint##{}"), row);
+                        auto addReadBreakpointButtonName = fmt::format("Add read breakpoint##{}", row);
                         if (ImGui::Button(addReadBreakpointButtonName.c_str())) {
                             g_emulator->m_debug->addBreakpoint(currentAddress, Debug::BreakpointType::Read, stride,
-                                                               _("Memory Observer"));
+                                                               "Memory Observer");
                         }
                         ImGui::TableSetColumnIndex(5);
-                        auto addWriteBreakpointButtonName = fmt::format(f_("Add write breakpoint##{}"), row);
+                        auto addWriteBreakpointButtonName = fmt::format("Add write breakpoint##{}", row);
                         if (ImGui::Button(addWriteBreakpointButtonName.c_str())) {
                             g_emulator->m_debug->addBreakpoint(currentAddress, Debug::BreakpointType::Write, stride,
-                                                               _("Memory Observer"));
+                                                               "Memory Observer");
                         }
                     }
                 }
@@ -395,22 +395,22 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem(_("Pattern search"))) {
+        if (ImGui::BeginTabItem("Pattern search")) {
             if (m_useSIMD) {
-                ImGui::TextUnformatted(_("Sequence size:"));
+                ImGui::TextUnformatted("Sequence size:");
                 ImGui::SameLine();
-                ImGui::RadioButton(_("8 bytes (fast)"), &m_sequenceSize, 8);
+                ImGui::RadioButton("8 bytes (fast)", &m_sequenceSize, 8);
                 ImGui::SameLine();
-                ImGui::RadioButton(_("16 bytes (fast)"), &m_sequenceSize, 16);
+                ImGui::RadioButton("16 bytes (fast)", &m_sequenceSize, 16);
                 ImGui::SameLine();
-                ImGui::RadioButton(_("Arbitrary"), &m_sequenceSize, 255);
+                ImGui::RadioButton("Arbitrary", &m_sequenceSize, 255);
             }
 
-            ImGui::InputText(_("Sequence"), m_sequence, m_sequenceSize + 1);
+            ImGui::InputText("Sequence", m_sequence, m_sequenceSize + 1);
 
-            ImGui::InputInt(C_("Search increment", "Step"), &m_step);
+            ImGui::InputInt("Step", &m_step);
 
-            if (m_step >= 1 && ImGui::Button(_("Search"))) {
+            if (m_step >= 1 && ImGui::Button("Search")) {
                 if (m_useSIMD && m_sequenceSize == 8) {
                     simd_populateAddressList<8>(memData, memBase, memSize);
                 } else if (m_useSIMD && m_sequenceSize == 16) {
@@ -420,9 +420,9 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                 }
             }
 
-            if (ImGui::BeginTable(_("Found values"), 2, tableFlags)) {
-                ImGui::TableSetupColumn(_("Address"));
-                ImGui::TableSetupColumn(_("Access"));
+            if (ImGui::BeginTable("Found values", 2, tableFlags)) {
+                ImGui::TableSetupColumn("Address");
+                ImGui::TableSetupColumn("Access");
                 ImGui::TableHeadersRow();
 
                 ImGuiListClipper clipper;
@@ -435,7 +435,7 @@ void PCSX::Widgets::MemoryObserver::draw(const char* title) {
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text("%x", currentAddress);
                         ImGui::TableSetColumnIndex(1);
-                        auto buttonName = fmt::format(f_("Show in memory editor##{}"), row);
+                        auto buttonName = fmt::format("Show in memory editor##{}", row);
                         if (ImGui::Button(buttonName.c_str())) {
                             const uint32_t editorAddress = currentAddress - memBase;
                             g_system->m_eventBus->signal(

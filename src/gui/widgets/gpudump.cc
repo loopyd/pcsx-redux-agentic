@@ -28,8 +28,8 @@
 
 PCSX::Widgets::GPUDump::GPUDump(bool& show, std::vector<std::string>& favorites)
     : m_show(show),
-      m_saveDialog([]() { return _("Save GPU dump"); }, favorites),
-      m_openDialog([]() { return _("Open GPU dump"); }, favorites) {}
+      m_saveDialog([]() { return "Save GPU dump"; }, favorites),
+      m_openDialog([]() { return "Open GPU dump"; }, favorites) {}
 
 PCSX::Widgets::GPUDump::~GPUDump() {
     if (m_texture) glDeleteTextures(1, &m_texture);
@@ -51,7 +51,7 @@ void PCSX::Widgets::GPUDump::draw(const char* title) {
         if (!selected.empty()) {
             IO<File> file = new PosixFile(selected[0], FileOps::TRUNCATE);
             if (file->failed()) {
-                m_error = _("Unable to create the dump file.");
+                m_error = "Unable to create the dump file.";
             } else {
                 m_error.clear();
                 g_emulator->m_gpuDumper->start(file);
@@ -66,7 +66,7 @@ void PCSX::Widgets::GPUDump::draw(const char* title) {
             if (g_emulator->m_gpuDumpPlayer->load(file)) {
                 m_error.clear();
             } else {
-                m_error = _("Not a GPU dump file.");
+                m_error = "Not a GPU dump file.";
             }
         }
     }
@@ -74,53 +74,53 @@ void PCSX::Widgets::GPUDump::draw(const char* title) {
 
 void PCSX::Widgets::GPUDump::drawRecorder() {
     auto& dumper = g_emulator->m_gpuDumper;
-    ImGui::TextUnformatted(_("Recorder"));
+    ImGui::TextUnformatted("Recorder");
     if (dumper->recording()) {
-        ImGui::Text(_("Recording, %llu frames"), static_cast<unsigned long long>(dumper->frames()));
+        ImGui::Text("Recording, %llu frames", static_cast<unsigned long long>(dumper->frames()));
         ImGui::SameLine();
-        if (ImGui::Button(_("Stop recording"))) dumper->stop();
+        if (ImGui::Button("Stop recording")) dumper->stop();
     } else if (dumper->armed()) {
-        ImGui::TextUnformatted(_("Waiting for the next vsync..."));
+        ImGui::TextUnformatted("Waiting for the next vsync...");
         ImGui::SameLine();
-        if (ImGui::Button(_("Cancel"))) dumper->stop();
+        if (ImGui::Button("Cancel")) dumper->stop();
     } else {
-        if (ImGui::Button(_("Start recording..."))) m_saveDialog.openDialog();
+        if (ImGui::Button("Start recording...")) m_saveDialog.openDialog();
         ImGui::SameLine();
-        ImGui::TextDisabled("%s", _("The capture starts at the next vsync, with the full VRAM and GPU state."));
+        ImGui::TextDisabled("%s", "The capture starts at the next vsync, with the full VRAM and GPU state.");
     }
     if (!m_error.empty()) ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", m_error.c_str());
 }
 
 void PCSX::Widgets::GPUDump::drawPlayer() {
     auto& player = g_emulator->m_gpuDumpPlayer;
-    ImGui::TextUnformatted(_("Player"));
-    if (ImGui::Button(_("Open dump..."))) m_openDialog.openDialog();
+    ImGui::TextUnformatted("Player");
+    if (ImGui::Button("Open dump...")) m_openDialog.openDialog();
     if (!player->loaded()) return;
     ImGui::SameLine();
-    if (ImGui::Button(_("Close"))) {
+    if (ImGui::Button("Close")) {
         m_playing = false;
         player->unload();
         return;
     }
 
-    if (!player->gameID().empty()) ImGui::Text(_("Game ID: %s"), player->gameID().c_str());
-    if (!player->comment().empty()) ImGui::Text(_("Comment: %s"), player->comment().c_str());
-    ImGui::Text(_("Frame %llu"), static_cast<unsigned long long>(player->frame()));
+    if (!player->gameID().empty()) ImGui::Text("Game ID: %s", player->gameID().c_str());
+    if (!player->comment().empty()) ImGui::Text("Comment: %s", player->comment().c_str());
+    ImGui::Text("Frame %llu", static_cast<unsigned long long>(player->frame()));
 
-    if (ImGui::Button(m_playing ? C_("Playback", "Pause") : C_("Playback", "Play"))) m_playing = !m_playing;
+    if (ImGui::Button(m_playing ? "Pause" : "Play")) m_playing = !m_playing;
     ImGui::SameLine();
     ImGui::BeginDisabled(m_playing);
-    if (ImGui::Button(C_("Playback", "Step"))) player->step();
+    if (ImGui::Button("Step")) player->step();
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button(_("Rewind"))) player->rewind();
+    if (ImGui::Button("Rewind")) player->rewind();
     ImGui::SameLine();
-    ImGui::Checkbox(_("Loop"), &m_loop);
+    ImGui::Checkbox("Loop", &m_loop);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Display area only"), &m_displayOnly);
+    ImGui::Checkbox("Display area only", &m_displayOnly);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120.0f);
-    ImGui::SliderFloat(_("Zoom"), &m_zoom, 0.5f, 4.0f, "%.1fx");
+    ImGui::SliderFloat("Zoom", &m_zoom, 0.5f, 4.0f, "%.1fx");
 
     if (m_playing && !player->step()) {
         if (m_loop) {

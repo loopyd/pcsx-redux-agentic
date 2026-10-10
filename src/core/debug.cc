@@ -150,7 +150,7 @@ void PCSX::Debug::process(uint32_t oldPC, uint32_t newPC, uint32_t oldCode, uint
 
     checkBP(newPC, BreakpointType::Exec, 4);
     if (m_breakmp_e && !isMapMarked(newPC, MAP_EXEC)) {
-        triggerBP(nullptr, newPC, 4, _("Execution map"));
+        triggerBP(nullptr, newPC, 4, "Execution map");
     }
     if (m_mapping_e) {
         markMap(newPC, MAP_EXEC);
@@ -176,7 +176,7 @@ void PCSX::Debug::process(uint32_t oldPC, uint32_t newPC, uint32_t oldCode, uint
     if ((isJR || isJALR) && !wasInKernel && isTargetInKernel && !isJRToRA && (targetBase != 0x40) &&
         (targetBase != 0x80) && (targetBase != 0xa0) && (targetBase != 0xb0) && (targetBase != 0xc0)) {
         if (m_checkKernel) {
-            g_system->printf(_("Kernel checker: Jump from 0x%08x to 0x%08x\n"), oldPC, targetBase);
+            g_system->printf("Kernel checker: Jump from 0x%08x to 0x%08x\n", oldPC, targetBase);
             g_system->pause();
         }
     }
@@ -186,42 +186,42 @@ void PCSX::Debug::process(uint32_t oldPC, uint32_t newPC, uint32_t oldCode, uint
         if (isLB || isLBU) {
             checkBP(offset, BreakpointType::Read, 1);
             if (m_breakmp_r8 && !isMapMarked(offset, MAP_R8)) {
-                triggerBP(nullptr, offset, 1, _("Read 8 map"));
+                triggerBP(nullptr, offset, 1, "Read 8 map");
             }
             if (m_mapping_r8) markMap(offset, MAP_R8);
         }
         if (isLH || isLHU) {
             checkBP(offset, BreakpointType::Read, 2);
             if (m_breakmp_r16 && !isMapMarked(offset, MAP_R16)) {
-                triggerBP(nullptr, offset, 2, _("Read 16 map"));
+                triggerBP(nullptr, offset, 2, "Read 16 map");
             }
             if (m_mapping_r16) markMap(offset, MAP_R16);
         }
         if (isLW || isLWR || isLWL || isLWC2) {
             checkBP(offset, BreakpointType::Read, 4);
             if (m_breakmp_r32 && !isMapMarked(offset, MAP_R32)) {
-                triggerBP(nullptr, offset, 4, _("Read 32 map"));
+                triggerBP(nullptr, offset, 4, "Read 32 map");
             }
             if (m_mapping_r32) markMap(offset, MAP_R32);
         }
         if (isSB) {
             checkBP(offset, BreakpointType::Write, 1);
             if (m_breakmp_w8 && !isMapMarked(offset, MAP_W8)) {
-                triggerBP(nullptr, offset, 1, _("Write 8 map"));
+                triggerBP(nullptr, offset, 1, "Write 8 map");
             }
             if (m_mapping_w8) markMap(offset, MAP_W8);
         }
         if (isSH) {
             checkBP(offset, BreakpointType::Write, 2);
             if (m_breakmp_w16 && !isMapMarked(offset, MAP_W16)) {
-                triggerBP(nullptr, offset, 2, _("Write 16 map"));
+                triggerBP(nullptr, offset, 2, "Write 16 map");
             }
             if (m_mapping_w16) markMap(offset, MAP_W16);
         }
         if (isSW || isSWR || isSWL || isSWC2) {
             checkBP(offset, BreakpointType::Write, 4);
             if (m_breakmp_w32 && !isMapMarked(offset, MAP_W32)) {
-                triggerBP(nullptr, offset, 4, _("Write 32 map"));
+                triggerBP(nullptr, offset, 4, "Write 32 map");
             }
             if (m_mapping_w32) markMap(offset, MAP_W32);
         }
@@ -243,10 +243,10 @@ void PCSX::Debug::process(uint32_t oldPC, uint32_t newPC, uint32_t oldCode, uint
         if (!g_emulator->m_cpu->m_inISR && offsetIsInKernel && !wasInKernel) {
             if (m_checkKernel) {
                 if (isLoad) {
-                    g_system->printf(_("Kernel checker: Reading %08x from %08x\n"), offset, oldPC);
+                    g_system->printf("Kernel checker: Reading %08x from %08x\n", offset, oldPC);
                     g_system->pause();
                 } else {
-                    g_system->printf(_("Kernel checker: Writing to %08x from %08x\n"), offset, oldPC);
+                    g_system->printf("Kernel checker: Writing to %08x from %08x\n", offset, oldPC);
                     g_system->pause();
                 }
                 g_system->pause();
@@ -264,7 +264,7 @@ void PCSX::Debug::process(uint32_t oldPC, uint32_t newPC, uint32_t oldCode, uint
 
     switch (m_step) {
         case STEP_IN: {
-            triggerBP(nullptr, newPC, 4, _("Step in"));
+            triggerBP(nullptr, newPC, 4, "Step in");
         } break;
         case STEP_OVER: {
             if (!m_stepperHasBreakpoint && !skipStepOverAndOut) {
@@ -272,7 +272,7 @@ void PCSX::Debug::process(uint32_t oldPC, uint32_t newPC, uint32_t oldCode, uint
                     uint32_t sp = regs.GPR.n.sp;
                     m_stepperHasBreakpoint = true;
                     addBreakpoint(
-                        oldPC + 4, BreakpointType::Exec, 4, _("Step Over"),
+                        oldPC + 4, BreakpointType::Exec, 4, "Step Over",
                         [sp, this](const Breakpoint* bp, uint32_t address, unsigned width, const char* cause) {
                             if (sp != g_emulator->m_cpu->m_regs.GPR.n.sp) return true;
                             g_system->pause();
@@ -280,13 +280,13 @@ void PCSX::Debug::process(uint32_t oldPC, uint32_t newPC, uint32_t oldCode, uint
                             return false;
                         });
                 } else {
-                    triggerBP(nullptr, newPC, 4, _("Step over"));
+                    triggerBP(nullptr, newPC, 4, "Step over");
                 }
             }
         } break;
         case STEP_OUT: {
             if (!m_stepperHasBreakpoint && !skipStepOverAndOut) {
-                triggerBP(nullptr, newPC, 4, _("Step out (no callstack)"));
+                triggerBP(nullptr, newPC, 4, "Step out (no callstack)");
             }
             break;
         }
@@ -313,7 +313,7 @@ bool PCSX::Debug::triggerBP(Breakpoint* bp, uint32_t address, unsigned width, co
     }
     if (g_system->running()) return keepBP;
     m_step = STEP_NONE;
-    g_system->printf(_("Breakpoint triggered: PC=0x%08x - Cause: %s %s\n"), pc, name, cause);
+    g_system->printf("Breakpoint triggered: PC=0x%08x - Cause: %s %s\n", pc, name, cause);
     g_system->m_eventBus->signal(Events::GUI::JumpToPC{pc});
     return keepBP;
 }
@@ -424,7 +424,7 @@ void PCSX::Debug::stepOut() {
     if (ra == 0) return;
     if (fp == 0) return;
 
-    addBreakpoint(ra, BreakpointType::Exec, 4, _("Step Out"),
+    addBreakpoint(ra, BreakpointType::Exec, 4, "Step Out",
                   [fp, this](const Breakpoint* bp, uint32_t address, unsigned width, const char* cause) {
                       if (g_emulator->m_cpu->m_regs.GPR.n.sp != fp) return true;
                       g_system->pause();

@@ -58,8 +58,6 @@ bool PCSX::UI::loadSettings() {
 }
 
 void PCSX::UI::finishLoadSettings() {
-    auto& emuSettings = g_emulator->settings;
-    g_system->activateLocale(emuSettings.get<Emulator::SettingLocale>());
     g_system->m_eventBus->signal(Events::SettingsLoaded{g_system->getArgs().isSafeModeEnabled()});
 }
 

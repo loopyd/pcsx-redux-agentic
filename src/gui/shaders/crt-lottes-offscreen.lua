@@ -50,24 +50,24 @@ function Draw()
     if not configureme then return end
     local shoulddraw, lc
     local changed = false
-    shoulddraw, configureme = imgui.Begin(t_('Offscreen CRT shader Configuration'), true)
+    shoulddraw, configureme = imgui.Begin('Offscreen CRT shader Configuration', true)
     if not shoulddraw then
         imgui.End()
         return true
     end
 
-    lc, enabled = imgui.Checkbox(t_('Enable gaussian blur'), enabled)
+    lc, enabled = imgui.Checkbox('Enable gaussian blur', enabled)
     if (lc) then changed = true end
-    lc, hardPix = imgui.SliderFloat(t_('Hard Pixel factor'), hardPix, 0.0, 3, '%.3f')
+    lc, hardPix = imgui.SliderFloat('Hard Pixel factor', hardPix, 0.0, 3, '%.3f')
     if (lc) then changed = true end
-    lc, hardScan = imgui.SliderFloat(t_('Hard Scanline factor'), hardScan, 0.0, 20.0, '%.3f')
+    lc, hardScan = imgui.SliderFloat('Hard Scanline factor', hardScan, 0.0, 20.0, '%.3f')
     if (lc) then changed = true end
-    lc, scanlines = imgui.Checkbox(t_('Enable Scanlines'), scanlines)
+    lc, scanlines = imgui.Checkbox('Enable Scanlines', scanlines)
     if (lc) then changed = true end
-    lc, useSrgb = imgui.Checkbox(t_('Use S-rgb'), useSrgb)
+    lc, useSrgb = imgui.Checkbox('Use S-rgb', useSrgb)
     if (lc) then changed = true end
 
-    if (imgui.Button(t_('Reset to defaults'))) then
+    if (imgui.Button('Reset to defaults')) then
         Reset()
         changed = true
     end

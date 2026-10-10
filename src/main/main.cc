@@ -281,7 +281,6 @@ int pcsxMain(int argc, char **argv) {
     std::filesystem::path self = PCSX::BinPath::getExecutablePath();
     std::filesystem::path binDir = std::filesystem::absolute(self).parent_path();
     system->setBinDir(binDir);
-    system->loadAllLocales();
 
     // This is another early out, which can only be done once we have a system object.
     if (args.get<bool>("version")) {
@@ -331,8 +330,6 @@ int pcsxMain(int argc, char **argv) {
         emulator->m_sio->loadMcds(path1, path2);
         auto biosCfg = args.get<std::string>("bios");
         if (biosCfg.has_value()) emuSettings.get<PCSX::Emulator::SettingBios>() = biosCfg.value();
-
-        system->activateLocale(emuSettings.get<PCSX::Emulator::SettingLocale>());
 
         if (args.get<bool>("debugger")) {
             debugSettings.get<PCSX::Emulator::DebugSettings::Debug>() = true;
@@ -551,7 +548,7 @@ runner.init({
                     // emulation stack has unwound and nothing is holding values
                     // from before the load.
                     if (!PCSX::SaveStates::load(system->takePendingSaveStateLoad())) {
-                        PCSX::g_system->message(_("Failed to load save state\n"));
+                        PCSX::g_system->message("Failed to load save state\n");
                     }
                 } else if (system->running()) {
                     // This will run until paused or interrupted somehow.

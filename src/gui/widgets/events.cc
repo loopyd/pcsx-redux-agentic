@@ -36,10 +36,10 @@ void PCSX::Widgets::Events::draw(IO<File> memFile, const char* title) {
     auto events = Kernel::Events::getAllEvents(memFile);
     if (ImGui::BeginTable("Events", 6, flags)) {
         ImGui::TableSetupColumn("ID");
-        ImGui::TableSetupColumn(_("Core"));
-        ImGui::TableSetupColumn(_("Spec"));
-        ImGui::TableSetupColumn(_("Mode"));
-        ImGui::TableSetupColumn(_("Flag"));
+        ImGui::TableSetupColumn("Core");
+        ImGui::TableSetupColumn("Spec");
+        ImGui::TableSetupColumn("Mode");
+        ImGui::TableSetupColumn("Flag");
         ImGui::TableSetupColumn("CB");
         ImGui::TableHeadersRow();
         for (auto& ev : events) {

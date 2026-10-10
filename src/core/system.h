@@ -29,15 +29,11 @@ typedef struct uv_loop_s uv_loop_t;
 #include <chrono>
 #include <filesystem>
 #include <limits>
-#include <map>
 #include <string>
-#include <vector>
 
 #include "core/arguments.h"
 #include "fmt/format.h"
 #include "fmt/printf.h"
-#include "imgui.h"
-#include "support/djbhash.h"
 #include "support/eventbus.h"
 #include "support/version-info.h"
 
@@ -245,52 +241,8 @@ class System {
 
     std::shared_ptr<EventBus::EventBus> m_eventBus = std::make_shared<EventBus::EventBus>();
 
-    const char *getStr(uint64_t hash, const char *str) const {
-        auto ret = m_i18n.find(hash);
-        if (ret == m_i18n.end()) return str;
-        return ret->second.c_str();
-    }
-
     bool findResource(std::function<bool(const std::filesystem::path &path)> walker, const std::filesystem::path &name,
                       const std::filesystem::path &releasePath, const std::filesystem::path &sourcePath);
-    void loadAllLocales() {
-        for (auto &l : LOCALES) {
-            findResource([name = l.first, this](std::filesystem::path filename) { return loadLocale(name, filename); },
-                         l.second.filename, "i18n", "i18n");
-        }
-    }
-
-    bool loadLocale(const std::string &name, const std::filesystem::path &path);
-    void activateLocale(const std::string &name) {
-        if (name == "English") {
-            m_currentLocale = "English";
-            m_i18n = {};
-            return;
-        }
-        auto locale = m_locales.find(name);
-        if (locale == m_locales.end()) return;
-        m_i18n = locale->second;
-        m_currentLocale = name;
-    }
-    std::string localeName() const { return m_currentLocale; }
-    const ImWchar *getLocaleRanges() const {
-        auto localeInfo = LOCALES.find(m_currentLocale);
-        if (localeInfo == LOCALES.end()) return nullptr;
-        return localeInfo->second.ranges;
-    }
-    std::vector<std::pair<PCSX::u8string, const ImWchar *>> getLocaleExtra() {
-        auto localeInfo = LOCALES.find(m_currentLocale);
-        if (localeInfo == LOCALES.end()) return {};
-        return localeInfo->second.extraFonts;
-    }
-    std::vector<std::string> localesNames() {
-        std::vector<std::string> locales;
-        for (auto &l : m_locales) {
-            locales.push_back(l.first);
-        }
-        return locales;
-    }
-
     std::filesystem::path getBinDir() const { return m_binDir; }
     std::filesystem::path getPersistentDir() const;
     const VersionInfo &getVersion() const { return m_version; }
@@ -302,24 +254,10 @@ class System {
     }
     static inline void (*s_crashReportTagSetter)(const char *key, const char *value) = nullptr;
 
-    // needs to be odd, and is a replica of ImGui's range tables
-    enum class Range {
-        KOREAN = 1,
-        JAPANESE = 3,
-        CHINESE_FULL = 5,
-        CHINESE_SIMPLIFIED = 7,
-        CYRILLIC = 9,
-        THAI = 11,
-        VIETNAMESE = 13,
-    };
-
     uv_loop_t *getLoop();
 
   private:
     uv_loop_t *m_loop;
-    std::map<uint64_t, std::string> m_i18n;
-    std::map<std::string, decltype(m_i18n)> m_locales;
-    std::string m_currentLocale;
     // If true, indicates that the emulator is currently capturing the main loop
     // and actively emulates the PSX hardware. If false, the emulator is paused,
     // waiting for user input or other events inside the UI. The way the UI
@@ -339,13 +277,6 @@ class System {
     bool m_inExecute = false;
     std::string m_pendingSaveStateLoad;
     int m_exitCode = 0;
-    struct LocaleInfo {
-        const std::string filename;
-        const std::vector<std::pair<PCSX::u8string, const ImWchar *>> extraFonts;
-        const ImWchar *ranges = nullptr;
-    };
-    static const std::map<std::string, LocaleInfo> LOCALES;
-
   protected:
     std::filesystem::path m_binDir;
     PCSX::VersionInfo m_version;
@@ -355,16 +286,3 @@ class System {
 extern System *g_system;
 
 }  // namespace PCSX
-
-// i18n macros
-// Normal string lookup to const char *
-#define _(str) PCSX::g_system->getStr(PCSX::djb::ctHash(str), str)
-// Formatting string lookup to use with fmt::format or fmt::printf
-#define f_(str) fmt::runtime(PCSX::g_system->getStr(PCSX::djb::ctHash(str), str))
-// Lambda string lookup to use with static arrays of strings
-#define l_(str) []() { return PCSX::g_system->getStr(PCSX::djb::ctHash(str), str); }
-// Same as _() and l_(), with a translation context for strings whose meaning
-// depends on where they're used, e.g. C_("Menu", "Update"). The context shows up
-// as msgctxt in the .pot file, and both arguments need to be string literals.
-#define C_(ctx, str) PCSX::g_system->getStr(PCSX::djb::ctHash(ctx "\004" str), str)
-#define lC_(ctx, str) []() { return PCSX::g_system->getStr(PCSX::djb::ctHash(ctx "\004" str), str); }

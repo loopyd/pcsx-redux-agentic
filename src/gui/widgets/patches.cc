@@ -32,7 +32,7 @@ void PCSX::Widgets::Patches::draw(const char* title) {
     }
 
     if (PCSX::g_emulator->m_cpu->isDynarec()) {
-        ImGui::TextUnformatted(_("Patching is only available in Interpreted CPU mode"));
+        ImGui::TextUnformatted("Patching is only available in Interpreted CPU mode");
         ImGui::End();
         return;
     }
@@ -65,8 +65,8 @@ void PCSX::Widgets::Patches::draw(const char* title) {
                 g_system->m_eventBus->signal(PCSX::Events::GUI::JumpToPC{patch.addr});
             }
             if (ImGui::BeginPopupContextItem()) {
-                ImGui::TextUnformatted(_("Delete Patch?"));
-                if (ImGui::Button(_("Delete"))) {
+                ImGui::TextUnformatted("Delete Patch?");
+                if (ImGui::Button("Delete")) {
                     deleteIndex = row;
                     ImGui::CloseCurrentPopup();
                 }
@@ -85,7 +85,7 @@ void PCSX::Widgets::Patches::draw(const char* title) {
             ImGui::PopID();
 
             ImGui::TableSetColumnIndex(3);
-            ImGui::TextUnformatted(patch.type == PCSX::PatchManager::Patch::Type::Return ? C_("Patch type", "Return")
+            ImGui::TextUnformatted(patch.type == PCSX::PatchManager::Patch::Type::Return ? "Return"
                                                                                          : "NOP");
         }
         ImGui::EndTable();
@@ -94,23 +94,23 @@ void PCSX::Widgets::Patches::draw(const char* title) {
             patchManager.deletePatch(deleteIndex);
         }
 
-        if (ImGui::Button(_("Activate All"))) {
+        if (ImGui::Button("Activate All")) {
             patchManager.activateAll();
         }
 
         ImGui::SameLine();
-        if (ImGui::Button(_("Deactivate All"))) {
+        if (ImGui::Button("Deactivate All")) {
             patchManager.deactivateAll();
         }
 
         if (patchManager.getNumPatches() > 0) {
             ImGui::SameLine();
-            if (ImGui::Button(_("Delete All"))) {
+            if (ImGui::Button("Delete All")) {
                 ImGui::OpenPopup("delpatches_popup");
             }
             if (ImGui::BeginPopup("delpatches_popup")) {
-                ImGui::TextUnformatted(_("Delete all Patches?"));
-                if (ImGui::Button(_("Delete##patches"))) {
+                ImGui::TextUnformatted("Delete all Patches?");
+                if (ImGui::Button("Delete##patches")) {
                     patchManager.deleteAllPatches();
                 }
                 ImGui::EndPopup();

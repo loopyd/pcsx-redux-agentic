@@ -216,10 +216,10 @@ void PCSX::GPULogger::checkVramBreakpoints(GPU::Logged* node) {
             op);
     };
 
-    const char* what = _("write");
+    const char* what = "write";
     if (watchingWrites) scan(GPU::Logged::PixelOp::WRITE);
     if ((hit == m_vramBreakpoints.size()) && watchingReads) {
-        what = _("read");
+        what = "read";
         scan(GPU::Logged::PixelOp::READ);
     }
     if (hit == m_vramBreakpoints.size()) return;
@@ -228,7 +228,7 @@ void PCSX::GPULogger::checkVramBreakpoints(GPU::Logged* node) {
     const auto name = node->getName();
     node->highlight = true;
     g_system->log(LogClass::GPU,
-                  _("VRAM breakpoint %i triggered: %.*s did a %s intersecting %ix%i at %i,%i - PC = 0x%08x\n"), hit,
+                  "VRAM breakpoint %i triggered: %.*s did a %s intersecting %ix%i at %i,%i - PC = 0x%08x\n", hit,
                   int(name.size()), name.data(), what, bp.area.w, bp.area.h, bp.area.x, bp.area.y, node->pc);
     g_system->m_eventBus->signal(Events::GUI::JumpToPC{node->pc});
     g_system->pause();
@@ -387,41 +387,41 @@ void PCSX::GPU::BlitVramRam::drawLogNode(unsigned, const DrawLogSettings&) {
 }
 
 void PCSX::GPU::TPage::drawLogNodeCommon() {
-    ImGui::Text(_("Texture Page X: %i, Texture Page Y: %i"), tx, ty);
-    ImGui::TextUnformatted(_("Blending:"));
+    ImGui::Text("Texture Page X: %i, Texture Page Y: %i", tx, ty);
+    ImGui::TextUnformatted("Blending:");
     ImGui::SameLine();
     switch (blendFunction) {
         case BlendFunction::HalfBackAndHalfFront:
-            ImGui::TextUnformatted(_("50% Back + 50% Front"));
+            ImGui::TextUnformatted("50% Back + 50% Front");
             break;
         case BlendFunction::FullBackAndFullFront:
-            ImGui::TextUnformatted(_("100% Back + 100% Front"));
+            ImGui::TextUnformatted("100% Back + 100% Front");
             break;
         case BlendFunction::FullBackSubFullFront:
-            ImGui::TextUnformatted(_("100% Back - 100% Front"));
+            ImGui::TextUnformatted("100% Back - 100% Front");
             break;
         case BlendFunction::FullBackAndQuarterFront:
-            ImGui::TextUnformatted(_("100% Back + 25% Front"));
+            ImGui::TextUnformatted("100% Back + 25% Front");
             break;
     }
-    ImGui::TextUnformatted(_("Texture depth:"));
+    ImGui::TextUnformatted("Texture depth:");
     ImGui::SameLine();
     switch (texDepth) {
         case TexDepth::Tex4Bits:
-            ImGui::TextUnformatted(_("4 bits"));
+            ImGui::TextUnformatted("4 bits");
             break;
         case TexDepth::Tex8Bits:
-            ImGui::TextUnformatted(_("8 bits"));
+            ImGui::TextUnformatted("8 bits");
             break;
         case TexDepth::Tex16Bits:
-            ImGui::TextUnformatted(_("16 bits"));
+            ImGui::TextUnformatted("16 bits");
             break;
     }
 }
 
 void PCSX::GPU::TPage::drawLogNode(unsigned, const DrawLogSettings&) {
     drawLogNodeCommon();
-    ImGui::Text(_("Dithering: %s"), dither ? _("Yes") : _("No"));
+    ImGui::Text("Dithering: %s", dither ? "Yes" : "No");
 }
 
 void PCSX::GPU::TWindow::drawLogNode(unsigned, const DrawLogSettings&) {
@@ -437,7 +437,7 @@ void PCSX::GPU::DrawingOffset::drawLogNode(unsigned, const DrawLogSettings&) { I
 
 void PCSX::GPU::MaskBit::drawLogNode(unsigned, const DrawLogSettings&) {
     ImGui::Text("  %s",
-                fmt::format(f_("Set: {}, Check: {}"), set ? _("Yes") : _("No"), check ? _("Yes") : _("No")).c_str());
+                fmt::format("Set: {}, Check: {}", set ? "Yes" : "No", check ? "Yes" : "No").c_str());
 }
 
 void PCSX::GPU::CtrlReset::drawLogNode(unsigned, const DrawLogSettings&) {}
@@ -446,25 +446,25 @@ void PCSX::GPU::CtrlIrqAck::drawLogNode(unsigned, const DrawLogSettings&) {}
 
 void PCSX::GPU::CtrlDisplayEnable::drawLogNode(unsigned, const DrawLogSettings&) {
     if (enable) {
-        ImGui::TextUnformatted(_("Display Enabled"));
+        ImGui::TextUnformatted("Display Enabled");
     } else {
-        ImGui::TextUnformatted(_("Display Disabled"));
+        ImGui::TextUnformatted("Display Disabled");
     }
 }
 
 void PCSX::GPU::CtrlDmaSetting::drawLogNode(unsigned, const DrawLogSettings&) {
     switch (dma) {
         case Dma::Off:
-            ImGui::TextUnformatted(_("DMA Off"));
+            ImGui::TextUnformatted("DMA Off");
             break;
         case Dma::FifoQuery:
-            ImGui::TextUnformatted(_("FIFO Query"));
+            ImGui::TextUnformatted("FIFO Query");
             break;
         case Dma::Read:
-            ImGui::TextUnformatted(_("DMA Read"));
+            ImGui::TextUnformatted("DMA Read");
             break;
         case Dma::Write:
-            ImGui::TextUnformatted(_("DMA Write"));
+            ImGui::TextUnformatted("DMA Write");
             break;
     }
 }
@@ -478,7 +478,7 @@ void PCSX::GPU::CtrlVerticalDisplayRange::drawLogNode(unsigned, const DrawLogSet
 }
 
 void PCSX::GPU::CtrlDisplayMode::drawLogNode(unsigned, const DrawLogSettings&) {
-    ImGui::TextUnformatted(_("Horizontal resolution:"));
+    ImGui::TextUnformatted("Horizontal resolution:");
     ImGui::SameLine();
     switch (hres) {
         case HR_256:
@@ -500,8 +500,8 @@ void PCSX::GPU::CtrlDisplayMode::drawLogNode(unsigned, const DrawLogSettings&) {
             ImGui::TextUnformatted("384 pixels");
             break;
     }
-    ImGui::Text(_("Extended width mode: %s"), widthRaw & 1 ? _("Yes") : _("No"));
-    ImGui::TextUnformatted(_("Vertical resolution:"));
+    ImGui::Text("Extended width mode: %s", widthRaw & 1 ? "Yes" : "No");
+    ImGui::TextUnformatted("Vertical resolution:");
     ImGui::SameLine();
     switch (vres) {
         case VR_240:
@@ -511,27 +511,27 @@ void PCSX::GPU::CtrlDisplayMode::drawLogNode(unsigned, const DrawLogSettings&) {
             ImGui::TextUnformatted("480 pixels");
             break;
     }
-    ImGui::Text(_("Output mode: %s"), mode == VM_NTSC ? "NTSC" : "PAL");
-    ImGui::Text(_("Display depth: %s"), depth == CD_15BITS ? _("15 bits") : _("24 bits"));
-    ImGui::Text(_("Interlaced: %s"), interlace ? _("Yes") : _("No"));
+    ImGui::Text("Output mode: %s", mode == VM_NTSC ? "NTSC" : "PAL");
+    ImGui::Text("Display depth: %s", depth == CD_15BITS ? "15 bits" : "24 bits");
+    ImGui::Text("Interlaced: %s", interlace ? "Yes" : "No");
 }
 
 void PCSX::GPU::CtrlQuery::drawLogNode(unsigned, const DrawLogSettings&) {
     switch (type()) {
         case QueryType::TextureWindow:
-            ImGui::TextUnformatted(_("Texture Window"));
+            ImGui::TextUnformatted("Texture Window");
             break;
         case QueryType::DrawAreaStart:
-            ImGui::TextUnformatted(_("Draw Area Start"));
+            ImGui::TextUnformatted("Draw Area Start");
             break;
         case QueryType::DrawAreaEnd:
-            ImGui::TextUnformatted(_("Draw Area End"));
+            ImGui::TextUnformatted("Draw Area End");
             break;
         case QueryType::DrawOffset:
-            ImGui::TextUnformatted(_("Draw Offset"));
+            ImGui::TextUnformatted("Draw Offset");
             break;
         default:
-            ImGui::TextUnformatted(_("Unknown"));
+            ImGui::TextUnformatted("Unknown");
             break;
     }
 }

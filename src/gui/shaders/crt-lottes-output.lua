@@ -55,21 +55,21 @@ function Draw()
     if not configureme then return end
     local shoulddraw, lc
     local changed = false
-    shoulddraw, configureme = imgui.Begin(t_('Output CRT Shader Configuration'), true)
+    shoulddraw, configureme = imgui.Begin('Output CRT Shader Configuration', true)
     if not shoulddraw then
         imgui.End()
         return true
     end
 
-    lc, warp = imgui.SliderFloat(t_('Warp intensity'), warp, 0.0, 8.0, '%0.3f')
+    lc, warp = imgui.SliderFloat('Warp intensity', warp, 0.0, 8.0, '%0.3f')
     if (lc) then changed = true end
-    lc, mask = imgui.SliderFloat(t_('Mask intensity'), mask, 0.0, 1.0, '%0.3f')
+    lc, mask = imgui.SliderFloat('Mask intensity', mask, 0.0, 1.0, '%0.3f')
     if (lc) then changed = true end
-    lc, grey = imgui.Checkbox(t_('Greyscale'), grey)
+    lc, grey = imgui.Checkbox('Greyscale', grey)
     if (lc) then changed = true end
-    local masknames = { t_('Trinitron'), t_('Trinitron 2x'), t_('Trio') }
+    local masknames = { 'Trinitron', 'Trinitron 2x', 'Trio' }
     local maskname = masknames[masktype]
-    shoulddraw = imgui.BeginCombo(t_('Mask type'), maskname)
+    shoulddraw = imgui.BeginCombo('Mask type', maskname)
     if shoulddraw then
         for i = 1, 3 do
             if imgui.Selectable(masknames[i], i == masktype) then
@@ -80,7 +80,7 @@ function Draw()
         imgui.EndCombo()
     end
 
-    if (imgui.Button(t_('Reset to defaults'))) then
+    if (imgui.Button('Reset to defaults')) then
         Reset()
         changed = true
     end

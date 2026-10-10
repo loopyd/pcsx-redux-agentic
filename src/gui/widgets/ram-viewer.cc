@@ -475,37 +475,37 @@ void PCSX::Widgets::RAMViewer::draw(GUI *gui) {
     bool openGridColorPicker = false;
 
     auto flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_MenuBar;
-    if (ImGui::Begin(_("RAM Viewer"), &m_show, flags)) {
+    if (ImGui::Begin("RAM Viewer", &m_show, flags)) {
         m_DPI = ImGui::GetWindowDpiScale();
         if (!m_firstShown) {
             resetView();
             m_firstShown = true;
         }
         if (ImGui::BeginMenuBar()) {
-            if (ImGui::BeginMenu(_("View"))) {
-                if (ImGui::MenuItem(_("Reset view"))) resetView();
+            if (ImGui::BeginMenu("View")) {
+                if (ImGui::MenuItem("Reset view")) resetView();
                 ImGui::Separator();
-                ImGui::MenuItem(_("Show reads"), nullptr, &m_showRead);
-                ImGui::MenuItem(_("Show writes"), nullptr, &m_showWrite);
-                ImGui::MenuItem(_("Show execution"), nullptr, &m_showExec);
-                ImGui::MenuItem(_("Show greyscale"), nullptr, &m_showGreyscale);
+                ImGui::MenuItem("Show reads", nullptr, &m_showRead);
+                ImGui::MenuItem("Show writes", nullptr, &m_showWrite);
+                ImGui::MenuItem("Show execution", nullptr, &m_showExec);
+                ImGui::MenuItem("Show greyscale", nullptr, &m_showGreyscale);
                 ImGui::Separator();
-                ImGui::MenuItem(_("Show grid"), nullptr, &m_drawGrid);
-                ImGui::MenuItem(_("Show hex values"), nullptr, &m_showHex);
-                ImGui::MenuItem(_("Select grid color"), nullptr, &openGridColorPicker);
+                ImGui::MenuItem("Show grid", nullptr, &m_drawGrid);
+                ImGui::MenuItem("Show hex values", nullptr, &m_showHex);
+                ImGui::MenuItem("Select grid color", nullptr, &openGridColorPicker);
                 ImGui::Separator();
-                ImGui::MenuItem(_("Show Shader Editor"), nullptr, &m_editor.m_show);
+                ImGui::MenuItem("Show Shader Editor", nullptr, &m_editor.m_show);
                 ImGui::EndMenu();
             }
             ImGui::Separator();
-            if (ImGui::BeginMenu(_("Configuration"))) {
-                ImGui::MenuItem(_("Select read color"), nullptr, &openReadColorPicker);
-                ImGui::MenuItem(_("Select write color"), nullptr, &openWriteColorPicker);
-                ImGui::MenuItem(_("Select exec color"), nullptr, &openExecColorPicker);
+            if (ImGui::BeginMenu("Configuration")) {
+                ImGui::MenuItem("Select read color", nullptr, &openReadColorPicker);
+                ImGui::MenuItem("Select write color", nullptr, &openWriteColorPicker);
+                ImGui::MenuItem("Select exec color", nullptr, &openExecColorPicker);
                 ImGui::Separator();
                 auto *logger = g_emulator->m_ramLogger.get();
                 float halfLifeMs = logger->m_decayHalfLife / 33868.8f;
-                if (ImGui::SliderFloat(_("Decay half-life (ms)"), &halfLifeMs, 10.0f, 10000.0f, "%.0f",
+                if (ImGui::SliderFloat("Decay half-life (ms)", &halfLifeMs, 10.0f, 10000.0f, "%.0f",
                                        ImGuiSliderFlags_Logarithmic)) {
                     logger->m_decayHalfLife = halfLifeMs * 33868.8f;
                 }
@@ -533,42 +533,42 @@ void PCSX::Widgets::RAMViewer::draw(GUI *gui) {
     }
 
     // Color pickers
-    if (openReadColorPicker) ImGui::OpenPopup(_("Read Color Picker"));
-    if (ImGui::BeginPopupModal(_("Read Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (openReadColorPicker) ImGui::OpenPopup("Read Color Picker");
+    if (ImGui::BeginPopupModal("Read Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##ReadColorPicker", (float *)&m_readColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    if (openWriteColorPicker) ImGui::OpenPopup(_("Write Color Picker"));
-    if (ImGui::BeginPopupModal(_("Write Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (openWriteColorPicker) ImGui::OpenPopup("Write Color Picker");
+    if (ImGui::BeginPopupModal("Write Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##WriteColorPicker", (float *)&m_writeColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    if (openExecColorPicker) ImGui::OpenPopup(_("Exec Color Picker"));
-    if (ImGui::BeginPopupModal(_("Exec Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (openExecColorPicker) ImGui::OpenPopup("Exec Color Picker");
+    if (ImGui::BeginPopupModal("Exec Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##ExecColorPicker", (float *)&m_execColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    if (openGridColorPicker) ImGui::OpenPopup(_("Grid Color Picker"));
-    if (ImGui::BeginPopupModal(_("Grid Color Picker"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (openGridColorPicker) ImGui::OpenPopup("Grid Color Picker");
+    if (ImGui::BeginPopupModal("Grid Color Picker", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::ColorPicker4(
             "##GridColorPicker", (float *)&m_gridColor,
             ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-        if (ImGui::Button(_("OK"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     ImGui::End();
 
     if (m_editor.m_show) {
-        bool changed = m_editor.draw(gui, _("RAM Shader Editor"));
+        bool changed = m_editor.draw(gui, "RAM Shader Editor");
         if (changed) compileShader(gui);
     }
 }

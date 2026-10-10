@@ -340,25 +340,25 @@ void PCSX::Widgets::Assembly::jumpToMemory(uint32_t addr, unsigned size, unsigne
 }
 void PCSX::Widgets::Assembly::addMemoryEditorContext(uint32_t addr, int size) {
     if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem(_("Go to in Memory Editor #1 (Default Click)"))) jumpToMemory(addr, size, 0);
-        if (ImGui::MenuItem(_("Go to in Memory Editor #2 (Shift+Click)"))) jumpToMemory(addr, size, 1);
-        if (ImGui::MenuItem(_("Go to in Memory Editor #3 (Ctrl+Click)"))) jumpToMemory(addr, size, 2);
+        if (ImGui::MenuItem("Go to in Memory Editor #1 (Default Click)")) jumpToMemory(addr, size, 0);
+        if (ImGui::MenuItem("Go to in Memory Editor #2 (Shift+Click)")) jumpToMemory(addr, size, 1);
+        if (ImGui::MenuItem("Go to in Memory Editor #3 (Ctrl+Click)")) jumpToMemory(addr, size, 2);
         std::string itemLabel;
         for (unsigned i = 3; i < 8; ++i) {
-            itemLabel = fmt::format(f_("Go to in Memory Editor #{}"), i + 1);
+            itemLabel = fmt::format("Go to in Memory Editor #{}", i + 1);
             if (ImGui::MenuItem(itemLabel.c_str())) jumpToMemory(addr, size, i);
         }
-        if (ImGui::MenuItem(_("Create Memory Read Breakpoint"))) {
-            g_emulator->m_debug->addBreakpoint(addr, Debug::BreakpointType::Read, size, _("GUI"));
+        if (ImGui::MenuItem("Create Memory Read Breakpoint")) {
+            g_emulator->m_debug->addBreakpoint(addr, Debug::BreakpointType::Read, size, "GUI");
         }
-        if (ImGui::MenuItem(_("Create Memory Write Breakpoint"))) {
-            g_emulator->m_debug->addBreakpoint(addr, Debug::BreakpointType::Write, size, _("GUI"));
+        if (ImGui::MenuItem("Create Memory Write Breakpoint")) {
+            g_emulator->m_debug->addBreakpoint(addr, Debug::BreakpointType::Write, size, "GUI");
         }
         ImGui::EndPopup();
     }
 }
 void PCSX::Widgets::Assembly::addMemoryEditorSubMenu(uint32_t addr, int size) {
-    if (ImGui::BeginMenu(_("Go to in Memory Editor..."))) {
+    if (ImGui::BeginMenu("Go to in Memory Editor...")) {
         std::string itemLabel;
         for (unsigned i = 0; i < 8; ++i) {
             itemLabel = fmt::format("#{}", i + 1);
@@ -406,7 +406,7 @@ void PCSX::Widgets::Assembly::OfB(int16_t offset, uint8_t reg, int size) {
                 ImGui::Text("%s[%8.8x] = %8.8x", longLabel.c_str(), addr, mem32(addr));
                 break;
         }
-        ImGui::Text(_("Go to in Memory Editor #%d"), targetEditorIndex + 1);
+        ImGui::Text("Go to in Memory Editor #%d", targetEditorIndex + 1);
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
@@ -467,7 +467,7 @@ void PCSX::Widgets::Assembly::Offset(uint32_t addr, int size) {
                 ImGui::Text("[%8.8x] = %8.8x", addr, mem32(addr));
                 break;
         }
-        ImGui::Text(_("Go to in Memory Editor #%u"), targetEditorIndex + 1);
+        ImGui::Text("Go to in Memory Editor #%u", targetEditorIndex + 1);
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
@@ -490,62 +490,62 @@ bool PCSX::Widgets::Assembly::draw(GUI* gui, psxRegisters* registers, Memory* me
     bool openSymbolsDialog = false;
 
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu(_("File"))) {
-            openSymbolsDialog = ImGui::MenuItem(_("Load symbols map"));
-            if (ImGui::MenuItem(_("Reset symbols map"))) {
+        if (ImGui::BeginMenu("File")) {
+            openSymbolsDialog = ImGui::MenuItem("Load symbols map");
+            if (ImGui::MenuItem("Reset symbols map")) {
                 cpu->m_symbols.clear();
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu(_("Debug"))) {
-            if (ImGui::MenuItem(C_("Emulation", "Pause"), "F6", nullptr, g_system->running())) g_system->pause();
-            if (ImGui::MenuItem(C_("Emulation", "Resume"), "F5", nullptr, !g_system->running())) g_system->resume();
+        if (ImGui::BeginMenu("Debug")) {
+            if (ImGui::MenuItem("Pause", "F6", nullptr, g_system->running())) g_system->pause();
+            if (ImGui::MenuItem("Resume", "F5", nullptr, !g_system->running())) g_system->resume();
             ImGui::Separator();
-            if (ImGui::MenuItem(_("Step In"), "F11", nullptr, !g_system->running())) g_emulator->m_debug->stepIn();
-            if (ImGui::MenuItem(_("Step Over"), "F10", nullptr, !g_system->running())) g_emulator->m_debug->stepOver();
-            if (ImGui::MenuItem(_("Step Out"), "Shift+F11", nullptr, !g_system->running()))
+            if (ImGui::MenuItem("Step In", "F11", nullptr, !g_system->running())) g_emulator->m_debug->stepIn();
+            if (ImGui::MenuItem("Step Over", "F10", nullptr, !g_system->running())) g_emulator->m_debug->stepOver();
+            if (ImGui::MenuItem("Step Out", "Shift+F11", nullptr, !g_system->running()))
                 g_emulator->m_debug->stepOut();
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu(_("Options"))) {
-            ImGui::MenuItem(_("Combined pseudo-instructions"), nullptr, &m_pseudo);
+        if (ImGui::BeginMenu("Options")) {
+            ImGui::MenuItem("Combined pseudo-instructions", nullptr, &m_pseudo);
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::PushTextWrapPos(glyphWidth * 35.0f);
                 ImGui::TextUnformatted(
-                    _("When two instructions are detected to be a single pseudo-instruction, combine them into the "
-                      "actual pseudo-instruction."));
+                    "When two instructions are detected to be a single pseudo-instruction, combine them into the "
+                      "actual pseudo-instruction.");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
             }
-            ImGui::MenuItem(_("Pseudo-instructions filling"), nullptr, &m_pseudoFilling, m_pseudo);
+            ImGui::MenuItem("Pseudo-instructions filling", nullptr, &m_pseudoFilling, m_pseudo);
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::PushTextWrapPos(glyphWidth * 35.0f);
                 ImGui::TextUnformatted(
-                    _("When combining two instructions into a single pseudo-instruction, add a placeholder for the "
-                      "second one."));
+                    "When combining two instructions into a single pseudo-instruction, add a placeholder for the "
+                      "second one.");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
             }
-            ImGui::MenuItem(_("Delay slot notch"), nullptr, &m_delaySlotNotch);
+            ImGui::MenuItem("Delay slot notch", nullptr, &m_delaySlotNotch);
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::PushTextWrapPos(glyphWidth * 35.0f);
                 ImGui::TextUnformatted(
-                    _("Add a small visible notch to indicate instructions that are on the delay slot of a branch."));
+                    "Add a small visible notch to indicate instructions that are on the delay slot of a branch.");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
             }
-            ImGui::MenuItem(_("Draw arrows for jumps"), nullptr, &m_displayArrowForJumps);
+            ImGui::MenuItem("Draw arrows for jumps", nullptr, &m_displayArrowForJumps);
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::PushTextWrapPos(glyphWidth * 35.0f);
-                ImGui::TextUnformatted(_("Display arrows for jumps. This might crowd the display a bit too much."));
+                ImGui::TextUnformatted("Display arrows for jumps. This might crowd the display a bit too much.");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
             }
-            ImGui::SliderInt(_("Columns"), &m_numColumns, 0, 32);
+            ImGui::SliderInt("Columns", &m_numColumns, 0, 32);
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -554,7 +554,7 @@ bool PCSX::Widgets::Assembly::draw(GUI* gui, psxRegisters* registers, Memory* me
     DummyAsm dummy;
 
     auto& debugSettings = g_emulator->settings.get<Emulator::SettingDebugSettings>();
-    if (ImGui::Checkbox(_("Enable Debugger"), &debugSettings.get<Emulator::DebugSettings::Debug>().value)) {
+    if (ImGui::Checkbox("Enable Debugger", &debugSettings.get<Emulator::DebugSettings::Debug>().value)) {
         if (g_emulator->settings.get<Emulator::SettingDynarec>() &&
             debugSettings.get<Emulator::DebugSettings::Debug>()) {
             gui->addNotification(R"(Debugger and dynarec enabled at the same time.
@@ -563,28 +563,28 @@ settings, otherwise debugging features may not work.)");
         }
     }
     ImGui::SameLine();
-    ImGui::Checkbox(_("CPU trace"), &debugSettings.get<Emulator::DebugSettings::Trace>().value);
+    ImGui::Checkbox("CPU trace", &debugSettings.get<Emulator::DebugSettings::Trace>().value);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Skip ISR"), &debugSettings.get<Emulator::DebugSettings::SkipISR>().value);
+    ImGui::Checkbox("Skip ISR", &debugSettings.get<Emulator::DebugSettings::SkipISR>().value);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Demangle C++"), &debugSettings.get<Emulator::DebugSettings::DemangledSymbols>().value);
+    ImGui::Checkbox("Demangle C++", &debugSettings.get<Emulator::DebugSettings::DemangledSymbols>().value);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Follow PC"), &m_followPC);
+    ImGui::Checkbox("Follow PC", &m_followPC);
     ImGui::SameLine();
-    if (ImGui::Button(_("Jump to PC"))) {
+    if (ImGui::Button("Jump to PC")) {
         m_jumpToPC = m_registers->pc;
     }
-    DButton(C_("Emulation", "Pause"), g_system->running(), [&]() mutable { g_system->pause(); });
+    DButton("Pause", g_system->running(), [&]() mutable { g_system->pause(); });
     ImGui::SameLine();
-    DButton(C_("Emulation", "Resume"), !g_system->running(), [&]() mutable { g_system->resume(); });
+    DButton("Resume", !g_system->running(), [&]() mutable { g_system->resume(); });
     ImGui::SameLine();
-    DButton(_("Step In"), !g_system->running(), [&]() mutable { g_emulator->m_debug->stepIn(); });
+    DButton("Step In", !g_system->running(), [&]() mutable { g_emulator->m_debug->stepIn(); });
     ImGui::SameLine();
-    DButton(_("Step Over"), !g_system->running(), [&]() mutable { g_emulator->m_debug->stepOver(); });
+    DButton("Step Over", !g_system->running(), [&]() mutable { g_emulator->m_debug->stepOver(); });
     ImGui::SameLine();
-    DButton(_("Step Out"), !g_system->running(), [&]() mutable { g_emulator->m_debug->stepOut(); });
+    DButton("Step Out", !g_system->running(), [&]() mutable { g_emulator->m_debug->stepOut(); });
     ImGui::SameLine();
-    ImGui::Text(_("In ISR: %s"), cpu->m_inISR ? _("yes") : _("no"));
+    ImGui::Text("In ISR: %s", cpu->m_inISR ? "yes" : "no");
 
     gui->useMonoFont();
 
@@ -758,7 +758,7 @@ settings, otherwise debugging features may not work.)");
                             currentBP->enable();
                         }
                     } else {
-                        g_emulator->m_debug->addBreakpoint(dispAddr, Debug::BreakpointType::Exec, 4, _("GUI"));
+                        g_emulator->m_debug->addBreakpoint(dispAddr, Debug::BreakpointType::Exec, 4, "GUI");
                     }
                 };
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
@@ -767,70 +767,70 @@ settings, otherwise debugging features may not work.)");
                 std::string contextMenuID = fmt::format("assembly address menu {}", dispAddr);
                 if (ImGui::BeginPopupContextItem(contextMenuID.c_str())) {
                     if (symbol) {
-                        if (ImGui::MenuItem(_("Remove symbol"))) {
+                        if (ImGui::MenuItem("Remove symbol")) {
                             cpu->m_symbols.erase(dispAddr);
                         }
                     } else {
-                        if (ImGui::MenuItem(_("Create symbol here"))) {
+                        if (ImGui::MenuItem("Create symbol here")) {
                             openSymbolAdder = true;
                             m_symbolAddress = dispAddr;
                         }
                     }
-                    if (ImGui::MenuItem(_("Copy Address"))) {
+                    if (ImGui::MenuItem("Copy Address")) {
                         char fmtAddr[10];
                         std::snprintf(fmtAddr, sizeof(fmtAddr), "%8.8x", dispAddr);
                         ImGui::SetClipboardText(fmtAddr);
                     }
                     addMemoryEditorSubMenu(dispAddr, 4);
-                    if (ImGui::MenuItem(_("Run to Cursor"), nullptr, false, !PCSX::g_system->running())) {
+                    if (ImGui::MenuItem("Run to Cursor", nullptr, false, !PCSX::g_system->running())) {
                         g_emulator->m_debug->addBreakpoint(
-                            dispAddr, Debug::BreakpointType::Exec, 4, _("GUI"),
+                            dispAddr, Debug::BreakpointType::Exec, 4, "GUI",
                             [](const Debug::Breakpoint* bp, uint32_t address, unsigned width, const char* cause) {
                                 g_system->pause();
                                 return false;
                             });
                         g_system->resume();
                     }
-                    if (ImGui::MenuItem(_("Toggle Breakpoint"))) {
+                    if (ImGui::MenuItem("Toggle Breakpoint")) {
                         toggleBP();
                     }
                     if (hasBP) {
-                        if (ImGui::MenuItem(_("Remove Breakpoint"))) {
+                        if (ImGui::MenuItem("Remove Breakpoint")) {
                             g_emulator->m_debug->removeBreakpoint(currentBP);
                         }
                     } else {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-                        ImGui::TextUnformatted(_("Remove Breakpoint"));
+                        ImGui::TextUnformatted("Remove Breakpoint");
                         ImGui::PopStyleColor();
                     }
                     if (region.physBase == 0) {
                         PatchManager& pm = *g_emulator->m_patchManager;
                         int patchIdx = pm.findPatch(dispAddr);
                         if (patchIdx == -1) {
-                            if (ImGui::MenuItem(_("Patch in Return"))) {
+                            if (ImGui::MenuItem("Patch in Return")) {
                                 pm.registerPatch(dispAddr, PatchManager::Patch::Type::Return);
                             }
-                            if (ImGui::MenuItem(_("Patch in NOP"))) {
+                            if (ImGui::MenuItem("Patch in NOP")) {
                                 pm.registerPatch(dispAddr, PatchManager::Patch::Type::NOP);
                             }
                         } else {
                             PatchManager::Patch& patch = pm.getPatch(patchIdx);
                             switch (patch.type) {
                                 case PatchManager::Patch::Type::Return:
-                                    if (ImGui::MenuItem(_("Delete Return Patch"))) {
+                                    if (ImGui::MenuItem("Delete Return Patch")) {
                                         pm.deletePatch(patchIdx);
                                     }
                                     break;
 
                                 case PatchManager::Patch::Type::NOP:
-                                    if (ImGui::MenuItem(_("Delete NOP Patch"))) {
+                                    if (ImGui::MenuItem("Delete NOP Patch")) {
                                         pm.deletePatch(patchIdx);
                                     }
                                     break;
                             }
                         }
 
-                        if (ImGui::MenuItem(_("Assemble"))) {
+                        if (ImGui::MenuItem("Assemble")) {
                             openAssembler = true;
                             m_assembleAddress = dispAddr;
                             m_assembleStatus = "";
@@ -967,7 +967,7 @@ settings, otherwise debugging features may not work.)");
         std::snprintf(m_jumpAddressString, 19, "%08x", m_jumpToPC.value());
     }
     ImGui::PushItemWidth(10 * glyphWidth + style.FramePadding.x);
-    if (ImGui::InputText(_("Address"), m_jumpAddressString, 20,
+    if (ImGui::InputText("Address", m_jumpAddressString, 20,
                          ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
         char* endPtr;
         uint32_t jumpAddress = strtoul(m_jumpAddressString, &endPtr, 16);
@@ -981,7 +981,7 @@ settings, otherwise debugging features may not work.)");
     if (m_ramBase == 0x80000000) base = 1;
     if (m_ramBase == 0xa0000000) base = 2;
     ImGui::SameLine();
-    if (ImGui::BeginCombo(_("RAM base"), baseStrs[base])) {
+    if (ImGui::BeginCombo("RAM base", baseStrs[base])) {
         for (int i = 0; i < 3; i++) {
             if (ImGui::Selectable(baseStrs[i], base == i)) {
                 m_ramBase = baseValues[i];
@@ -990,7 +990,7 @@ settings, otherwise debugging features may not work.)");
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    if (ImGui::BeginCombo(_("Region"), c_regions[m_region].label)) {
+    if (ImGui::BeginCombo("Region", c_regions[m_region].label)) {
         for (int i = 0; i < c_regionCount; i++) {
             if (ImGui::Selectable(c_regions[i].label, m_region == i)) {
                 m_region = i;
@@ -999,7 +999,7 @@ settings, otherwise debugging features may not work.)");
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    if (ImGui::Button(_("Symbols"))) m_showSymbols = true;
+    if (ImGui::Button("Symbols")) m_showSymbols = true;
     ImGui::PopItemWidth();
     ImGui::BeginChild("##ScrollingRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
     if ((m_followPC && (m_registers->pc != m_previousPC)) || m_jumpToPC.has_value()) {
@@ -1020,33 +1020,33 @@ settings, otherwise debugging features may not work.)");
     }
     ImGui::EndChild();
     if (openSymbolAdder) {
-        ImGui::OpenPopup(_("Add symbol"));
+        ImGui::OpenPopup("Add symbol");
     }
-    if (ImGui::BeginPopupModal(_("Add symbol"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text(_("Add symbol for address 0x%08x:"), m_symbolAddress);
+    if (ImGui::BeginPopupModal("Add symbol", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Add symbol for address 0x%08x:", m_symbolAddress);
         ImGui::InputText("##symbol", &m_addSymbolName);
-        if (ImGui::Button(_("Add"))) {
+        if (ImGui::Button("Add")) {
             cpu->m_symbols[m_symbolAddress] = m_addSymbolName;
             m_addSymbolName.clear();
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button(_("Cancel"))) {
+        if (ImGui::Button("Cancel")) {
             m_addSymbolName.clear();
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
     if (openAssembler) {
-        ImGui::OpenPopup(_("Assemble"));
+        ImGui::OpenPopup("Assemble");
     }
-    if (ImGui::BeginPopupModal(_("Assemble"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text(_("Assemble code for address 0x%08x:"), m_assembleAddress);
+    if (ImGui::BeginPopupModal("Assemble", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Assemble code for address 0x%08x:", m_assembleAddress);
         gui->useMonoFont();
         ImGui::InputTextMultiline("##assemble", &m_assembleCode);
         ImGui::Text("%s", m_assembleStatus.c_str());
         ImGui::PopFont();
-        if (ImGui::Button(_("Assemble"))) {
+        if (ImGui::Button("Assemble")) {
             auto L = *g_emulator->m_lua;
             std::string assembler = fmt::format(R"(
 local success, msg = pcall(function() PCSX.Assembler.New():parse([[
@@ -1066,9 +1066,9 @@ if not success then return msg else return nil end
             L.pop();
         }
         ImGui::SameLine();
-        if (ImGui::Button(_("Clear"))) m_assembleCode.clear();
+        if (ImGui::Button("Clear")) m_assembleCode.clear();
         ImGui::SameLine();
-        if (ImGui::Button(_("Close"))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     ImGui::End();
@@ -1104,10 +1104,10 @@ if not success then return msg else return nil end
     }
 
     if (m_showSymbols) {
-        if (ImGui::Begin(_("Symbols"), &m_showSymbols)) {
-            if (ImGui::Button(_("Refresh"))) rebuildSymbolsCache();
+        if (ImGui::Begin("Symbols", &m_showSymbols)) {
+            if (ImGui::Button("Refresh")) rebuildSymbolsCache();
             ImGui::SameLine();
-            ImGui::InputText(_("Filter"), &m_symbolFilter);
+            ImGui::InputText("Filter", &m_symbolFilter);
             ImGui::BeginChild("symbolsList");
             auto up = [](const std::string& in) -> std::string {
                 std::string str = in;
@@ -1123,8 +1123,8 @@ if not success then return msg else return nil end
                 bool found = pos >= 0;
                 if (empty || found) {
                     std::string label = fmt::format("{} - {:08x}", display, symbol.second);
-                    std::string codeLabel = fmt::format(f_("Code##{}{:08x}"), symbol.first, symbol.second);
-                    std::string dataLabel = fmt::format(f_("Data##{}{:08x}"), symbol.first, symbol.second);
+                    std::string codeLabel = fmt::format("Code##{}{:08x}", symbol.first, symbol.second);
+                    std::string dataLabel = fmt::format("Data##{}{:08x}", symbol.first, symbol.second);
                     if (ImGui::Button(codeLabel.c_str())) {
                         m_jumpToPC = symbol.second;
                     }

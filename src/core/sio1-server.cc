@@ -125,5 +125,5 @@ void PCSX::SIO1Client::stopClient() {
     m_clientStatus = SIO1ClientStatus::CLIENT_STOPPED;
     g_emulator->m_counters->m_pollSIO1 = false;
     g_emulator->m_sio1->stopSIO1Connection();
-    g_system->printf("%s", _("SIO1 client disconnected\n"));
+    g_system->printf("%s", "SIO1 client disconnected\n");
 }

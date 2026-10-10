@@ -319,7 +319,7 @@ PCSX::OpenGL::Status PCSX::Widgets::ShaderEditor::compile(GUI *gui,
         char *log = (char *)malloc(maxLength);
         glGetShaderInfoLog(vertexShader, maxLength, &maxLength, log);
 
-        m_errorMessage = fmt::format(f_("Vertex Shader compilation error: {}\n"), log);
+        m_errorMessage = fmt::format("Vertex Shader compilation error: {}\n", log);
 
         free(log);
         glDeleteShader(vertexShader);
@@ -340,7 +340,7 @@ PCSX::OpenGL::Status PCSX::Widgets::ShaderEditor::compile(GUI *gui,
 
         glGetShaderInfoLog(pixelShader, maxLength, &maxLength, log);
 
-        m_errorMessage = fmt::format(f_("Pixel Shader compilation error: {}\n"), log);
+        m_errorMessage = fmt::format("Pixel Shader compilation error: {}\n", log);
 
         free(log);
         glDeleteShader(vertexShader);
@@ -362,7 +362,7 @@ PCSX::OpenGL::Status PCSX::Widgets::ShaderEditor::compile(GUI *gui,
 
         glGetProgramInfoLog(shaderProgram, maxLength, &maxLength, log);
 
-        m_errorMessage = fmt::format(f_("Link error: {}\n"), log);
+        m_errorMessage = fmt::format("Link error: {}\n", log);
 
         free(log);
         glDeleteProgram(shaderProgram);
@@ -374,7 +374,7 @@ PCSX::OpenGL::Status PCSX::Widgets::ShaderEditor::compile(GUI *gui,
     for (auto attrib : mandatoryAttributes) {
         int loc = glGetAttribLocation(shaderProgram, attrib.data());
         if (loc == -1) {
-            m_errorMessage = fmt::format(f_("Missing attribute {} in shader program"), attrib);
+            m_errorMessage = fmt::format("Missing attribute {} in shader program", attrib);
             glDeleteProgram(shaderProgram);
             glDeleteShader(vertexShader);
             glDeleteShader(pixelShader);
@@ -487,13 +487,13 @@ PCSX::OpenGL::Status PCSX::Widgets::ShaderEditor::compile(GUI *gui,
 
 bool PCSX::Widgets::ShaderEditor::draw(GUI *gui, const char *title) {
     if (!ImGui::Begin(title, &m_show)) return false;
-    ImGui::Checkbox(_("Auto compile"), &m_autocompile);
+    ImGui::Checkbox("Auto compile", &m_autocompile);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Auto save"), &m_autosave);
+    ImGui::Checkbox("Auto save", &m_autosave);
     ImGui::SameLine();
-    ImGui::Checkbox(_("Show all"), &m_showAll);
+    ImGui::Checkbox("Show all", &m_showAll);
     ImGui::SameLine();
-    if (ImGui::Button(_("Configure shader"))) {
+    if (ImGui::Button("Configure shader")) {
         setConfigure();
     }
     auto contents = ImGui::GetContentRegionAvail();
@@ -518,19 +518,19 @@ bool PCSX::Widgets::ShaderEditor::draw(GUI *gui, const char *title) {
     } else {
         if (ImGui::BeginTabBar("MyTabBar")) {
             ImVec2 size = {contents.x, contents.y - footerHeight};
-            if (ImGui::BeginTabItem(_("Vertex Shader"))) {
+            if (ImGui::BeginTabItem("Vertex Shader")) {
                 ImGui::BeginChild("VertexShaderEditor", size);
                 m_vertexShaderEditor.draw(gui);
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem(_("Pixel Shader"))) {
+            if (ImGui::BeginTabItem("Pixel Shader")) {
                 ImGui::BeginChild("PixelShaderEditor", size);
                 m_pixelShaderEditor.draw(gui);
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem(_("Lua Invoker"))) {
+            if (ImGui::BeginTabItem("Lua Invoker")) {
                 ImGui::BeginChild("LuaInvoker", size);
                 m_luaEditor.draw(gui);
                 ImGui::EndChild();

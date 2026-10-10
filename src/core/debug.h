@@ -36,7 +36,7 @@ class Debug {
     static uint32_t normalizeAddress(uint32_t address);
     static bool isInKernel(uint32_t address, bool biosIsKernel = true);
     static inline std::function<const char*()> s_breakpoint_type_names[] = {
-        lC_("Breakpoint type", "Exec"), lC_("Breakpoint type", "Read"), lC_("Breakpoint type", "Write")};
+        []() { return "Exec"; }, []() { return "Read"; }, []() { return "Write"; }};
     enum class BreakpointType { Exec, Read, Write };
     enum class BreakpointCondition { Always, Change, Greater, Less, Equal };
 

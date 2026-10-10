@@ -129,7 +129,7 @@ ssize_t PCSX::CDRIso::ecmDecode(IO<File> f, unsigned int base, void *dest, int s
                 goto error_in;
             }
             if ((bits > 31) || ((uint32_t)(c & 0x7F)) >= (((uint32_t)0x80000000LU) >> (bits - 1))) {
-                // PCSX::g_system->message(_("Corrupt ECM file; invalid sector count\n"));
+                // PCSX::g_system->message("Corrupt ECM file; invalid sector count\n");
                 goto error;
             }
             num |= ((uint32_t)(c & 0x7F)) << bits;
@@ -279,7 +279,7 @@ bool PCSX::CDRIso::handleecm(const char *isoname, IO<File> cdh, int32_t *accurat
             return 0;
         }
 
-        PCSX::g_system->printf(_("\nDetected ECM file with proper header and filename suffix.\n"));
+        PCSX::g_system->printf("\nDetected ECM file with proper header and filename suffix.\n");
 
         // Reserve maximum known sector ammount for LUT (80MIN CD)
         m_len_ecm_savetable = 75 * 80 * 60;  // 2*(accurate_length/PCSX::CDRomCD_FRAMESIZE_RAW);
