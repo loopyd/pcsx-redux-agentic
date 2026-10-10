@@ -74,6 +74,11 @@ struct State {
     Queue responsefifo1;
     int32_t xaleft[2] = {};
     int32_t xaright[2] = {};
+    bool xaformatready = false;
+    int32_t xafrequency = 0;
+    int32_t xanbits = 0;
+    int32_t xastereo = 0;
+    int32_t xansamples = 0;
 };
 
 CDRom bind(State& s) {
@@ -127,10 +132,15 @@ CDRom bind(State& s) {
         CDResponseFifo1{CDQueueElement{CDQueuePayload{s.responsefifo1.payload}, CDQueueValue{s.responsefifo1.value}, CDQueueValueRead{s.responsefifo1.valueRead}, CDQueueHasValue{s.responsefifo1.hasValue}, CDQueueHitMax{s.responsefifo1.hitMax}, CDQueuePayloadSize{s.responsefifo1.payloadSize}, CDQueuePayloadIndex{s.responsefifo1.payloadIndex}}},
         CDXALeft{CDADPCM{CDADPCMY0{s.xaleft[0]}, CDADPCMY1{s.xaleft[1]}}},
         CDXARight{CDADPCM{CDADPCMY0{s.xaright[0]}, CDADPCMY1{s.xaright[1]}}},
+        CDXAFormatReady{s.xaformatready},
+        CDXAFrequency{s.xafrequency},
+        CDXANBits{s.xanbits},
+        CDXAStereo{s.xastereo},
+        CDXANSamples{s.xansamples},
     };
 }
 
-// No field may hold its default, so a field that is lost or swapped shows up.
+// Checked fields use nondefault values so losses and swaps show up.
 void fill(State& s) {
     for (unsigned i = 0; i < 2352; i++) s.datafifo[i] = static_cast<uint8_t>(i * 7 + 2);
     s.datafifoindex = 0x80000000u + 314187;
