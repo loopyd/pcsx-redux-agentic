@@ -13,21 +13,16 @@ skill=$fork_root/.agents/skills/psx-emulator
 [[ -f $skill/SKILL.md && ! -L $skill/SKILL.md ]] || fail 'canonical skill source is missing or not regular'
 [[ $(head -n 1 -- "$skill/SKILL.md") == --- ]] || fail 'skill frontmatter is missing'
 awk 'NR == 1 { next } /^---$/ { closed = 1; exit } /^name: psx-emulator$/ { found = 1 } END { exit !(found && closed) }' "$skill/SKILL.md" || fail 'canonical skill name differs'
-links=(.pi/skills/psx-emulator)
-targets=(../../third_party/pcsx-redux-agentic/.agents/skills/psx-emulator)
-for namespace in .agents .codex; do
-    alias=$host_repo/$namespace/skills/psx-emulator
-    if [[ -e $alias || -L $alias ]]; then
-        links+=("$namespace/skills/psx-emulator")
-        targets+=(../../.pi/skills/psx-emulator)
-    fi
-done
+links=(.agents/skills/psx-emulator .pi/skills/psx-emulator)
+targets=(../../third_party/pcsx-redux-agentic/.agents/skills/psx-emulator ../../.agents/skills/psx-emulator)
+legacy_targets=(../../.pi/skills/psx-emulator ../../third_party/pcsx-redux-agentic/.agents/skills/psx-emulator)
 for index in "${!links[@]}"; do
     path=$host_repo/${links[index]}
     parent=$(dirname -- "$path")
     [[ $(realpath -m -- "$parent") == "$parent" ]] || fail 'link parent traverses an unrelated symlink'
     if [[ -L $path ]]; then
-        [[ $(readlink -- "$path") == "${targets[index]}" ]] || fail "unrelated or stale symlink: ${links[index]}"
+        target=$(readlink -- "$path")
+        [[ $target == "${targets[index]}" || ($operation == install && $target == "${legacy_targets[index]}") ]] || fail "unrelated or stale symlink: ${links[index]}"
     elif [[ -e $path ]]; then
         fail "unowned path must be migrated by its owner: ${links[index]}"
     elif [[ $operation == check ]]; then
@@ -36,6 +31,10 @@ for index in "${!links[@]}"; do
 done
 for index in "${!links[@]}"; do
     path=$host_repo/${links[index]}
+    if [[ $operation == install && -L $path && $(readlink -- "$path") != "${targets[index]}" ]]; then
+        [[ $(readlink -- "$path") == "${legacy_targets[index]}" ]] || fail 'link changed before migration'
+        rm -- "$path"
+    fi
     if [[ $operation == install && ! -L $path ]]; then
         mkdir -p -- "$(dirname -- "$path")"
         temporary=$(mktemp -u -- "${path}.link.XXXXXXXX")
