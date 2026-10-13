@@ -77,11 +77,7 @@ void PCSX::Widgets::TypedDebugger::import(std::string_view fileContents, ImportT
             }
 
             FieldOrArgumentData data;
-            // Allow the data type and field name to be just about anything, as
-            // long as it's between commas. While usually C/C++/whatever
-            // identifiers have some rules, in Ghidra you can really just set
-            // just about any label you want so be as generous as possible when
-            // accepting input.
+            // Accept any data type and field labels between commas.
             const std::regex dataRegex(R"(([^,]+),([^,]+),(\d+))");
             std::smatch matches;
             if (std::regex_match(s, matches, dataRegex)) {
@@ -621,10 +617,8 @@ void PCSX::Widgets::TypedDebugger::draw(const char* title, GUI* gui) {
     GUI::MarkDown md(gui);
     if (m_structs.empty()) {
         md.print(R"(
-Data types can be imported from Ghidra using tools/ghidra_scripts/export_redux.py, which will
-generate a redux_data_types.txt file in its folder, or from any text file where each line specifies the
-data type's name and fields, separated by semi-colons; fields are specified in type-name-size tuples
-whose elements are separated by commas.
+Import data types from a text file. Each line contains the type name followed by
+semicolon-separated fields. Each field has a comma-separated type, name and size.
 
 For example:
 ```
@@ -651,10 +645,9 @@ Arrays are specified as `type[number]` and pointers as `type *`.)");
     bool showImportFunctionsFileDialog = false;
     if (m_functions.empty()) {
         md.print(R"(
-Functions can be imported from Ghidra using tools/ghidra_scripts/export_redux.py, which will generate
-a redux_funcs.txt file in its folder, or from any text file where each line specifies the function
-address, name and arguments, separated by semi-colons; arguments are specified in type-name-size tuples
-whose elements are separated by commas.
+Import functions from a text file. Each line contains the function address, name
+and arguments, separated by semicolons. Each argument has a comma-separated type,
+name and size.
 
 For example:
 ```
