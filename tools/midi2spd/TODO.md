@@ -103,7 +103,7 @@ grouped by domain and roughly ordered by impact within each group.
   for hot SF2 samples.
 
 ### ADPCM encoder quality
-- **Status:** Uses pcsx-redux's basic PSX ADPCM encoder.
+- **Status:** Uses PCSX-Redux Agentic's basic [PSX ADPCM encoder](../../src/supportpsx/adpcm.cc).
 - **Work:** Better encoders that minimize quantization error across block
   boundaries (Vagconv-style optimal filter selection).
 

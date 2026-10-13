@@ -1,7 +1,7 @@
 # EXE2ISO
 This tool takes a ps-exe and creates a bootable iso from it. The output is a standards
 conformant ISO9660 image with a single `PSX.EXE;1` file in its root directory, built with
-the same ISO9660 authoring code as the rest of PCSX-Redux. It boots in emulators, on real
+the same ISO9660 authoring code as the rest of PCSX-Redux Agentic. It boots in emulators, on real
 hardware, and on ODEs. The sectors carry proper EDC/ECC, so PC tools that expect a valid
 ISO9660 filesystem will read it just fine.
 

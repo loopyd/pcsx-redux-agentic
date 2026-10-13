@@ -1,9 +1,9 @@
 # PCSX-Redux Agentic
 
-PCSX-Redux Agentic is a Linux fork of [PCSX-Redux](https://github.com/grumpycoders/pcsx-redux)
-for agentic coding, PlayStation reverse engineering, and behavioral analysis. It
-combines the emulator and debugger with bounded native capture APIs and an embedded
-Lua mission library. The interface and built-in messages use English (`en_US`) only.
+PCSX-Redux Agentic is a Linux PlayStation emulator and debugger for agentic coding,
+reverse engineering, and behavioral analysis. It provides bounded native capture
+APIs and an embedded Lua mission library. The interface and built-in messages use
+English (`en_US`) only.
 The settings loader ignores saved `Locale` keys and omits them when saving.
 Japanese font support remains for PlayStation memory-card titles.
 

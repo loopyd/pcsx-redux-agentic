@@ -13,18 +13,19 @@ Prefer existing bindings; do not add an external decoder or generated Rust runne
    bindings require [native customization](native.md), specific source
    authorization and independent semantic review.
 
-Bundled rules govern routine work; URLs retain provenance. Consult external docs
-for scoped research, verify against pinned source, retain reusable findings here.
+Fork-owned references and pinned source govern routine work. Consult external
+library docs for scoped research, verify against pinned source, and retain reusable
+findings here.
 
-| Provenance | Bundled calling rule |
+| Reference | Bundled calling rule |
 | --- | --- |
-| [Basics](https://pcsx-redux.consoledev.net/Lua/redux-basics/) | Raw state/schema, controller overrides and display capture; GUI states use gzip |
-| [Breakpoints](https://pcsx-redux.consoledev.net/Lua/breakpoints/) | Interpreter/debugger observations; retain hooks, guard errors, pause explicitly; false removes a hook |
-| [Memory/registers](https://pcsx-redux.consoledev.net/Lua/memory-and-registers/) | Bounds-check pointers; invalidate code caches; verify MMIO effects in source |
-| [Events](https://pcsx-redux.consoledev.net/Lua/events/) | Retain listeners; count native Vsyncs; defer host work outside dispatch |
-| [Files](https://pcsx-redux.consoledev.net/Lua/file-api/) | Native slices and explicit state inputs; close files |
-| [Libraries](https://pcsx-redux.consoledev.net/Lua/libraries/) / [lua-protobuf](https://github.com/starwing/lua-protobuf) | Schema reflection and `int64_as_string` (`#decimal`); verify bundled behavior |
-| [CLI flags](https://pcsx-redux.consoledev.net/cli_flags/) | Portable settings and explicit interpreter/debugger options |
+| [Core Lua API](../../../../src/core/pcsxffi.lua) | Raw state/schema, controller overrides and display capture; GUI states use gzip |
+| [Breakpoints](watch.md) | Interpreter/debugger observations; retain hooks, guard errors, pause explicitly; false removes a hook |
+| [Memory/registers](memory.md) | Bounds-check pointers; invalidate code caches; verify MMIO effects in source |
+| [Events](../../../../src/core/eventslua.cc) | Retain listeners; count native Vsyncs; defer host work outside dispatch |
+| [Files](../../../../src/support/file.h) | Native slices and explicit state inputs; close files |
+| [States](states.md) / [bundled lua-protobuf](../../../../third_party/lua-protobuf) | Schema reflection and `int64_as_string` (`#decimal`); verify bundled behavior |
+| [Runtime invocation](runtime.md#invocation) | Portable settings and explicit interpreter/debugger options |
 | [LuaJIT controls](https://luajit.org/ext_jit.html) / [FFI callbacks](https://luajit.org/ext_ffi_semantics.html#callback) | `jit.off()` stops host compilation; `jit.flush()` clears traces. Native event dispatch may synchronously reenter Lua; do not rely on automatic call blacklisting |
 
 Source paths relative to fork root:

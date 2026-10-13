@@ -60,7 +60,8 @@ polyline terminators and zero-area uploads reject. Terminator patterns in a
 polyline command, first coordinate or shaded coordinate slot reject because
 malformed-input behavior depends on native buffer boundaries.
 
-Interpret encoded operands against pinned `src/core/gpu.cc`/`gpu.h`: signed
+Interpret encoded operands against pinned [GPU implementation](../../../../src/core/gpu.cc)
+and [packet types](../../../../src/core/gpu.h): signed
 11-bit or unsigned positions, raw 16-bit dimensions, texture page/CLUT and native
 depth-3-to-16-bit mapping. Colors are encoded, not modulated. Draw offset, clipping,
 mask, texture window and prior environment are unapplied; raw words remain authoritative.
@@ -79,7 +80,7 @@ remain unavailable even when their byte storage compares equal.
 CPU GP1 status reads are not recorded; GP1 command/query writes and returned GP0
 data are. Do not infer a complete GPU bus trace.
 
-The upstream [GPU logger](https://pcsx-redux.consoledev.net/Debugging/gpu-logger/)
-clears its GUI log between frames; it is not this action's capture source.
+The fork's [GUI GPU logger](../../../../src/gui/widgets/gpulogger.cc) is separate
+from this action's native [History](history.md) capture.
 Validate native hooks and representative effects under [Native](native.md).
 Never infer hardware equivalence from decoded packets or matching images.
