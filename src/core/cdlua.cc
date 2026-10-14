@@ -21,7 +21,6 @@
 
 #include <array>
 #include <charconv>
-#include <chrono>
 #include <cmath>
 #include <memory>
 
@@ -260,10 +259,8 @@ constexpr char waitQueue[] = "PCSX.CDWaitQueue";
 constexpr unsigned maxWaits = 64;
 
 struct Wait {
-    using Clock = std::chrono::steady_clock;
     int callback = LUA_NOREF;
     std::unique_ptr<EventBus::Listener> listener;
-    Clock::time_point deadline;
     unsigned maxVsyncs = 60, vsyncs = 0;
     bool settle = false;
     const char* error = nullptr;
@@ -299,12 +296,11 @@ int waitResponse(lua_State* state) {
     if (lua_gettop(state) != 2 || !lua_istable(state, 1) || !lua_isfunction(state, 2))
         return luaL_error(state, "CD waitResponse requires options and a callback");
     const unsigned vsyncs = option(state, "maxVsyncs", 60, 120);
-    const unsigned timeout = option(state, "timeoutMs", 10000, 600000);
     lua_pushnil(state);
     while (lua_next(state, 1)) {
         size_t length = 0;
         const char* key = lua_type(state, -2) == LUA_TSTRING ? lua_tolstring(state, -2, &length) : nullptr;
-        if (!key || (std::string_view(key, length) != "maxVsyncs" && std::string_view(key, length) != "timeoutMs"))
+        if (!key || std::string_view(key, length) != "maxVsyncs")
             return luaL_error(state, "unknown CD wait option");
         lua_pop(state, 1);
     }
@@ -326,7 +322,6 @@ int waitResponse(lua_State* state) {
     const int owner = lua_gettop(state);
     luaL_getmetatable(state, waitMetatable); lua_setmetatable(state, owner);
     wait->maxVsyncs = vsyncs;
-    wait->deadline = Wait::Clock::now() + std::chrono::milliseconds(timeout);
     try {
         wait->listener = std::make_unique<EventBus::Listener>(g_system->m_eventBus);
         wait->listener->listen<Events::GPU::VSync>([wait](const auto&) {
@@ -390,7 +385,6 @@ int pollWaits(lua_State* state) {
         auto* wait = static_cast<Wait*>(lua_touserdata(state, -1));
         if (!wait || wait->callback == LUA_NOREF) { lua_pop(state, 1); continue; }
         if (g_system->quitting()) wait->error = "CD wait interrupted by shutdown";
-        if (!wait->error && Wait::Clock::now() >= wait->deadline) wait->error = "CD wait deadline exceeded";
         if (!wait->error && !wait->settle) { lua_pop(state, 1); continue; }
         if (wait->error) wait->listener.reset();
         g_system->pause();

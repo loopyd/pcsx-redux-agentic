@@ -4,8 +4,8 @@ local m, events, transactions = require 'support', require 'events', require 'tr
 local M = {}
 
 function M.run()
-    m.begin('action,target,identity,frames,stop,seconds,events,bytes,mutations,reads,audio,samples,blocks,spuevents,decoded,workers', function()
-        local h,uv=assert(PCSX.History,'native CD history binding required'),assert(luv)
+    m.begin('action,target,identity,frames,stop,events,bytes,mutations,reads,audio,samples,blocks,spuevents,decoded,workers', function()
+        local h=assert(PCSX.History,'native CD history binding required')
         assert(type(h.beginCDV3)=='function' and type(h.cdLimits)=='function','native CD history binding required')
         local bindings=require('mount').read()
         local identity=assert(m.argument('identity'),'identity is required')
@@ -23,7 +23,6 @@ function M.run()
         local a=joined and assert(PCSX.Audio,'native audio capture binding required') or nil
         local pcm=joined and require('pcm') or nil
         local frames=m.integer('frames',60,1,36000)
-        local seconds=m.integer('seconds',20,1,300)
         local event_limit=m.integer('events',65536,1,65536)
         local byte_limit=m.integer('bytes',8388608,1,8388608)
         local limits={mutations=m.integer('mutations',4096,1,65536),bytes=m.integer('reads',8388608,1,8388608)}
@@ -38,10 +37,9 @@ function M.run()
         end
         local stop=m.argument('stop') and m.address('stop')
         local started,audio_started,closing,count=false,false,false,0
-        local timer=uv.new_timer()
         local function finish(reason,success,start_error)
             if closing then return end
-            closing=true;PCSX.pauseEmulator();timer:stop();timer:close()
+            closing=true;PCSX.pauseEmulator()
             PCSX.nextPause(m.guard(function()
                 local failures=m.array()
                 if start_error then failures[#failures+1]=start_error end
@@ -72,7 +70,7 @@ function M.run()
                 m.report('transport.json',{schema='psx.runtime-cd-capture/v2',native_envelope_version=1,cd_observation_version=3,build_identity=build,identity=identity,
                     identity_authority='caller label; input/tool hashes in receipt',reason=reason,success=success,
                     started=started,audio_started=audio_started,audio_joined=joined,decoded_worker=decoded,worker_limit=worker_limit,frames=count,frame_limit=frames,
-                    seconds=seconds,stop=stop,event_limit=event_limit,byte_limit=byte_limit,limits=limits,
+                    stop=stop,event_limit=event_limit,byte_limit=byte_limit,limits=limits,
                     sample_limit=samples,block_limit=blocks,spu_event_limit=spuevents,
                     native_complete=native and native.complete or false,
                     correlation_complete=correlation and correlation.complete or false,
@@ -82,8 +80,6 @@ function M.run()
                 if success then m.finish() else error('incomplete CD capture: '..reason) end
             end))
         end
-        timer:start(seconds*1000,0,m.guard(function() finish('wall timeout',false) end))
-        m.retained[#m.retained+1]=timer
         m.event('GPU::Vsync',function()
             if not started or closing then return end
             count=count+1

@@ -9,10 +9,9 @@ Choose target, EXE entry or state.
 Required `identity=LABEL` (1–160 bytes) labels executable/overlay context;
 receipt identifies bytes.
 
-`steps=1..1024` (1) bounds transitions; `seconds=1..300` (20) bounds acquisition
-plus stepping. Use a longer harness timeout for the cooperative UI timer.
+`steps=1..1024` (1) bounds transitions after target acquisition.
 Optional aligned `stop=ADDRESS` succeeds before that instruction; exhausting
-bounds first fails. Without stop, reaching the count succeeds.
+the step count first fails. Without stop, reaching the count succeeds.
 
 `exceptions=stop|continue` defaults to stop on native exception pause or changed
 ISR/EPC/Cause; an exception before the requested address fails. CP0 writes can
@@ -30,8 +29,8 @@ CPU state; MMIO/unsupported aliases are not dereferenced.
 
 `step.json` (`psx.runtime-step/v1`) reports reason, success, bounds, final context
 and [coverage](trace.md). Journal overflow beyond 16 MiB fails. Handled errors
-retain reports/failing receipts; timeouts or aborts may leave only flushed records/
-logs. Missing completion is never success.
+retain reports/failing receipts; aborts may leave only flushed records and logs.
+Missing completion is never success.
 
 Exceptions or breakpoints can interrupt a request; IRQs can cross instructions.
 One row/request does not imply one retired instruction; use the boundary and

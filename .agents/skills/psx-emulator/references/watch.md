@@ -8,7 +8,8 @@ selected Exec/Read/Write hits or a finite Exec boundary window.
 Select target, EXE entry or restored state.
 Set `address=U32`, `width=1..65536` (1), `kind=Exec|Read|Write` (Write),
 and `hits=1..4096` (1). The action stops at that count and emits `watch.json`,
-RAM/registers and optional `savestate=1`. The harness timeout bounds unreached hits.
+RAM/registers and optional `savestate=1`. Without an instruction window, an
+unreached hit keeps the mission running.
 
 Add `instructions=1..100000000` for a finite first-reach Exec window. This requires
 `kind=Exec`, `width=1`, `hits=1` and a word-aligned address in canonical first-2MiB
@@ -60,5 +61,5 @@ Only an exact positive observation captures RAM/registers and optional state.
 Bound, alias and interruption failures retain raw `watch.json` before failed
 exit. Capture errors become failures before the report; partial files carry no
 qualified capture claim. Report/I/O failures may prevent that report. Harness
-timeout/kill retains failed receipt/logs, but final count and a completed capture
+termination retains failed receipt/logs, but final count and a completed capture
 may be unavailable. Check the actual receipt; no failure establishes first reach.

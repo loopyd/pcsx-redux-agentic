@@ -5,8 +5,8 @@ local snapshot, display, difference = require 'snapshot', require 'display', req
 local M = {}
 
 function M.run()
-    m.begin('action,target,identity,frames,stop,seconds,events,bytes,words,packets,limit', function()
-        local h, uv=assert(PCSX.History,'native GPU history binding required'),assert(luv)
+    m.begin('action,target,identity,frames,stop,events,bytes,words,packets,limit', function()
+        local h=assert(PCSX.History,'native GPU history binding required')
         local identity=assert(m.argument('identity'),'identity is required')
         assert(#identity>0 and #identity<=160,'identity must be 1..160 bytes')
         assert(not m.input('words',false) and not m.input('ram',false),'capture does not accept offline GPU inputs')
@@ -14,14 +14,12 @@ function M.run()
             assert(os.getenv('PSX_RUNTIME_ORIGIN_VALIDATED')=='1','GPU state capture requires a matching origin receipt')
         end
         local frames=m.integer('frames',1,1,36000)
-        local seconds=m.integer('seconds',20,1,300)
         local event_limit=m.integer('events',16384,1,65536)
         local byte_limit=m.integer('bytes',1048576,0,8388608)
         local limits={words=m.integer('words',65536,1,1048576),packets=m.integer('packets',4096,1,65536)}
         local comparison={limit=m.integer('limit',1024,1,65536)}
         local stop=m.argument('stop') and m.address('stop')
         local started,closing,count,before=false,false,0,nil
-        local timer=uv.new_timer()
         local function boundary(name)
             local raw=m.captureState(name..'.pbuf')
             local state=snapshot.decode(raw)
@@ -35,7 +33,7 @@ function M.run()
         end
         local function finish(reason,success)
             if closing then return end
-            closing=true; PCSX.pauseEmulator(); timer:stop(); timer:close()
+            closing=true; PCSX.pauseEmulator()
             PCSX.nextPause(m.guard(function()
                 local native,decoded,capture_error
                 local ok,err=pcall(function()
@@ -54,7 +52,7 @@ function M.run()
                 success=success and ok and native~=nil and native.complete and decoded~=nil and decoded.complete
                 m.report('video.json',{schema='psx.runtime-video/v1',identity=identity,
                     identity_authority='caller label; input/tool hashes in receipt',reason=reason,success=success,
-                    started=started,frames=count,frame_limit=frames,seconds=seconds,stop=stop,
+                    started=started,frames=count,frame_limit=frames,stop=stop,
                     event_limit=event_limit,byte_limit=byte_limit,limits=limits,difference_limit=comparison.limit,
                     native_complete=native and native.complete or false,
                     decoded_complete=decoded and decoded.complete or false,capture_error=capture_error,
@@ -62,8 +60,6 @@ function M.run()
                 if success then m.finish() else error('incomplete GPU capture: '..reason) end
             end))
         end
-        timer:start(seconds*1000,0,m.guard(function() finish('wall timeout',false) end))
-        m.retained[#m.retained+1]=timer
         m.event('GPU::Vsync',function()
             if not started or closing then return end
             count=count+1

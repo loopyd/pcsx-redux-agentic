@@ -10,7 +10,7 @@ Debugger memory-file writes bypass handlers; this helper executes MIPS stores.
    `scratch=ADDRESS` in physical 2 MiB RAM. The guest, stack, IRQ handlers and
    DMA must not need it during the probe.
 2. Supply the action's bounded operands. Scratch consumes **52 + 8 × N** bytes
-   for N stores, entirely inside RAM; maximum 262000 stores. Set a finite timeout.
+   for N stores, entirely inside RAM; maximum 262000 stores.
 3. Verify the probe report and device before/after state. Use `savestate=1` when
    continuing the experiment.
 

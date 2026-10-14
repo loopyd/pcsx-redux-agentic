@@ -13,14 +13,13 @@ Supply state and matching origin receipt, or executable/target. Required
 | `frames` | GPU Vsync bound before the primary stop; 1–36000 / 60 |
 | `stop` | Optional aligned PC; frame exhaustion before arrival fails |
 | `tail` | Additional guest Vsyncs after primary stop; 0–3600 / 0 |
-| `seconds` | Target acquisition, primary interval and tail wall limit; 1–300 / 20 |
 | `samples` | Storage capacity in stereo PCM frames; 1–2646000 / 441000 |
 | `blocks` | Callback record capacity; 1–65536 / 16384 |
 | `events` | SPU event capacity; 1–65536 / 16384 |
 
-Other SPU action arguments reject. Leave export time before harness timeout.
-Capacity overflow fails; it is not a duration stop. Bound host callbacks and GPU
-Vsyncs according to their different timing.
+Other SPU action arguments reject. Capacity overflow fails; it is not a duration
+stop. Set callback capacities and GPU Vsync limits according to their different
+timing.
 
 Save initial state before begin, final state after freeze. Never save, restore,
 reset or edit during capture. Maintained helpers reject active history/audio;
@@ -29,9 +28,8 @@ changes. Existing queues and partial mixer work are retained, not flushed.
 
 CPU pause precedes deferred freeze; audio may append between them. `tail`
 continues guest execution without key-off, DSP synchronization or guaranteed
-release completion. Unexpected pause, timeout, loss, overflow or export errors
-fail without a success marker. Inspect retained files/logs; hard timeout can
-interrupt export.
+release completion. Unexpected pause, loss, overflow or export errors fail
+without a success marker. Inspect retained files and logs.
 
 | Capture | Content |
 | --- | --- |

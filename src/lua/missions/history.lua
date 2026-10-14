@@ -1,21 +1,19 @@
 -- lualoader, R"EOF(--
 -- Observe a bounded interval of guest DMA, IRQ and timer execution.
-local m, events, uv = require 'support', require 'events', assert(luv)
-m.begin('target,identity,frames,stop,seconds,events,bytes', function()
+local m, events = require 'support', require 'events'
+m.begin('target,identity,frames,stop,events,bytes', function()
     local h = assert(PCSX.History, 'native history binding required')
     local identity = assert(m.argument('identity'), 'identity is required')
     assert(#identity > 0 and #identity <= 160, 'identity must be 1..160 bytes')
     local frames = m.integer('frames', 1, 1, 36000)
-    local seconds = m.integer('seconds', 20, 1, 300)
     local event_limit = m.integer('events', 16384, 1, 65536)
     local byte_limit = m.integer('bytes', 1048576, 0, 8388608)
     local stop = m.argument('stop') and m.address('stop')
-    local started, closing, count, timer = false, false, 0, uv.new_timer()
+    local started, closing, count = false, false, 0
     local function finish(reason, success)
         if closing then return end
         closing = true
         PCSX.pauseEmulator()
-        timer:stop(); timer:close()
         PCSX.nextPause(m.guard(function()
             local result
             if started then
@@ -27,14 +25,12 @@ m.begin('target,identity,frames,stop,seconds,events,bytes', function()
             m.report('history.json', {schema = 'psx.runtime-history/v2', native_envelope_version=1, build_identity=m.buildIdentity(), identity = identity,
                 identity_authority = 'caller label; input and tool hashes in harness receipt',
                 reason = reason, success = success, started = started, frames = count,
-                frame_limit = frames, seconds = seconds, stop = stop,
+                frame_limit = frames, stop = stop,
                 event_limit = event_limit, byte_limit = byte_limit,
                 native_complete = result and result.complete or false})
             if success then m.finish() else error('incomplete history: ' .. reason) end
         end))
     end
-    timer:start(seconds * 1000, 0, m.guard(function() finish('wall timeout', false) end))
-    m.retained[#m.retained + 1] = timer
     m.event('GPU::Vsync', function()
         if not started or closing then return end
         count = count + 1

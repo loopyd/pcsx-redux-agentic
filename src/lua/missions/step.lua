@@ -1,20 +1,19 @@
 -- lualoader, R"EOF(--
 -- Record bounded native debugger steps, exact pause contexts and observed coverage.
-local m, execution, uv = require 'support', require 'execution', assert(luv, 'native luv library unavailable')
-m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
+local m, execution = require 'support', require 'execution'
+m.begin('target,identity,steps,stop,exceptions,savestate', function()
     assert(PCSX.Debugger and PCSX.Debugger.stepInto, 'approved native step binding is unavailable')
     local identity = m.argument('identity')
     assert(identity and #identity > 0 and #identity <= 160, 'identity must name the executable/overlay context (1..160 bytes)')
     local limit = m.integer('steps', 1, 1, 1024)
     local stop = m.argument('stop') and m.address('stop')
-    local seconds = m.integer('seconds', 20, 1, 300)
     local exceptions = m.argument('exceptions', 'stop')
     assert(exceptions == 'stop' or exceptions == 'continue', 'exceptions must be stop or continue')
     local save = m.integer('savestate', 0, 0, 1) == 1
     local coverage, observe = execution.coverage(execution.symbols(m.input('symbols', false)))
     local journal = assert(io.open('steps.ndjson', 'wb'))
-    local bytes, count, started, pending, closed = 0, 0, false, false, false
-    local before, timer
+    local bytes, count, pending, closed = 0, 0, false, false
+    local before
     local function record(value)
         local text = m.json(value) .. '\n'
         assert(bytes + #text <= 16777216, 'step journal exceeds 16 MiB')
@@ -24,7 +23,6 @@ m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
         if closed then return end
         closed = true
         PCSX.pauseEmulator()
-        timer:stop(); timer:close()
         assert(journal:close())
         m.captures[#m.captures + 1] = {path = 'steps.ndjson', bytes = bytes}
         m.report('step.json', {schema = 'psx.runtime-step/v1', identity = identity,
@@ -33,7 +31,7 @@ m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
             coverage_scope = 'observed starting boundaries and last executed words, not a complete retired stream',
             memory_words = 'side-effect-free RAM/ROM/scratch bytes; may differ from instruction cache',
             reason = reason, success = success, steps = count, limit = limit, stop = stop,
-            seconds = seconds, exceptions = exceptions, context = context, coverage = coverage})
+            exceptions = exceptions, context = context, coverage = coverage})
         if save then m.captureState('state.pbuf') end
         if success then m.finish() else error(reason) end
     end
@@ -44,15 +42,6 @@ m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
             elseif not ok then error(err) end
         end)
     end
-    timer = uv.new_timer()
-    timer:start(seconds * 1000, 0, safe(function()
-        pending = false
-        PCSX.pauseEmulator()
-        PCSX.nextPause(safe(function()
-            finish(started and 'step timeout' or 'target timeout', false, execution.capture())
-        end))
-    end))
-    m.retained[#m.retained + 1] = timer
     m.event('ExecutionFlow::Pause', function(event)
         if not pending or closed then return end
         pending = false
@@ -78,7 +67,7 @@ m.begin('target,identity,steps,stop,seconds,exceptions,savestate', function()
         -- A target breakpoint is still dispatching; defer until its step reset completes.
         PCSX.pauseEmulator()
         PCSX.nextPause(safe(function()
-            before, started = execution.capture(), true
+            before = execution.capture()
             record({initial = before})
             if stop and before.pc == stop then finish('stop already reached', true, before)
             else pending = true; PCSX.Debugger.stepInto() end

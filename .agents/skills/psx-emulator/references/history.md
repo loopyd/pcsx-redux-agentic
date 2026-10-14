@@ -13,13 +13,12 @@ Supply state with matching origin receipt, or executable/target. Required
 | --- | --- |
 | `frames` | Subsequent GPU Vsync events, 1–36000 / 1 |
 | `stop` | Optional aligned PC; frame exhaustion before arrival fails |
-| `seconds` | Target acquisition plus recording, 1–300 / 20 |
 | `events` | Native records, 1–65536 / 16384; includes initial state |
 | `bytes` | Payload budget, 0–8388608 / 1048576 |
 
-Leave time for paused export before harness timeout. Unexpected pauses, overflow
-and timeouts fail. Finish setup edits before recording; maintained helpers reject
-active capture. Audit custom Lua: arbitrary pointer writes are not intercepted.
+Unexpected pauses and overflow fail. Finish setup edits before recording;
+maintained helpers reject active capture. Audit custom Lua because arbitrary
+pointer writes are not intercepted.
 
 Inspect `history.json` for outcome; `events.json` for completeness, failure bits,
 counts and dropped attempts; `events.ndjson` for raw/named fields; `payload.bin`

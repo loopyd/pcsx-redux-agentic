@@ -60,7 +60,7 @@ m.begin('action,target,path,lba,sectors,mode,offset,length,command,params,frames
             for pair in params:gmatch('..') do ops[#ops + 1] = {0x1f801802, tonumber(pair, 16)} end
             ops[#ops + 1] = {0x1f801801, command}
             require('bus').write(8, ops, function(probe)
-                local wait = PCSX.CD.waitResponse({maxVsyncs = limit, timeoutMs = 10000}, m.guard(function(response, error)
+                local wait = PCSX.CD.waitResponse({maxVsyncs = limit}, m.guard(function(response, error)
                     assert(response, error)
                     if save then m.captureState('state.pbuf') end
                     finish({schema = 'psx.runtime-cdrom/v2', action = action, source = 'live',

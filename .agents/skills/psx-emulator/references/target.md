@@ -7,7 +7,8 @@ and capture a machine boundary.
 
 Set aligned U32 `target=ADDRESS`, or use the supplied EXE's header entry.
 Restored state can be captured immediately; see [restoration](states.md#restore-and-branch-an-experiment).
-An unreached target times out; repeated targets can be captured on a later visit.
+An unreached target keeps the mission running. Repeated targets can be captured
+on a later visit.
 
 ## Application
 

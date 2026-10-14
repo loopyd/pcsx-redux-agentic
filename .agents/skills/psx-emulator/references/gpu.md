@@ -34,11 +34,10 @@ precede stream publication: inspect original RAM and diagnostics.
 
 Capture probes GPU context on an empty recorder; missing support fails. Complete
 host edits before recording. Bounds/defaults:
-`frames=1..36000` (1), `seconds=1..300` (20), `events=1..65536` (16384),
+`frames=1..36000` (1), `events=1..65536` (16384),
 `bytes=0..8388608` (1048576), comparison `limit=1..65536` (1024), plus words/packets
 above. Optional aligned `stop=ADDRESS` must arrive before frame exhaustion.
 The event budget includes shared DMA/IRQ/timer records, not just GPU commands.
-Wall bounds include target acquisition; allow export time before harness timeout.
 Offline inputs, `port` and `address` reject during capture.
 
 Capture uses `PCSX.nextPause` to freeze after CPU execution and Pause/device

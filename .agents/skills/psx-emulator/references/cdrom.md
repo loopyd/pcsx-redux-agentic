@@ -21,11 +21,11 @@ short reads fail. Command submission requires ready native queues and executes
 guest MMIO stores. Response wait leaves FIFO unconsumed/unacknowledged.
 `savestate` applies only to commands.
 
-Capture bounds/defaults: `frames=1..36000` (60), `seconds=1..300` (20),
+Capture bounds/defaults: `frames=1..36000` (60),
 `events=1..65536` (65536), `bytes=1..8388608` (8388608), correlation
 `mutations=1..65536` (4096), `reads=1..8388608` (8388608).
-Optional aligned `stop` must arrive before frame exhaustion. Leave export time
-before harness timeout. Native capacity floors also apply.
+Optional aligned `stop` must arrive before frame exhaustion. Native capacity
+floors also apply.
 
 `audio=1` joins PCM with `samples=1..2646000` (441000), `blocks=1..65536`
 (16384), `spuevents=1..65536` (16384). `decoded=1` requires audio and
@@ -88,14 +88,14 @@ incomplete transaction report; it does not clear recorder evidence.
 
 `PCSX.CD.captureChecked()` returns owned controller fields after complete native
 checked-state capture and validation, without decoding the full state in Lua.
-`PCSX.CD.waitResponse({maxVsyncs=60, timeoutMs=10000}, callback)` counts native
+`PCSX.CD.waitResponse({maxVsyncs=60}, callback)` counts native
 Vsyncs, requests a pause and checks the response only after execution and event
 dispatch unwind. It leaves the FIFO unconsumed and unacknowledged. Bounds are
-1–120 Vsyncs, 1–600000 milliseconds and 64 pending handles. The callback receives
+1–120 Vsyncs and 64 pending handles. The callback receives
 `(response, nil)` or `(nil, error)` once; response includes copied `state`,
 `vsyncs`, `interrupt` and `command_error`. `handle.cancel()` requests completion
-with an error. Deadline, reset, state load and shutdown release listeners and
-callback references. Retain the handle when cancellation is needed.
+with an error. Completion, cancellation, reset, state load and shutdown release
+listeners and callback references. Retain the handle when cancellation is needed.
 
 `PCSX.CD.peekLid()` reads the current flag without applying scheduled closure.
 `openLid()`, `closeLid()` and `scheduleCloseLid()` require checked admission;

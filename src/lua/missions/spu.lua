@@ -1,10 +1,10 @@
 -- lualoader, R"EOF(--
 -- Inspect/edit SPU state or capture bounded native PCM and register activity.
 local m, s = require 'support', require 'snapshot'
-m.begin('action,target,voice,offset,length,address,value,frames,savestate,scratch,identity,stop,seconds,samples,blocks,events,tail', function()
+m.begin('action,target,voice,offset,length,address,value,frames,savestate,scratch,identity,stop,samples,blocks,events,tail', function()
     local action = m.argument('action', 'inspect')
     if action == 'capture' then require('sound').run(); return end
-    for _, name in ipairs({'identity', 'stop', 'seconds', 'samples', 'blocks', 'events', 'tail'}) do
+    for _, name in ipairs({'identity', 'stop', 'samples', 'blocks', 'events', 'tail'}) do
         assert(not m.argument(name), name .. ' applies only to capture')
     end
     assert(action == 'inspect' or action == 'export' or action == 'write' or action == 'trace', 'unknown SPU action')

@@ -4,8 +4,8 @@ local m, pcm = require 'support', require 'pcm'
 local M = {}
 
 function M.run()
-    m.begin('action,target,identity,frames,stop,seconds,samples,blocks,events,tail', function()
-        local h, uv = assert(PCSX.Audio, 'native audio capture binding required'), assert(luv)
+    m.begin('action,target,identity,frames,stop,samples,blocks,events,tail', function()
+        local h = assert(PCSX.Audio, 'native audio capture binding required')
         local identity = assert(m.argument('identity'), 'identity is required')
         assert(#identity > 0 and #identity <= 160, 'identity must be 1..160 bytes')
         if m.input('state', false) then
@@ -14,18 +14,16 @@ function M.run()
         end
         local frames = m.integer('frames', 60, 1, 36000)
         local tail = m.integer('tail', 0, 0, 3600)
-        local seconds = m.integer('seconds', 20, 1, 300)
         local samples = m.integer('samples', 441000, 1, 2646000)
         local blocks = m.integer('blocks', 16384, 1, 65536)
         local events = m.integer('events', 16384, 1, 65536)
         local stop = m.argument('stop') and m.address('stop')
         local started, closing, count, tail_count = false, false, 0, 0
-        local primary, timer = nil, uv.new_timer()
+        local primary
         local function finish(reason, success)
             if closing then return end
             closing = true
             PCSX.pauseEmulator()
-            timer:stop(); timer:close()
             PCSX.nextPause(m.guard(function()
                 local result, capture_error
                 local ok, err = pcall(function()
@@ -41,7 +39,7 @@ function M.run()
                     identity_authority = 'caller label; input and tool hashes in harness receipt',
                     reason = reason, success = success, started = started,
                     primary = primary, frames = count, frame_limit = frames,
-                    tail_frames = tail_count, tail_limit = tail, seconds = seconds, stop = stop,
+                    tail_frames = tail_count, tail_limit = tail, stop = stop,
                     sample_limit = samples, block_limit = blocks, event_limit = events,
                     native_complete = result and result.complete or false, capture_error = capture_error,
                     boundary = 'pause then deferred native freeze; host callback may append PCM between them',
@@ -54,8 +52,6 @@ function M.run()
             primary = {reason = reason, frames = count, observed_pcm_frames = h.status().frames}
             if tail == 0 then finish(reason, true) end
         end
-        timer:start(seconds * 1000, 0, m.guard(function() finish('wall timeout', false) end))
-        m.retained[#m.retained + 1] = timer
         m.event('GPU::Vsync', function()
             if not started or closing then return end
             count = count + 1
