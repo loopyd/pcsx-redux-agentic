@@ -46,7 +46,7 @@ covers discovery and context selection.
 
 1. Check prerequisites; preserve dirty work and failed evidence. Prefer existing
    missions and state queries over new runners/parsers.
-2. Define inputs, observations, stop condition and budget. Follow Runtime for
+2. Define inputs, observations and a stop condition. Follow Runtime for
    staging, fresh output, preloaded helpers and trusted external Lua.
 3. Verify receipts, then interpret captures. Distinguish guest execution, host
    edits and serialized state; success proves neither behavior nor fidelity.

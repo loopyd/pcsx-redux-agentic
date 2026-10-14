@@ -22,7 +22,7 @@ bin/harness runtime run \
   --bios /path/to/rom.bin \
   --mission state \
   --input state=/path/to/state.pbuf --argument path=registers.pc \
-  --output out/state-query --timeout 15
+  --output out/state-query
 ```
 
 Use fresh output under an existing parent and a 512 KiB BIOS; its hash does not
@@ -63,9 +63,8 @@ these literal identities and derives exact staged paths; it never executes data
 or matches basenames. Final passed-receipt/input checks remain authoritative.
 
 Launch uses interpreter, software GPU, debugger and fresh portable settings;
-GDB/web, PCdrv, fastboot and updates are disabled. Timeout: 60 seconds by default,
-maximum 3600; default log limit: 2 MiB. `--work-deadline` is an absolute monotonic
-cutoff, never renewed. Failure, timeout and overflow trigger cleanup.
+GDB/web, PCdrv, fastboot and updates are disabled. The default log limit is 2 MiB.
+Missions stop at their declared condition. Failure and overflow trigger cleanup.
 
 ## Evidence contract
 
