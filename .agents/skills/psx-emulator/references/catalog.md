@@ -15,4 +15,6 @@ pause-transition observations, [Watch](watch.md) for selected hits/accesses, and
 [Call](call.md) for host-established calls. [Trace](trace.md) qualifies coverage;
 [Bus](bus.md) covers guest MMIO effects. Neither is a standalone mission.
 
+Use [MDEC](mdec.md) for decoder state and bounded guest command/DMA output.
+
 Extend missing capability through [API](api.md) or [Native](native.md).

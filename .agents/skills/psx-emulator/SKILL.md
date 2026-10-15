@@ -34,6 +34,7 @@ covers discovery and context selection.
 | Repeated continuation/scheduled input | [Replay](references/replay.md) |
 | VRAM/textures/palettes | [VRAM](references/vram.md) |
 | GPU packets/ordering tables/capture | [GPU](references/gpu.md) |
+| MDEC status, tables and guest decode | [MDEC](references/mdec.md) |
 | Geometry coprocessor | [GTE](references/gte.md) |
 | Sound voices/DSP state | [SPU](references/spu.md) |
 | Native mixed PCM/SPU access capture | [Audio](references/audio.md) |

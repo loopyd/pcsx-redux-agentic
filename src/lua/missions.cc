@@ -80,6 +80,9 @@ static const std::string_view irq = (
 static const std::string_view lid = (
 #include "lua/missions/lid.lua"
 );
+static const std::string_view mdec = (
+#include "lua/missions/mdec.lua"
+);
 static const std::string_view media = (
 #include "lua/missions/media.lua"
 );
@@ -195,6 +198,7 @@ const PCSX::Missions::Resource resources[] = {
     {"ingress", PCSX::Missions::Role::Module, "src/lua/missions/ingress.lua", ingress.data(), ingress.size()},
     {"irq", PCSX::Missions::Role::Mission, "src/lua/missions/irq.lua", irq.data(), irq.size()},
     {"lid", PCSX::Missions::Role::Module, "src/lua/missions/lid.lua", lid.data(), lid.size()},
+    {"mdec", PCSX::Missions::Role::Mission, "src/lua/missions/mdec.lua", mdec.data(), mdec.size()},
     {"media", PCSX::Missions::Role::Module, "src/lua/missions/media.lua", media.data(), media.size()},
     {"memcard", PCSX::Missions::Role::Mission, "src/lua/missions/memcard.lua", memcard.data(), memcard.size()},
     {"memory", PCSX::Missions::Role::Mission, "src/lua/missions/memory.lua", memory.data(), memory.size()},
