@@ -1582,10 +1582,13 @@ class CDRomImpl final : public PCSX::CDRom {
     bool cdlGetLocP(const QueueElement &command, bool start) {
         // TODO: probably should error out if no disc or
         // lid open?
-        m_iso->getLocP(m_currentPosition, m_lastLocP);
-        QueueElement response;
-        response.pushPayloadData(std::string_view((char *)m_lastLocP, sizeof(m_lastLocP)));
-        maybeTriggerIRQ(Cause::Acknowledge, response);
+        if (!m_iso->getLocP(m_currentPosition, m_lastLocP)) {
+            maybeEnqueueError(1, 0x80);
+        } else {
+            QueueElement response;
+            response.pushPayloadData(std::string_view((char *)m_lastLocP, sizeof(m_lastLocP)));
+            maybeTriggerIRQ(Cause::Acknowledge, response);
+        }
         maybeScheduleNextCommand();
         return false;
     }

@@ -76,7 +76,12 @@ literal declared track identities. Backend zero fill, short/failure outcomes and
 native CDDA/XA feed counts remain distinct observations.
 CUE track views begin at INDEX 01 and exclude their preceding pregap from the
 backed program extent. The full view must fit its file; no extent is silently
-clamped. Track position and leadout metadata retain their separate pregap rules.
+clamped. Track lengths include pregap metadata; the absolute program end and
+leadout subtract that pregap once. Position lookup at or beyond leadout fails,
+and guest GetlocP returns an error instead of its previous position bytes.
+CDDA reads beyond a program extent synthesize silence without a backing read.
+That outcome differs from a short backing read, which clears the destination
+and fails. These rules do not establish hardware error-code fidelity.
 
 Audio joined capture requires native Audio ABI 2 and the exact revision-2
 14-slot settings environment described in [Audio](audio.md); incompatible setting

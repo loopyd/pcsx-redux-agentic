@@ -413,7 +413,7 @@ PCSX::IEC60908b::MSF PCSX::CDRIso::getTD(uint8_t track) const {
 PCSX::IEC60908b::MSF PCSX::CDRIso::getLength(uint8_t track) {
     if (track == 0) {
         unsigned int sect;
-        sect = m_ti[m_numtracks].start.toLBA() + m_ti[m_numtracks].length.toLBA();
+        sect = m_ti[m_numtracks].start.toLBA() + m_ti[m_numtracks].length.toLBA() - m_ti[m_numtracks].pregap.toLBA();
         { const auto result = IEC60908b::MSF(sect); History::CD::mediaQuery(2, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
     } else if (m_numtracks > 0 && track <= m_numtracks) {
         { const auto result = m_ti[track].length; History::CD::mediaQuery(2, track, uint32_t(result.m) | (uint32_t(result.s)<<8) | (uint32_t(result.f)<<16)); return result; }
@@ -432,7 +432,7 @@ PCSX::IEC60908b::MSF PCSX::CDRIso::getPregap(uint8_t track) {
 
 bool PCSX::CDRIso::getLocP(const PCSX::IEC60908b::MSF msf, uint8_t locP[8]) {
     // TODO: actually check subchannels from iso.
-    auto length = getTD(0) + IEC60908b::MSF{0, 2, 0};
+    auto length = getTD(0);
     if (msf >= length) { History::CD::mediaQuery(6, uint32_t(msf.m) | (uint32_t(msf.s)<<8) | (uint32_t(msf.f)<<16), false); return false; }
     unsigned track;
     for (track = m_numtracks; track != 1; track--) {
@@ -466,7 +466,7 @@ bool PCSX::CDRIso::getLocP(const PCSX::IEC60908b::MSF msf, uint8_t locP[8]) {
 }
 
 unsigned PCSX::CDRIso::getTrack(const PCSX::IEC60908b::MSF msf) {
-    auto length = getTD(0) + IEC60908b::MSF{0, 2, 0};
+    auto length = getTD(0);
     if (msf >= length) { History::CD::mediaQuery(4, uint32_t(msf.m) | (uint32_t(msf.s)<<8) | (uint32_t(msf.f)<<16), 0); return 0; }
     unsigned track;
     for (track = m_numtracks; track != 1; track--) {
@@ -615,7 +615,7 @@ bool PCSX::CDRIso::readCDDA(IEC60908b::MSF msf, unsigned char *buffer) {
     }
 
     // if above the track's end (likely next track's pregap), play silence
-    if (lba >= (track_start + m_ti[track].length.toLBA())) {
+    if (lba >= (track_start + m_ti[track].length.toLBA() - m_ti[track].pregap.toLBA())) {
         memset(buffer, 0, IEC60908b::FRAMESIZE_RAW);
         PCSX::History::CD::mediaOutcome(2, 0, track);
         return true;
@@ -824,8 +824,7 @@ bool PCSX::CDRIso::acceptsStateSector(IO<File> file, uint32_t base, int64_t sect
 bool PCSX::CDRIso::statePosition(IEC60908b::MSF at, unsigned& track) const noexcept {
     if (m_numtracks >= MAXTRACKS) return false;
     const auto& last = m_ti[m_numtracks];
-    const auto end = IEC60908b::MSF(last.start.toLBA() + last.length.toLBA() - last.pregap.toLBA()) +
-                     IEC60908b::MSF{0, 2, 0};
+    const auto end = IEC60908b::MSF(last.start.toLBA() + last.length.toLBA() - last.pregap.toLBA());
     if (at >= end) {
         track = 0;
         return true;
@@ -858,7 +857,8 @@ bool PCSX::CDRIso::acceptsStateAccess(StateAccess kind, IEC60908b::MSF at, uint8
     track = m_numtracks;
     while (track > 1 && m_ti[track].start.toLBA() > lba) --track;
     const uint32_t start = m_ti[track].start.toLBA();
-    if (m_ti[track].type != TrackType::CDDA || lba >= start + m_ti[track].length.toLBA()) return true;
+    if (m_ti[track].type != TrackType::CDDA ||
+        lba >= start + m_ti[track].length.toLBA() - m_ti[track].pregap.toLBA()) return true;
     if (lba < start) return false;
     unsigned file = 1;
     if (m_multifile) {

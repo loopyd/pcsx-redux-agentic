@@ -203,12 +203,12 @@ function M.restore()
 end
 
 function M.atTarget(callback, beforeResume)
-    local raw = M.argument('target', os.getenv('PSX_RUNTIME_ENTRY'))
+    local explicit = M.argument('target')
+    local raw = explicit or os.getenv('PSX_RUNTIME_ENTRY')
     local restored = M.restore()
     if raw then
         local target = M.address('target', tonumber(raw))
-        if restored and tonumber(PCSX.getRegisters().pc) == target then callback(); return end
-        M.breakpoint(target, 'Exec', 4, function(address)
+        local function reached(address)
             local selected = M.registers()
             local cycles = M.exact(PCSX.getCPUCycles())
             assert(address == target and selected.pc == target, 'target raw PC differs')
@@ -219,6 +219,13 @@ function M.atTarget(callback, beforeResume)
                     'target changed before settled capture')
                 callback()
             end))
+        end
+        if (restored or explicit ~= nil) and tonumber(PCSX.getRegisters().pc) == target then
+            reached(target)
+            return
+        end
+        M.breakpoint(target, 'Exec', 4, function(address)
+            reached(address)
             return false
         end)
         if beforeResume then beforeResume() end
