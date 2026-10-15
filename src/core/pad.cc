@@ -157,7 +157,7 @@ class PadsImpl : public PCSX::Pads {
         uint16_t hostButtons = 0xffff;
 
         // Analog stick values in range (0 - 255) where 128 = center
-        uint8_t rightJoyX, rightJoyY, leftJoyX, leftJoyY;
+        uint8_t rightJoyX = 128, rightJoyY = 128, leftJoyX = 128, leftJoyY = 128;
     };
 
     enum class PadCommands : uint8_t {
@@ -183,7 +183,7 @@ class PadsImpl : public PCSX::Pads {
             float axes[SDL_GAMEPAD_AXIS_COUNT];  // normalized to [-1, 1] like GLFW reported
         };
         bool isControllerButtonPressed(int button, const GamepadState& state);
-        bool isControllerConnected() { return m_settings.get<SettingConnected>(); }
+        bool isControllerConnected() { return m_inputOverride || m_settings.get<SettingConnected>(); }
 
         json getCfg();
         void setCfg(const json& j);
@@ -206,6 +206,21 @@ class PadsImpl : public PCSX::Pads {
 
         bool m_configMode = false;
         bool m_analogMode = false;
+        bool m_inputOverride = false, m_overrideAnalog = false, m_savedAnalog = false;
+        PadType m_savedType = PadType::Digital;
+        std::array<uint8_t, 4> m_axes = {128, 128, 128, 128};
+        std::array<uint8_t, 9> m_serial{};
+        unsigned m_serialLength = 0;
+        uint64_t m_pollCount = 0;
+
+        void clearInputOverride() {
+            if (!m_inputOverride) return;
+            m_type = m_savedType;
+            m_analogMode = m_savedAnalog;
+            m_inputOverride = false;
+            m_axes.fill(128);
+            m_data.leftJoyX = m_data.rightJoyX = m_data.leftJoyY = m_data.rightJoyY = 128;
+        }
 
         // Rumble. m_motorMapping holds the six bytes last set by config command 4Dh.
         // Each entry says what the matching byte of the 42h read command drives:
@@ -585,7 +600,7 @@ void PadsImpl::Pad::map() {
     // The handle may be a freshly opened one that has never been sent anything.
     m_rumbleAppliedSmall = m_rumbleAppliedLarge = 0;
     m_rumbleRefreshedAt = 0;
-    m_type = m_settings.get<SettingDeviceType>();
+    m_type = m_inputOverride ? PadType::Analog : m_settings.get<SettingDeviceType>();
 
     // L3/R3 are only avalable on analog controllers
     if (m_type == PadType::Analog) {
@@ -655,6 +670,12 @@ static constexpr float π(float fraction = 1.0f) { return fraction * M_PI; }
 
 void PadsImpl::Pad::getButtons() {
     PadData& pad = m_data;
+    if (m_inputOverride) {
+        pad.buttonStatus = 0xffff;
+        pad.rightJoyX = m_axes[0]; pad.rightJoyY = m_axes[1];
+        pad.leftJoyX = m_axes[2]; pad.leftJoyY = m_axes[3];
+        return;
+    }
     if (!m_settings.get<SettingConnected>()) {
         pad.buttonStatus = 0xffff;
         pad.leftJoyX = pad.rightJoyX = pad.leftJoyY = pad.rightJoyY = 0x80;
@@ -805,13 +826,21 @@ uint8_t PadsImpl::startPoll(Port port) {
     int index = magic_enum::enum_integer(port);
     m_pads[index].getButtons();
     auto& shmDisplay = PCSX::g_emulator->m_shmDisplay;
-    m_pads[index].m_data.hostButtons = shmDisplay ? shmDisplay->hostPad(index) : 0xffff;
-    return m_pads[index].startPoll();
+    auto& pad = m_pads[index];
+    pad.m_data.hostButtons = !pad.m_inputOverride && shmDisplay ? shmDisplay->hostPad(index) : 0xffff;
+    pad.m_serial[0] = 0xff;
+    pad.m_serialLength = 1;
+    ++pad.m_pollCount;
+    return pad.startPoll();
 }
 
 uint8_t PadsImpl::poll(uint8_t value, Port port, uint32_t& padState) {
     int index = magic_enum::enum_integer(port);
-    return m_pads[index].poll(value, padState);
+    auto& pad = m_pads[index];
+    const auto reply = pad.poll(value, padState);
+    if (pad.m_serialLength > 0 && pad.m_serialLength < pad.m_serial.size())
+        pad.m_serial[pad.m_serialLength++] = reply;
+    return reply;
 }
 
 uint8_t PadsImpl::Pad::poll(uint8_t value, uint32_t& padState) {
@@ -917,7 +946,7 @@ uint8_t PadsImpl::Pad::doDualshockCommand(uint32_t& padState) {
     } else if (m_cmd == magic_enum::enum_integer(PadCommands::GetAnalogMode) && m_configMode) {
         static uint8_t reply[] = {0x00, 0x5a, 0x01, 0x02, 0x00, 0x02, 0x01, 0x00};
 
-        reply[4] = m_analogMode ? 1 : 0;
+        reply[4] = (m_inputOverride ? m_overrideAnalog : m_analogMode) ? 1 : 0;
         std::memcpy(m_buf, reply, 8);
         return 0xf3;
     } else if (m_cmd == magic_enum::enum_integer(PadCommands::UnlockRumble) && m_configMode) {
@@ -964,7 +993,7 @@ uint8_t PadsImpl::Pad::startPoll() {
 uint8_t PadsImpl::Pad::read() {
     const PadData& pad = m_data;
     uint16_t buttonStatus = pad.buttonStatus & pad.overrides & pad.hostButtons;
-    if (!m_settings.get<SettingConnected>()) {
+    if (!isControllerConnected()) {
         m_bufferLen = 0;
         return 0xff;
     }
@@ -1006,7 +1035,7 @@ uint8_t PadsImpl::Pad::read() {
             return 0x23;
             break;
         case PadType::Analog:  // scph1110, scph1150
-            if (m_analogMode || m_configMode) {
+            if ((m_inputOverride ? m_overrideAnalog : m_analogMode) || m_configMode) {
                 m_analogpar[0] = 0x73;
                 m_analogpar[2] = buttonStatus & 0xff;
                 m_analogpar[3] = buttonStatus >> 8;
@@ -1564,6 +1593,58 @@ void PadsImpl::setLua(PCSX::Lua L) {
                 return 0;
             },
             -1);
+        L.declareFunc("setInputOverride", [this, pad](PCSX::Lua L) -> int {
+            if (L.gettop() != 5 || !L.isstring(1)) return L.error("setInputOverride requires mode and RX, RY, LX, LY");
+            const std::string mode = L.tostring(1);
+            if (mode != "analog" && mode != "digital") return L.error("unsupported input mode");
+            std::array<uint8_t, 4> axes;
+            for (unsigned i = 0; i < axes.size(); ++i) {
+                if (!L.isnumber(i + 2)) return L.error("axis must be an integer in 0..255");
+                const double value = L.checknumber(i + 2);
+                if (!std::isfinite(value) || value < 0 || value > 255 || std::floor(value) != value)
+                    return L.error("axis must be an integer in 0..255");
+                if (mode == "digital" && value != 128) return L.error("digital mode requires neutral axes");
+                axes[i] = static_cast<uint8_t>(value);
+            }
+            auto& input = m_pads[pad];
+            if (!input.m_inputOverride) {
+                input.m_savedType = input.m_type;
+                input.m_savedAnalog = input.m_analogMode;
+                input.m_serialLength = 0;
+            }
+            input.m_type = PadType::Analog;
+            input.m_inputOverride = true;
+            input.m_overrideAnalog = mode == "analog";
+            input.m_analogMode = input.m_overrideAnalog;
+            input.m_axes = axes;
+            input.getButtons();
+            input.m_data.hostButtons = 0xffff;
+            return 0;
+        }, -1);
+        L.declareFunc("clearInputOverride", [this, pad](PCSX::Lua L) -> int {
+            if (L.gettop() != 0) return L.error("clearInputOverride takes no arguments");
+            m_pads[pad].clearInputOverride();
+            return 0;
+        }, -1);
+        L.declareFunc("getInputState", [this, pad](PCSX::Lua L) -> int {
+            if (L.gettop() != 0) return L.error("getInputState takes no arguments");
+            const auto& input = m_pads[pad];
+            L.newtable();
+            L.push(input.m_inputOverride); L.setfield("override_active");
+            L.push(input.m_inputOverride); L.setfield("physical_input_isolated");
+            L.push(input.m_inputOverride ? input.m_overrideAnalog : input.m_analogMode); L.setfield("analog_mode");
+            L.push(lua_Number(magic_enum::enum_integer(input.m_type))); L.setfield("device_type");
+            L.push(input.m_configMode); L.setfield("config_mode");
+            L.push(lua_Number(input.m_serialLength ? input.m_cmd : 0)); L.setfield("serial_command");
+            L.push(input.m_serialLength > 0 && input.m_bufferLen > 0 && input.m_currentByte >= input.m_bufferLen); L.setfield("serial_complete");
+            L.push(lua_Number(input.m_data.rightJoyX)); L.setfield("RX");
+            L.push(lua_Number(input.m_data.rightJoyY)); L.setfield("RY");
+            L.push(lua_Number(input.m_data.leftJoyX)); L.setfield("LX");
+            L.push(lua_Number(input.m_data.leftJoyY)); L.setfield("LY");
+            L.push(fmt::format("{}", input.m_pollCount)); L.setfield("poll_count");
+            L.push(reinterpret_cast<const char*>(input.m_serial.data()), input.m_serialLength); L.setfield("serial");
+            return 1;
+        }, -1);
         L.declareFunc(
             "map",
             [this, pad](PCSX::Lua L) -> int {

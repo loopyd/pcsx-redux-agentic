@@ -7,6 +7,22 @@ jit.off()
 jit.flush()
 local ffi = require 'ffi'
 local M = {captures = {}, retained = {}, done = false}
+local cleanups, cleaned = {}, false
+function M.onCleanup(callback)
+    assert(not cleaned and type(callback) == 'function', 'cleanup registration is closed or invalid')
+    cleanups[#cleanups + 1] = callback
+end
+function M.cleanup()
+    if cleaned then return end
+    cleaned = true
+    local pending, failures = cleanups, {}
+    cleanups = {}
+    for index = #pending, 1, -1 do
+        local ok, problem = pcall(pending[index])
+        if not ok then failures[#failures + 1] = tostring(problem) end
+    end
+    assert(#failures == 0, table.concat(failures, "; "))
+end
 function M.requireIdleCapture()
     assert(PCSX.History and PCSX.History.status().state ~= 1,
         'host edits are forbidden during native history capture')
@@ -106,6 +122,7 @@ function M.report(name, value) M.write(name, M.json(value)) end
 
 function M.finish()
     assert(not M.done, 'mission already finished')
+    M.cleanup()
     M.done = true
     PCSX.pauseEmulator()
     local captures = #M.captures == 0 and '[]' or M.json(M.captures)
@@ -125,6 +142,8 @@ function M.guard(callback)
             jit.off()
             jit.flush()
             PCSX.pauseEmulator()
+            local cleaned, cleanupProblem = pcall(M.cleanup)
+            if not cleaned then io.stderr:write('mission cleanup failed: ' .. tostring(cleanupProblem) .. '\n') end
             io.stderr:write('mission failed: ' .. tostring(result) .. '\n')
             PCSX.quit(1)
             return false

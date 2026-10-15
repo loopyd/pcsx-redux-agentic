@@ -1,6 +1,34 @@
 -- lualoader, R"EOF(--
 -- A bounded data-only schedule: source order defines events sharing a Vsync.
 local M = {}
+function M.analog(mode, names)
+    assert(mode == 'analog' or mode == 'digital', 'unsupported controller mode: ' .. tostring(mode))
+    local axes, rebuilt = {RX = 128, RY = 128, LX = 128, LY = 128}, {}
+    local seen = {}
+    for item in names:gmatch('[^,]+') do
+        local axis, text = item:match('^(%u%u):(%d+)$')
+        assert(axis and axes[axis], 'unknown axis or invalid axis value: ' .. item)
+        local value = tonumber(text)
+        assert(value <= 255 and not seen[axis], 'axis outside 0..255 or repeated: ' .. item)
+        assert(mode ~= 'digital' or value == 128, 'digital mode requires neutral axes')
+        axes[axis], seen[axis] = value, true
+        rebuilt[#rebuilt + 1] = item
+    end
+    assert(table.concat(rebuilt, ',') == names, 'invalid comma-separated axes')
+    return {mode = mode, axes = axes}
+end
+function M.applyAnalog(slot, input)
+    local pad = PCSX.SIO0.slots[slot].pads[1]
+    if not input then pad.clearInputOverride(); return end
+    local a = input.axes
+    pad.setInputOverride(input.mode, a.RX, a.RY, a.LX, a.LY)
+end
+function M.inputState(slot)
+    local state = PCSX.SIO0.slots[slot].pads[1].getInputState()
+    state.serial_hex = require('support').hex(state.serial)
+    state.serial = nil
+    return state
+end
 function M.read(path)
     local file = assert(io.open(path, 'rb'))
     local text = assert(file:read(65537)); file:close()
@@ -39,6 +67,16 @@ function M.read(path)
                         names[#names + 1], event.buttons[#event.buttons + 1], seen[name] = name, button, true
                     end
                     assert(table.concat(names, ',') == words[4], 'invalid comma-separated buttons')
+                end
+            elseif event.action == 'analog' then
+                local slot = tonumber(words[3])
+                assert((#words == 4 or #words == 5) and (slot == 1 or slot == 2),
+                    'analog requires slot 1|2, mode and axes, or -')
+                event.slot = slot
+                if words[4] == '-' then assert(#words == 4, 'analog release takes no axes')
+                else
+                    assert(#words == 5, 'analog requires mode and axes')
+                    event.input = M.analog(words[4], words[5])
                 end
             elseif event.action == 'stop' then
                 assert(frame >= 1, 'stop requires a frame in 1..36000')

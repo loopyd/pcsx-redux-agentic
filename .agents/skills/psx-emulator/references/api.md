@@ -35,7 +35,7 @@ Source paths relative to fork root:
 | `src/core/pcsxffi.lua`, `pcsxlua.cc` | Pointers, registers, state/schema, screenshots and callbacks |
 | `src/core/sstate.h`, `sstate.cc`; `src/spu/types.h`, `freeze.cc` | Fork-owned v6 schema, fixed regions, delayed loads, restoration and serialized DSP coverage |
 | `src/core/debug.cc`, `psxinterpreter.cc` | Pre-instruction/access observations, retirement and exception behavior |
-| `src/core/eventslua.cc`, `pad.cc` | Vsync and digital button overrides |
+| `src/core/eventslua.cc`, `pad.cc` | Vsync and controller overrides |
 | `src/core/ui.cc`, `src/main/main.cc`, `src/core/arguments.cc` | EXE handoff, callback dispatch, CLI ordering and settings |
 | `src/core/psxmem.cc` | Debugger memory-file versus guest bus effects |
 | `src/gpu/soft/gpu.cc` | GP0/GP1, VRAM, display rectangle, rows and pixel formats |
@@ -130,6 +130,32 @@ their own recorder, GPU, and state admission checks.
 Use `nextPause` for checked capture after a breakpoint or device callback. Follow
 [Step](step.md), [Trace](trace.md), and [Replay](replay.md) boundaries. GPU,
 History, Audio and CD finalizers also queue native pause callbacks.
+
+## Controller overrides
+
+Each `PCSX.SIO0.slots[1|2].pads[1]` exposes
+`setInputOverride(mode, RX, RY, LX, LY)`, `clearInputOverride()` and
+`getInputState()`. Modes are `analog` or `digital`. Axes are integral 0..255
+with neutral 128. Digital mode requires four neutral axes. Validation precedes
+mutation. The override connects the selected native analog pad and excludes
+keyboard, SDL and shared-display buttons and axes. Existing button overrides
+still apply. Clearing restores the previous device type and analog mode and
+neutralizes axes. Settings and other slots are unchanged.
+
+`getInputState()` copies active ownership, isolation, mode, native device type,
+axes, configuration mode, decimal cumulative `poll_count`, `serial_command`,
+`serial_complete` and up to nine raw `serial` bytes from the latest poll.
+`timeline.inputState` converts those bytes to `serial_hex`. The prefix starts
+with the pad-select reply and retains only this poll. Mode changes affect the
+next read packet. Guest configuration commands can still change protocol state.
+Serial observations describe native pad replies, not guest UART consumption.
+Overrides and poll observations are not serialized in checked states.
+
+Maintained callers register cleanup with `support.onCleanup(callback)` before
+applying overrides. `support.finish` and guarded failures drain callbacks once
+in reverse order. Cleanup failures retain the original mission error and report
+the cleanup error separately. [Frames](frames.md) and [Replay](replay.md) own
+argument, schedule, observation and cleanup procedures.
 
 ## Device APIs and limits
 

@@ -24,7 +24,7 @@ m.begin('runs,depth,limit', function()
         equal = true, timing = 'GPU Vsync boundaries; cycles from native state',
         settings = 'receipt.json settings records fixed launch flags, fresh portable defaults and unpinned host behavior',
         limitations = {'Finite checkpoint comparison, not proof of determinism between observations.',
-            'Host audio queues and physical controller input are not isolated or compared.',
+            'Host audio queues are not isolated; physical pad input is isolated only while an analog override is active.',
             'Native serialization/restoration may affect host scheduling; no PCM capture in this action.',
             'Display pixels are compared only at explicit screen checkpoints; no continuous GPU history.'}}
     local baselines, baselineButtons, baselineCycles, current, frame, index = {}, {}, {}, 0, 0, 1
@@ -42,9 +42,15 @@ m.begin('runs,depth,limit', function()
             for _, button in pairs(PCSX.CONSTS.PAD.BUTTON) do
                 PCSX.SIO0.slots[slot].pads[1].clearOverride(button)
             end
+            timeline.applyAnalog(slot, nil)
             held[slot] = {}
         end
     end
+    m.onCleanup(function()
+        clear()
+        m.report('input-cleanup.json', {schema = 'psx.runtime-input-cleanup/v1',
+            slots = {timeline.inputState(1), timeline.inputState(2)}})
+    end)
     local function buttons()
         local observed = {{}, {}}
         for slot = 1, 2 do
@@ -52,7 +58,16 @@ m.begin('runs,depth,limit', function()
                 observed[slot][name] = PCSX.SIO0.slots[slot].pads[1].getButton(button)
             end
         end
-        return m.json(observed)
+        local inputs = {}
+        for slot = 1, 2 do
+            local input = timeline.inputState(slot)
+            if input.override_active then
+                -- The native poll counter is cumulative host observation, outside saved state.
+                input.poll_count = nil
+                inputs[slot] = input
+            else inputs[slot] = {override_active = false} end
+        end
+        return m.json({buttons = observed, slots = inputs})
     end
     local function divergence(boundary, detail, bytes)
         result.equal = false
@@ -125,7 +140,7 @@ m.begin('runs,depth,limit', function()
         current, frame, index = current + 1, 0, 1
         active = current == 1 and schedule or alternate
         assert(m.restore())
-        run = {number = current, comparisons = m.array(), start_cycles = tostring(PCSX.getCPUCycles())}
+        run = {number = current, comparisons = m.array(), inputs = m.array(), start_cycles = tostring(PCSX.getCPUCycles())}
         result.runs[#result.runs + 1] = run
         if current > 1 then
             run.start_cycles_equal = run.start_cycles == result.runs[1].start_cycles
@@ -163,6 +178,10 @@ m.begin('runs,depth,limit', function()
             index = index + 1
             if event.action == 'sample' then sample(event)
             elseif event.action == 'screen' then screen(event)
+            elseif event.action == 'analog' then
+                timeline.applyAnalog(event.slot, event.input)
+                run.inputs[#run.inputs + 1] = {frame = frame, order = index - 1, slot = event.slot,
+                    input = timeline.inputState(event.slot)}
             elseif event.action == 'buttons' then
                 local pad = PCSX.SIO0.slots[event.slot].pads[1]
                 for _, button in ipairs(held[event.slot]) do pad.clearOverride(button) end

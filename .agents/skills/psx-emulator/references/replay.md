@@ -16,10 +16,13 @@ Schedules are data-only UTF-8/ASCII, with CRLF/blank lines allowed:
 
 ```text
 psx.schedule/v1
+0 analog 1 analog RX:128,RY:128,LX:0,LY:128
 0 sample registers
+1 analog 1 analog LX:255
 1 buttons 1 START
 2 sample registers
 2 buttons 1 -
+2 analog 1 analog LX:128
 3 stop
 ```
 
@@ -28,14 +31,15 @@ psx.schedule/v1
 | `FRAME sample PATH` | Compare subtree; `.` selects the whole state |
 | `FRAME screen` | Compare display metadata/pixels |
 | `FRAME buttons SLOT NAMES` | Replace held buttons on slot 1/2; comma-separated native names or `-` to release |
+| `FRAME analog SLOT MODE AXES` | Replace analog input on slot 1/2. Modes and named axes follow [Frames](frames.md). `FRAME analog SLOT -` releases it. |
 | `FRAME stop` | Required final command; stop at frame 1–36000 |
 | `FRAME stop CONDITION` | Poll after earlier commands; frame is deadline |
 
 Frames count GPU Vsyncs after restoration; frame 0 runs paused. Use nondecreasing
 frames 0–36000; same-frame commands retain order. Limits: 512 commands, four
-state/display checkpoints, 64 KiB schedule. Unknown commands/buttons, duplicates,
-missing checkpoints/stop, invalid paths, incompatible boundaries and post-stop
-commands reject.
+state/display checkpoints, 64 KiB schedule. Unknown commands, buttons, axes or
+modes reject. Invalid ranges, duplicates, missing checkpoints or stop, invalid
+paths, incompatible boundaries and post-stop commands also reject.
 
 Conditions: `pc VALUE`, `register INDEX VALUE` (GPR 0–31), or `memory OFFSET HEX`
 (physical 2 MiB RAM, 1–64 byte pairs). Integers accept decimal/hex; PC must align;
@@ -44,15 +48,23 @@ Lua expressions reject. Poll each paused Vsync after earlier commands, from fram
 `condition.json`. Intermediate instructions/MMIO are unobserved.
 
 `--input alternate=PATH` replaces the primary schedule for runs 2 onward.
-Checkpoint frame/type/path sequence and stop deadline must match; buttons/
-conditions may differ. Otherwise all runs use the primary schedule. Overrides
-clear between runs and after final stop; physical input remains active.
+Checkpoint frame/type/path sequence and stop deadline must match. Buttons,
+analog inputs and conditions may differ. Otherwise all runs use the primary
+schedule. Overrides clear between runs and after final stop or guarded failure.
+`input-cleanup.json` records the final released state. Analog overrides isolate
+physical input on their slot and restore the prior native device type and mode,
+with axes at neutral 128. Physical input remains active on other slots and when
+only button overrides are used.
 
 ## Application
 
 `psx.runtime-replay/v1` compares exact start/stop/checkpoint cycles, selected state
-and observed buttons, even unpolled buttons. Any difference sets `equal:false`;
-the first divergent boundary retains paths and stop reasons.
+and observed buttons, even unpolled buttons. Active analog overrides also compare
+axes, mode and the latest native serial reply at each checkpoint. The cumulative
+native poll counter is outside saved state and is excluded from equality.
+Each run's `inputs` records analog commands in source order, with frame, slot,
+mode, axes and the latest native poll observation. A compared difference sets
+`equal:false`. The first divergent boundary retains paths and stop reasons.
 
 | Capture | Meaning |
 | --- | --- |
@@ -68,7 +80,11 @@ not instruction/audio-sample boundaries; [Runtime](runtime.md#evidence-contract)
 defines unpinned settings and host effects.
 
 Equal subtrees prove neither whole-state nor execution equality. Hidden device
-state, host audio queues and PCM are unexamined. `screen` compares storage/ranges
+state, host audio queues and PCM are unexamined. Pad overrides
+and native poll counters are host controls outside saved state. Native serial
+replies record bytes returned by the pad owner, including partial packets. They
+do not prove guest UART reads. Check packet completion and compare guest serial
+buffers or RAM at the selected checkpoints. `screen` compares storage/ranges
 and dimensions/format/availability separately; equal unavailable displays remain
 `image_comparison_available:false`, not image evidence.
 

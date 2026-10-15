@@ -1,11 +1,15 @@
 -- lualoader, R"EOF(--
 -- Advance counted Vsync events, optionally holding controller buttons and capturing display pixels.
 local m = require 'support'
-m.begin('target,frames,buttons,slot,screenshot,savestate', function()
+m.begin('target,frames,buttons,slot,mode,axes,screenshot,savestate', function()
     local count = m.integer('frames', 1, 1, 36000)
     local slot = m.integer('slot', 1, 1, 2)
     local screenshot = m.integer('screenshot', 0, 0, 1) == 1
     local save = m.integer('savestate', 0, 0, 1) == 1
+    local timeline = require 'timeline'
+    local mode, axes = m.argument('mode', ''), m.argument('axes', '')
+    assert(mode ~= '' or axes == '', 'axes requires an explicit mode')
+    local input = mode ~= '' and timeline.analog(mode, axes) or nil
     local buttons, names = {}, m.argument('buttons', '')
     local rebuilt = {}
     for name in names:gmatch('[^,]+') do
@@ -13,8 +17,16 @@ m.begin('target,frames,buttons,slot,screenshot,savestate', function()
         buttons[#buttons + 1], rebuilt[#rebuilt + 1] = button, name
     end
     assert(table.concat(rebuilt, ',') == names, 'buttons must be comma separated names')
+    m.onCleanup(function()
+        local pad = PCSX.SIO0.slots[slot].pads[1]
+        for _, button in ipairs(buttons) do pad.clearOverride(button) end
+        timeline.applyAnalog(slot, nil)
+        m.report('input-cleanup.json', {schema = 'psx.runtime-input-cleanup/v1',
+            slot = slot, input = timeline.inputState(slot)})
+    end)
     m.atTarget(function()
         local pad, observed = PCSX.SIO0.slots[slot].pads[1], 0
+        if input then timeline.applyAnalog(slot, input) end
         for _, button in ipairs(buttons) do pad.setOverride(button) end
         local before = m.registers()
         m.event('GPU::Vsync', function()
@@ -50,6 +62,7 @@ m.begin('target,frames,buttons,slot,screenshot,savestate', function()
                 end
                 m.report('frames.json', {schema = 'psx.runtime-frames/v1', vsyncs = observed,
                     slot = slot, buttons = names, pressed_before_release = pressed,
+                    input_before_release = timeline.inputState(slot),
                     before = before, after = m.registers()})
                 m.finish()
             end))
