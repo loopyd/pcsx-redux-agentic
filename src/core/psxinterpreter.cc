@@ -628,20 +628,19 @@ void InterpretedCPU::psxMULTU(uint32_t code) {
  * Register branch logic                                  *
  * Format:  OP rs, offset                                 *
  *********************************************************/
-#define RepZBranchi32(op)                \
-    if (int32_t(_rRs_) op 0) {           \
-        doBranch(_BranchTarget_, false); \
-    }
-#define RepZBranchLinki32(op)                                    \
-    {                                                            \
-        uint32_t ra = m_regs.pc + 4;                             \
-        if ((int32_t)_rRs_ op 0) {                               \
-            uint32_t sp = m_regs.GPR.n.sp;                       \
-            doBranch(_BranchTarget_, true);                      \
-            PCSX::g_emulator->m_callStacks->potentialRA(ra, sp); \
-        }                                                        \
-        m_regs.GPR.r[31] = ra;                                   \
-        maybeCancelDelayedLoad(31);                              \
+#define RepZBranchi32(op) \
+    doBranch((int32_t(_rRs_) op 0) ? _BranchTarget_ : m_regs.pc + 4, false);
+#define RepZBranchLinki32(op)                                   \
+    {                                                           \
+        uint32_t ra = m_regs.pc + 4;                            \
+        bool taken = (int32_t)_rRs_ op 0;                       \
+        doBranch(taken ? _BranchTarget_ : ra, taken);           \
+        if (taken) {                                            \
+            uint32_t sp = m_regs.GPR.n.sp;                      \
+            PCSX::g_emulator->m_callStacks->potentialRA(ra, sp);\
+        }                                                       \
+        m_regs.GPR.r[31] = ra;                                  \
+        maybeCancelDelayedLoad(31);                             \
     }
 
 void InterpretedCPU::psxBGEZ(uint32_t code) { RepZBranchi32(>=) }         // Branch if Rs >= 0
@@ -773,21 +772,11 @@ void InterpretedCPU::psxMTLO(uint32_t code) {
 void InterpretedCPU::psxBREAK(uint32_t code) {
     m_regs.pc -= 4;
     exception(Exception::Break, m_inDelaySlot);
-    if (m_inDelaySlot) {
-        auto &delayedLoad = m_delayedLoadInfo[m_currentDelayedLoad ^ 1];
-        if (!delayedLoad.pcActive) abort();
-        delayedLoad.pcActive = false;
-    }
 }
 
 void InterpretedCPU::psxSYSCALL(uint32_t code) {
     m_regs.pc -= 4;
     exception(Exception::Syscall, m_inDelaySlot);
-    if (m_inDelaySlot) {
-        auto &delayedLoad = m_delayedLoadInfo[m_currentDelayedLoad ^ 1];
-        if (!delayedLoad.pcActive) abort();
-        delayedLoad.pcActive = false;
-    }
 }
 
 void InterpretedCPU::psxRFE(uint32_t code) {
@@ -802,7 +791,7 @@ void InterpretedCPU::psxRFE(uint32_t code) {
  * Format:  OP rs, rt, offset                             *
  *********************************************************/
 #define RepBranchi32(op) \
-    if ((int32_t)_rRs_ op(int32_t) _rRt_) doBranch(_BranchTarget_, false);
+    doBranch(((int32_t)_rRs_ op(int32_t) _rRt_) ? _BranchTarget_ : m_regs.pc + 4, false);
 
 void InterpretedCPU::psxBEQ(uint32_t code) { RepBranchi32(==) }  // Branch if Rs == Rt
 void InterpretedCPU::psxBNE(uint32_t code) { RepBranchi32(!=) }  // Branch if Rs != Rt
@@ -1131,14 +1120,9 @@ void InterpretedCPU::psxBCz(uint32_t code, unsigned z) {
     if ((m_regs.CP0.n.Status & (0x10000000 << z)) == 0) {
         m_regs.pc -= 4;
         exception((static_cast<uint32_t>(Exception::CoprocessorUnusable) << 2) | (z << 28), m_inDelaySlot);
-        if (m_inDelaySlot) {
-            auto &delayedLoad = m_delayedLoadInfo[m_currentDelayedLoad];
-            if (!delayedLoad.pcActive) abort();
-            delayedLoad.pcActive = false;
-        }
         return;
     }
-    if ((_Rt_ & 1) == 0) doBranch(_BranchTarget_, false);
+    doBranch(((_Rt_ & 1) == 0) ? _BranchTarget_ : m_regs.pc + 4, false);
 }
 
 void InterpretedCPU::psxCOP0(uint32_t code) {

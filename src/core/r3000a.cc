@@ -277,6 +277,13 @@ void PCSX::R3000Acpu::exception(uint32_t code, bool bd, bool cop0) {
         }
     }
 
+    // Architectural exceptions replace any pending branch continuation.
+    // Keep GPR load delays and handled PCdrv BREAKs independent of this transfer.
+    for (auto& delayedLoad : m_delayedLoadInfo) {
+        delayedLoad.pcActive = false;
+        delayedLoad.fromLink = false;
+    }
+    m_nextIsDelaySlot = false;
     m_inISR = true;
 
     // Set the EPC & PC
