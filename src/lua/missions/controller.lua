@@ -152,6 +152,20 @@ function M.new(status)
             local record=M.reference(row);record.branch=({'drop','head','tail','promote-and-tail'})[phase+1];record.native_result=d[1]~=0
             record.before={head=m.exact(m.u64le(payload,0)),tail=m.exact(m.u64le(payload,8))}
             record.after={head=m.exact(m.u64le(payload,16)),tail=m.exact(m.u64le(payload,24))};record.candidate=M.queue(payload,32)
+            record.stage=({'data-ready','complete','acknowledge','end','error'})[record.candidate.value] or 'unknown'
+            record.owner_access=frame.id;record.owner_role=M.operations[frame.role]
+            record.stream=frame.before.identities.stream
+            for i=#stack,1,-1 do
+                local command=stack[i].command
+                if command then
+                    record.command={opcode=command.opcode,start=command.start,content_id=command.queue.content_id}
+                    break
+                end
+            end
+            if not record.command and frame.role==13 and frame.before.queues.command.has_value then
+                local queue=frame.before.queues.command
+                record.command={opcode=queue.value,content_id=queue.content_id,start=true,admission='FIFO validation'}
+            end
             assert(record.candidate.value==d[2] and record.candidate.size==d[3],'response candidate mismatch')
             assert(record.native_result==(phase==1 or phase==3),'native enqueue result differs from branch')
             if phase==0 then assert(record.before.head==record.after.head and record.before.tail==record.after.tail,'drop changed queue identity')

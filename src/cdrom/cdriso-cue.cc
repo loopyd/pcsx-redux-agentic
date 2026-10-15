@@ -153,6 +153,21 @@ bool PCSX::CDRIso::parsecue(const char *isofileString) {
     Scheduler_run(&scheduler);
 
     File_schedule_close(&cue, &scheduler, [](CueFile *file, CueScheduler *scheduler) { file->destroy(file); });
+    if (!context.failed) {
+        for (unsigned i = 1; i <= disc.trackCount; ++i) {
+            const CueTrack& track = disc.tracks[i];
+            const int64_t start = int64_t(track.indices[1]) - track.fileOffset;
+            const uint64_t pregap = uint64_t(track.indices[1]) - track.indices[0];
+            File* file = reinterpret_cast<File*>(track.file->opaque);
+            if (start < 0 || track.indices[1] < track.indices[0] || pregap > track.size ||
+                uint64_t(start) * 2352 > file->size() ||
+                (uint64_t(track.size) - pregap) * 2352 > file->size() - uint64_t(start) * 2352) {
+                PCSX::g_system->printf("Error parsing Cue File: track program exceeds its backing file");
+                context.failed = true;
+                break;
+            }
+        }
+    }
     if (context.failed) {
         for (unsigned i = 1; i <= disc.trackCount; i++) {
             CueTrack *track = &disc.tracks[i];
@@ -178,7 +193,9 @@ bool PCSX::CDRIso::parsecue(const char *isofileString) {
     for (unsigned i = 1; i <= disc.trackCount; i++) {
         CueTrack *track = &disc.tracks[i];
         File *fi = reinterpret_cast<File *>(track->file->opaque);
-        m_ti[i].handle.setFile(new SubFile(fi, (track->indices[1] - track->fileOffset) * 2352, track->size * 2352));
+        const uint64_t start = int64_t(track->indices[1]) - track->fileOffset;
+        const uint64_t pregap = track->indices[1] - track->indices[0];
+        m_ti[i].handle.setFile(new SubFile(fi, start * 2352, (uint64_t(track->size) - pregap) * 2352));
         m_ti[i].type = track->trackType == TRACK_TYPE_AUDIO ? TrackType::CDDA : TrackType::DATA;
         m_ti[i].cddatype = track->compressed ? trackinfo::CCDDA : trackinfo::BIN;
         m_ti[i].start = IEC60908b::MSF(track->indices[1] + 150);

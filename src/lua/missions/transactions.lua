@@ -1,6 +1,25 @@
 -- lualoader, R"EOF(--
 local m,events,image,c = require 'support',require 'events',require 'image',require 'controller'
 local M={}
+local function survivingWork(result)
+    for _,transition in ipairs(result.streams.transitions) do
+        for _,pending in ipairs(transition.pending_schedules or {}) do
+            pending.outcome='unresolved'
+            for _,record in ipairs(result.scheduler.records) do
+                if record.slot==pending.slot and tonumber(record.sequence)>tonumber(transition.record.sequence) then
+                    local changed=(record.variant==1 or record.variant==2) and record.previous_owner==pending.owner and record.old_target==pending.target
+                    local dispatched=record.variant==5 and record.previous_owner==pending.owner and record.target==pending.target
+                    local retained=record.variant==7 and record.owner==pending.owner and record.target==pending.target and record.pending
+                    if changed or dispatched or retained then
+                        pending.outcome=dispatched and 'dispatched' or retained and 'pending-at-end' or record.variant==2 and 'cancelled' or 'replaced'
+                        pending.outcome_record=record
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
 function M.scan(h,limits,audio,bindings,correlated)
     if type(h.snapshot)=='function' then h=h.snapshot() end
     local status=h.status();local controller=c.new(status);local sectors=require('sectors').new(limits)
@@ -44,6 +63,7 @@ function M.scan(h,limits,audio,bindings,correlated)
         build_identity=m.buildIdentity(),complete=true,begin_cycle=m.exact(status.beginCycle),end_cycle=m.exact(status.endCycle),
         events=tonumber(status.events),payload_bytes=tonumber(status.bytes),image={initial=images[0],final=images[1]},decoded=correlated.decoded}
     for i,consumer in ipairs(consumers) do result[names[i]]=consumer.finish() end
+    survivingWork(result)
     assert(boundaries and boundaries[0] and boundaries[1] and result.sectors.initial_bytes==boundaries[0].bytes and
         result.sectors.final_bytes==boundaries[1].bytes,'native FIFO export boundaries mismatch')
     result.sectors.initial,result.sectors.final=boundaries[0],boundaries[1]

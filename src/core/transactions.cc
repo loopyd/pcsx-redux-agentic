@@ -37,7 +37,8 @@ bool nested(Operation parent, Operation child) {
            (parent == Operation::Lid && child == Operation::LidSeek) ||
            (parent == Operation::Read && child == Operation::Play) ||
            ((parent == Operation::Fifo || parent == Operation::Continuation) && child == Operation::Command) ||
-           ((parent == Operation::Command || parent == Operation::Read || parent == Operation::Play) && child == Operation::Lid);
+           ((parent == Operation::Command || parent == Operation::Read || parent == Operation::Play ||
+             parent == Operation::Fifo) && child == Operation::Lid);
 }
 }
 

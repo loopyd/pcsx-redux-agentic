@@ -48,6 +48,18 @@ and `hitMax` retain native stored bytes/value behavior; only active payload pref
 bytes are qualified, with unused observation bytes zero. A defined raw value can
 exist without `has_value`. Response insertion records actual dropped/head/tail/
 promoted branches and the native return value, including false tail insertion.
+Each response names its native stage: data-ready, complete, acknowledge, end or
+error. Its command queue or stream identity and delivery `response_id` join
+insertion to guest reads and acknowledgments. A dropped response still has a stage;
+it does not establish guest delivery. FIFO command-validation errors retain their
+submission queue without inventing a handler invocation.
+
+Capture `complete` qualifies journal integrity. Verify the selected command's
+terminal response and ordered guest-stored bytes separately. A first IRQ or a
+handler returning without another continuation does not establish completion.
+When reading stops, stream transitions retain pending CD schedules and their next
+observed dispatch, replacement, cancellation or pending-at-end outcome. An
+unresolved outcome remains unqualified.
 
 The fork has 11 scheduler scale slots, with native CD projections for FIFO,
 command continuation, read and CD DMA callbacks at slots 2, 3, 4 and 10. Pass snapshot and live
@@ -61,6 +73,9 @@ scratchpad prefixes; they do not infer a full copy from requested byte count.
 Media query/backend/image records expose native outcomes, owning file extents and
 literal declared track identities. Backend zero fill, short/failure outcomes and
 native CDDA/XA feed counts remain distinct observations.
+CUE track views begin at INDEX 01 and exclude their preceding pregap from the
+backed program extent. The full view must fit its file; no extent is silently
+clamped. Track position and leadout metadata retain their separate pregap rules.
 
 Audio joined capture requires native Audio ABI 2 and the exact revision-2
 14-slot settings environment described in [Audio](audio.md); incompatible setting
