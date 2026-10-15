@@ -2,6 +2,7 @@
 -- Inspect controller state, read mounted media, or issue a bounded native controller command.
 local m, s = require 'support', require 'snapshot'
 if m.argument('action','inspect')=='capture' then require('transport').run();return end
+if m.argument('action','inspect')=='schedule' then require('exchange').run();return end
 m.begin('action,target,path,lba,sectors,mode,offset,length,command,params,frames,scratch,savestate', function()
     local action = m.argument('action', 'inspect')
     if action ~= 'command' then

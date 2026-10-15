@@ -161,6 +161,9 @@ static const std::string_view transactions = (
 static const std::string_view transfers = (
 #include "lua/missions/transfers.lua"
 );
+static const std::string_view exchange = (
+#include "lua/missions/exchange.lua"
+);
 static const std::string_view transport = (
 #include "lua/missions/transport.lua"
 );
@@ -225,6 +228,7 @@ const PCSX::Missions::Resource resources[] = {
     {"timers", PCSX::Missions::Role::Mission, "src/lua/missions/timers.lua", timers.data(), timers.size()},
     {"transactions", PCSX::Missions::Role::Module, "src/lua/missions/transactions.lua", transactions.data(), transactions.size()},
     {"transfers", PCSX::Missions::Role::Module, "src/lua/missions/transfers.lua", transfers.data(), transfers.size()},
+    {"exchange", PCSX::Missions::Role::Module, "src/lua/missions/exchange.lua", exchange.data(), exchange.size()},
     {"transport", PCSX::Missions::Role::Module, "src/lua/missions/transport.lua", transport.data(), transport.size()},
     {"video", PCSX::Missions::Role::Module, "src/lua/missions/video.lua", video.data(), video.size()},
     {"vram", PCSX::Missions::Role::Mission, "src/lua/missions/vram.lua", vram.data(), vram.size()},

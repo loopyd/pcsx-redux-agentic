@@ -206,15 +206,17 @@ function M.describe(record)
     return kind, data, decoded
 end
 
-function M.export(capture)
+function M.export(capture, prefix)
+    prefix=prefix or ''
+    assert(type(prefix)=='string' and #prefix<=32 and prefix:match('^[%w_.-]*$'),'invalid capture prefix')
     local h = capture or assert(PCSX.History, 'native history binding required')
     if not capture and type(h.snapshot)=='function' then h=h.snapshot() end
     local status = h.status()
     assert(status.version == 1 and status.state == 2, 'unsupported or unfrozen native history')
     local count, size = tonumber(status.events), tonumber(status.bytes)
     assert(count <= 65536 and size <= 8388608, 'native history exceeds ABI limits')
-    m.write('payload.bin', h.bytes(0, size))
-    local file = assert(io.open('events.ndjson', 'wb'))
+    m.write(prefix..'payload.bin', h.bytes(0, size))
+    local file = assert(io.open(prefix..'events.ndjson', 'wb'))
     local total, offset, previous = 0, 0, status.beginCycle
     local kinds, channels = {}, {}
     local ok, err = pcall(function()
@@ -246,7 +248,7 @@ function M.export(capture)
         assert(offset == size, 'unreferenced native payload bytes')
     end)
     assert(file:close())
-    m.captures[#m.captures + 1] = {path = 'events.ndjson', bytes = total}
+    m.captures[#m.captures + 1] = {path = prefix..'events.ndjson', bytes = total}
     local faults = m.array()
     for i, name in ipairs(failures) do
         if bit.band(status.failures, 2 ^ (i - 1)) ~= 0 then faults[#faults + 1] = name end
@@ -266,7 +268,8 @@ function M.export(capture)
         cd_scope = kinds['cd-context'] and 'wire export only; CD lifecycle, ownership and Audio joins require the CD consumer' or nil,
         irq_scope = 'CPU-visible latch/delivery; SPU worker requests may coalesce',
         host_edits = 'audited mission required; arbitrary Lua pointer writes are not intercepted'}
-    m.report('events.json', result)
+    result.payload_file, result.events_file=prefix..'payload.bin',prefix..'events.ndjson'
+    m.report(prefix..'events.json', result)
     return result
 end
 return M

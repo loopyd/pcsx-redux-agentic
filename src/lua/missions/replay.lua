@@ -50,6 +50,7 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
     local baselines, baselineButtons, baselineCycles, current, frame, index = {}, {}, {}, 0, 0, 1
     local held = {{}, {}}
     local active, run
+    local guestRunning = false
     local artifactBytes = 0
     local audioActive, audioStart, audioFirstFrame, freezeAudio = false, nil, nil, nil
     local audioBaselines = {}
@@ -161,7 +162,15 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             comparison.settings_equal = m.json(segment.native.settings) == m.json(baseline.native.settings)
             comparison.counts_equal = segment.native.frames == baseline.native.frames and
                 segment.native.blocks == baseline.native.blocks and segment.native.events == baseline.native.events
-            comparison.metadata_equal = m.json(segment.native) == m.json(baseline.native)
+            local function comparable(metadata)
+                local value = {}
+                for key, item in pairs(metadata) do
+                    if key ~= 'epoch' then value[key] = item end
+                end
+                return value
+            end
+            comparison.baseline_epoch, comparison.epoch = baseline.native.epoch, segment.native.epoch
+            comparison.metadata_equal = m.json(comparable(segment.native)) == m.json(comparable(baseline.native))
             comparison.pcm = compareFile(baseline.files.pcm, segment.files.pcm)
             comparison.blocks = compareFile(baseline.files.blocks, segment.files.blocks)
             comparison.events = compareFile(baseline.files.events, segment.files.events)
@@ -179,8 +188,9 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
         m.requireIdleCapture()
         assert(PCSX.Audio.status().state == 0, 'replay Audio recorder was not cleared')
         audioStart, audioFirstFrame = m.exact(PCSX.getCPUCycles()), frame
-        PCSX.Audio.begin(audioLimits.samples, audioLimits.blocks, audioLimits.events)
-        audioActive = true
+        local ok, err = pcall(PCSX.Audio.begin, audioLimits.samples, audioLimits.blocks, audioLimits.events)
+        audioActive = PCSX.Audio.status().state ~= 0
+        assert(ok, err)
     end
     if audio then
         result.audio_scope = 'Native PCM/settings/counts and callback/access journals between checked checkpoints; capture gaps are unobserved, host queues are not restored or drained.'
@@ -336,13 +346,20 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             if observation.matched then stop(nextEvent, observation); return end
         end
         beginAudio()
+        guestRunning = true
         PCSX.resumeEmulator()
     end
     m.event('GPU::Vsync', function()
+        guestRunning = false
         PCSX.pauseEmulator()
         frame = frame + 1
         assert(frame <= active.frames, 'replay frame bound exceeded')
         PCSX.nextPause(m.guard(advance))
+    end)
+    m.event('ExecutionFlow::Pause', function()
+        if not guestRunning then return end
+        guestRunning = false
+        PCSX.nextPause(m.guard(function() error('unexpected native pause') end))
     end)
     begin()
 end)

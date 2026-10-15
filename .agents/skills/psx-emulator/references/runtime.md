@@ -31,6 +31,18 @@ PS-X EXE through shell handoff; `--disc` mounts [CUE/BINARY media](cdrom.md).
 Checked save/load requires fork-owned v6 schema and identity; wire4/card5 inputs
 refuse. No cross-schema converter.
 
+Declare replacement images with repeatable `--replacement NAME=CUE` alongside
+the initial `--disc`. Names are unique lowercase letters, digits and hyphens,
+start with a letter and contain at most 32 characters. A session accepts seven
+replacements and at most 8 GiB of declared media, including descriptors. Each
+image retains the 99 quoted BINARY files, 1 GiB per file and 2 GiB track-total
+bounds. External CD-TEXT and undeclared sidecars refuse.
+Replacement descriptors and track links live under `replacements/NAME/disc/`.
+Receipts bind every original and staged descriptor, original track bytes and
+track link. The complete directory census is checked at launch, completion and
+receipt inspection. Staging links source tracks; it does not copy or isolate
+concurrent source writes. Final identity checks detect endpoint drift.
+
 For provenance-bound continuation, including [Replay](replay.md), supply
 `--origin receipt.json` and `--input state=PATH`, without an EXE. Verification
 requires a successful origin, exact state size/hash and matching emulator, SDL,
@@ -61,6 +73,10 @@ resolved output directory) and `PSX_RUNTIME_MEDIA`: ordered tab-separated
 No disc means an explicitly empty value. [mount.lua](../../../../src/lua/missions/mount.lua) validates
 these literal identities and derives exact staged paths; it never executes data
 or matches basenames. Final passed-receipt/input checks remain authoritative.
+Named replacement rows use `replacement:NAME:trackNN.bin` with the same size and
+SHA fields. They follow initial-disc rows, grouped by sorted name and track order.
+`require('mount').replacement(NAME)` resolves only a declared staged descriptor.
+Origin verification binds the entire declared set, including unused replacements.
 
 Launch uses interpreter, software GPU, debugger and fresh portable settings;
 GDB/web, PCdrv, fastboot and updates are disabled. The default log limit is 2 MiB.

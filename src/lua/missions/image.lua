@@ -108,7 +108,7 @@ end
 
 function M.bind(value, bindings)
     image(value)
-    assert(type(bindings)=='table' and #bindings<=202, 'invalid CD receipt bindings')
+    assert(type(bindings)=='table' and #bindings<=792, 'invalid CD receipt bindings')
     local entries=0
     for key in pairs(bindings) do
         assert(type(key)=='number' and key%1==0 and key>=1 and key<=#bindings,

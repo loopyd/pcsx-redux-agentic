@@ -73,7 +73,9 @@ function M.scan(h,limits,audio,bindings,correlated)
         'per-byte bus timing','worker execution timestamps','worker race/deadlock/performance qualification'})
     return result
 end
-function M.export(h,limits,native,audio,bindings,snapshot_error)
+function M.export(h,limits,native,audio,bindings,snapshot_error,prefix)
+    prefix=prefix or ''
+    assert(type(prefix)=='string' and #prefix<=32 and prefix:match('^[%w_.-]*$'),'invalid capture prefix')
     local ok,result,encoded=pcall(function()
         assert(not snapshot_error,'native CD snapshot unavailable: '..tostring(snapshot_error))
         local status=h.status();local build_identity=m.buildIdentity()
@@ -82,12 +84,23 @@ function M.export(h,limits,native,audio,bindings,snapshot_error)
             native.complete and native.failure_bits==0 and native.dropped_attempts==0 and native.events==tonumber(status.events) and
             native.payload_bytes==tonumber(status.bytes) and native.begin_cycle==m.exact(status.beginCycle) and native.end_cycle==m.exact(status.endCycle),
             'native CD correlation requires matching complete revisioned journal and exact build receipt')
-        local value=M.scan(h,limits,audio,bindings);local bytes=m.json(value);assert(#bytes<=67108864,'native correlation export exceeds 64 MiB')
+        local value=M.scan(h,limits,audio,bindings)
+        if prefix~='' then
+            local function files(node)
+                if type(node)~='table' then return end
+                for key,item in pairs(node) do
+                    if key=='file' and item=='payload.bin' then node[key]=prefix..item
+                    elseif type(item)=='table' then files(item) end
+                end
+            end
+            files(value)
+        end
+        local bytes=m.json(value);assert(#bytes<=67108864,'native correlation export exceeds 64 MiB')
         return value,bytes
     end)
     if not ok then result={schema='psx.runtime-cd-transactions/v2',native_envelope_version=1,cd_observation_version=3,complete=false,error=tostring(result)};
         encoded=m.json(result) end
-    m.write('transactions.json',encoded..'\n');return result
+    m.write(prefix..'transactions.json',encoded..'\n');return result
 end
 return M
 -- )EOF"

@@ -14,6 +14,7 @@ inspection, media reads, controller commands or native capture.
 | `command` | `command=0..255`, `params` up to sixteen hex byte pairs, `frames=1..120` (60), bus `scratch`; optional `savestate=1` |
 | `open-lid`, `close-lid`, `schedule-close-lid`, `mount`, `eject` | Checked live boundary; mount needs declared disc input or explicit host path |
 | `capture` | Required `identity=LABEL` (1–160 bytes), mounted media; state input requires matching origin receipt |
+| `schedule` | Required `identity` and `--input schedule=PATH`; initial `--disc` and named `--replacement` media |
 
 Read/inspect actions export `cdrom.json` (`psx.runtime-cdrom/v2`), with
 `file.bin` or `sectors.bin` for byte reads. Sector sizes follow the selected mode;
@@ -131,3 +132,50 @@ Paths are at most 4096 bytes, components at most 255 bytes, directory extents at
 most 8 MiB and entry bounds 1–65536. Names are exact and case-sensitive; missing
 directories, relative components, malformed records and exceeded bounds refuse.
 The bound applies during native collection, before Lua table construction.
+
+## Transfer bounds
+
+For normal guest DMA, the shared DMA owner masks MADR to `0x7ffffc` before
+calling the CD owner. A guest scratchpad-looking address can therefore select
+RAM. Qualify the effective destination in the native start and copy receipts.
+The CD owner uses BCR's low 16 bits times four; zero drains the available FIFO.
+A transfer from an empty FIFO consumes and copies zero bytes. Nonempty draining
+clears data readiness; DMA scheduler completion and CHCR clearing remain separate
+observations. RAM wrapping can produce multiple copy receipts. Native memory-file
+scratchpad prefixes and unmapped drops retain their own destination receipts;
+a normal guest DMA run does not establish those paths.
+
+## Scheduled replacement
+
+`action=schedule` reads a data-only file:
+
+```text
+psx.disc-schedule/v1
+1 open
+1 eject
+1 mount second
+1 close
+2 stop
+```
+
+Declare `--disc FIRST.cue --replacement second=SECOND.cue`. Frames are monotonic
+GPU Vsync counts in `0..36000`; source order applies within a frame. The final
+stop must have a positive frame. Files are at most 8 KiB and contain at most 32
+operations. `mount` requires a declared name; other operations take no argument.
+Native open-lid, idle-transfer and topology checks apply to every operation.
+
+The mission pauses and settles at each scheduled boundary, freezes and exports
+the preceding CD segment, performs checked host operations and starts a new
+segment. All same-frame operations finish before restarting, so an ejected image
+must be replaced within that group. At most eight segments are retained.
+`events=1..65536` (8192) and `bytes=1..8388608` (1048576) apply per segment and
+must fit the native boundary floor. Exported artifacts have `segment-NN-`
+prefixes; transaction payload references use the corresponding prefixed file.
+`disc-schedule.json` records ordered before/after controller and lid observations,
+cycles, segment identities, stop reason and failures. Initial/final v6 states are
+separate from recorder intervals. The total capture budget still applies.
+
+Overflow or operation failure preserves exported prefixes and the failure report.
+Replacement is a host operation between guest intervals, not a guest command.
+Preparation failure retains the old image. After successful replacement, a
+notification or host-file failure can leave changed state; no rollback is promised.
