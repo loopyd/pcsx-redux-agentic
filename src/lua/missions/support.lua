@@ -183,17 +183,26 @@ function M.restore()
     return true
 end
 
-function M.atTarget(callback)
+function M.atTarget(callback, beforeResume)
     local raw = M.argument('target', os.getenv('PSX_RUNTIME_ENTRY'))
     local restored = M.restore()
     if raw then
         local target = M.address('target', tonumber(raw))
         if restored and tonumber(PCSX.getRegisters().pc) == target then callback(); return end
-        M.breakpoint(target, 'Exec', 4, function()
+        M.breakpoint(target, 'Exec', 4, function(address)
+            local selected = M.registers()
+            local cycles = M.exact(PCSX.getCPUCycles())
+            assert(address == target and selected.pc == target, 'target raw PC differs')
             PCSX.pauseEmulator()
-            PCSX.nextPause(M.guard(callback))
+            PCSX.nextPause(M.guard(function()
+                local settled = M.registers()
+                assert(settled.pc == selected.pc and M.exact(PCSX.getCPUCycles()) == cycles,
+                    'target changed before settled capture')
+                callback()
+            end))
             return false
         end)
+        if beforeResume then beforeResume() end
         PCSX.resumeEmulator()
     else
         assert(restored, 'supply target, executable, or a saved state')
