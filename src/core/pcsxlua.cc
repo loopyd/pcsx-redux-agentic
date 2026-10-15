@@ -799,6 +799,9 @@ bool debuggerStepInto() {
     return true;
 }
 bool historyBegin(uint32_t events, uint32_t bytes) { return PCSX::History::begin(events, bytes); }
+bool historyBeginRAM(uint32_t events, uint32_t bytes, uint32_t first, uint32_t length) noexcept {
+    try { return PCSX::History::beginRAM(events, bytes, first, length); } catch (...) { return false; }
+}
 bool historyBeginCD(uint32_t events, uint32_t bytes, bool audio) { return PCSX::History::beginCD(events, bytes, audio); }
 bool historyCDLimits(uint32_t flags, PCSX::History::CD::Limits* out) noexcept {
     try { return PCSX::History::CD::limits(flags, out); } catch (...) { return false; }
@@ -1054,6 +1057,7 @@ static void registerAllSymbols(PCSX::Lua L) {
     REGISTER(L, resumeEmulator);
     REGISTER(L, debuggerStepInto);
     REGISTER(L, historyBegin);
+    REGISTER(L, historyBeginRAM);
     REGISTER(L, historyBeginCD);
     REGISTER(L, historyCDLimits);
     REGISTER(L, historyBeginCDV3);

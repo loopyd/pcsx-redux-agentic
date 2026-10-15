@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include "core/history.h"
+
 #include <GL/gl3w.h>
 #include <stdarg.h>
 
@@ -368,7 +370,10 @@ class GUI final : public UI {
         void MenuItem() { ImGui::MenuItem(title(), nullptr, &m_show); }
         void draw(void *mem, size_t size) {
             editor.ReadFn = [mem](size_t off) -> ImU8 { return ((ImU8 *)mem)[off]; };
-            editor.WriteFn = [mem](size_t off, ImU8 d) { ((ImU8 *)mem)[off] = d; };
+            editor.WriteFn = [mem](size_t off, ImU8 d) {
+                History::ramHostEdit();
+                ((ImU8 *)mem)[off] = d;
+            };
             editor.Cache.BulkReadFn = [mem](void *dest, size_t off, size_t len) {
                 memcpy(dest, (ImU8 *)mem + off, len);
             };

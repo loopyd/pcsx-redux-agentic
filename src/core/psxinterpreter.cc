@@ -1658,12 +1658,15 @@ inline void InterpretedCPU::execBlock() {
             PCSX::g_system->log(PCSX::LogClass::CPU, "%s\n", ins);
         }
 
-        m_regs.pc += 4;
-        m_regs.cycle += PCSX::Emulator::BIAS;
-        if ((m_regs.pc & 0xffc00000) == 0xbfc00000) m_regs.cycle += PCSX::Emulator::BIAS * 10;
+        {
+            PCSX::History::Instruction instruction(pc, code, m_inDelaySlot);
+            m_regs.pc += 4;
+            m_regs.cycle += PCSX::Emulator::BIAS;
+            if ((m_regs.pc & 0xffc00000) == 0xbfc00000) m_regs.cycle += PCSX::Emulator::BIAS * 10;
 
-        cIntFunc_t func = s_pPsxBSC[code >> 26];
-        (*this.*func)(code);
+            cIntFunc_t func = s_pPsxBSC[code >> 26];
+            (*this.*func)(code);
+        }
 
         m_currentDelayedLoad ^= 1;
         flushCurrentDelayedLoad();

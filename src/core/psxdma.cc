@@ -114,11 +114,13 @@ void dma6(uint32_t madr, uint32_t bcr, uint32_t chcr) {
             while (bcr--) {
                 uint32_t historyValue = (madr - 4) & 0xffffff;
                 *mem-- = SWAP_LE32(historyValue);
+                PCSX::History::ramCommit(madr, mem + 1, 4, 6);
                 PCSX::History::scalar(6, madr, 0, historyValue, 4, 0);
                 madr -= 4;
             }
             mem++;
             *mem = 0xffffff;
+            PCSX::History::ramCommit(madr + 4, mem, 4, 6);
             PCSX::History::scalar(6, madr + 4, 0, 0xffffff, 4, 0);
         }
         PCSX::g_emulator->m_mem->msanDmaWrite(madr, size * 4);

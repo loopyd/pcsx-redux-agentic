@@ -17,6 +17,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
+
 #include "gui/widgets/assembly.h"
 
 #include <GL/gl3w.h>
@@ -1047,6 +1049,7 @@ settings, otherwise debugging features may not work.)");
         ImGui::Text("%s", m_assembleStatus.c_str());
         ImGui::PopFont();
         if (ImGui::Button("Assemble")) {
+            History::ramHostEdit();
             auto L = *g_emulator->m_lua;
             std::string assembler = fmt::format(R"(
 local success, msg = pcall(function() PCSX.Assembler.New():parse([[

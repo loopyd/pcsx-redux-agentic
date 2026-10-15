@@ -18,6 +18,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
+
 #include "gui/widgets/typed_debugger.h"
 
 #include <fstream>
@@ -807,6 +809,7 @@ Arrays and pointers are specified as for data types)");
                     for (const auto& instruction : m_disabledInstructions) {
                         const auto instructionAddress = instruction.first;
                         const auto& instructions = instruction.second;
+                        History::ramHostEdit();
                         memcpy(memData + instructionAddress - memBase, instructions.data(), 4);
                     }
                     m_disabledInstructions.clear();
@@ -854,6 +857,7 @@ Arrays and pointers are specified as for data types)");
                     for (const auto& function : m_disabledFunctions) {
                         const auto functionAddress = function.first;
                         const auto& instructionsToRestore = function.second;
+                        History::ramHostEdit();
                         memcpy(memData + functionAddress - memBase, instructionsToRestore.data(), 8);
                     }
                     m_disabledFunctions.clear();

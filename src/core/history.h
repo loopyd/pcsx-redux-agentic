@@ -17,6 +17,7 @@ enum class Kind : uint32_t {
     GpuContext, GpuEnvironment, GpuInput, GpuResult,
     CdContext, CdPort, CdCommand, CdSchedule, CdResponse, CdIRQ,
     CdMedia, CdBuffer, CdData, CdAudio, CdStream, CdTransition, CdPredicate, CdImage,
+    RamContext, RamWrite, RamInstruction,
 };
 
 void initialize();
@@ -25,6 +26,7 @@ bool ownerThread();
 enum class StateBoundary { Unavailable, Recording, Unsettled, Ready };
 StateBoundary stateBoundary() noexcept;
 bool begin(uint32_t events, uint32_t bytes);
+bool beginRAM(uint32_t events, uint32_t bytes, uint32_t first, uint32_t length);
 bool beginCD(uint32_t events, uint32_t bytes, bool audio);
 bool beginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, uint32_t flags);
 bool stop();
@@ -34,6 +36,20 @@ bool records(uint32_t first, uint32_t count, Record* out);
 bool bytes(uint32_t offset, uint32_t length, void* out);
 bool snapshot(Snapshot& out);
 void fail(Failure reason);
+bool ramActive();
+void ramContext(uint32_t phase);
+void ramCommit(uint32_t address, const void* destination, uint32_t length,
+               uint32_t channel = UINT32_MAX, uint32_t byteMask = 0);
+void ramHostEdit();
+class Instruction {
+  public:
+    Instruction(uint32_t pc, uint32_t code, bool delaySlot);
+    ~Instruction();
+    Instruction(const Instruction&) = delete;
+    Instruction& operator=(const Instruction&) = delete;
+  private:
+    bool m_observed = false;
+};
 void emit(Kind kind, uint32_t device, std::array<uint32_t, 8> data = {},
           uint64_t related = 0, const void* payload = nullptr, uint32_t length = 0,
           uint64_t request = UINT64_MAX);

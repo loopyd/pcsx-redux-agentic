@@ -10,7 +10,8 @@ local names = {'register-attempt', 'register-result', 'dma-start', 'dma-data',
     'irq-initial', 'dma-device', 'dma-buffer', 'dma-cancel', 'dma-peek',
     'gpu-context', 'gpu-environment', 'gpu-input', 'gpu-result',
     'cd-context', 'cd-port', 'cd-command', 'cd-schedule', 'cd-response', 'cd-irq',
-    'cd-media', 'cd-buffer', 'cd-data', 'cd-audio', 'cd-stream', 'cd-transition', 'cd-predicate', 'cd-image'}
+    'cd-media', 'cd-buffer', 'cd-data', 'cd-audio', 'cd-stream', 'cd-transition', 'cd-predicate', 'cd-image',
+    'ram-context', 'ram-write', 'ram-instruction'}
 local gpu_sources = {'cpu-gp0', 'cpu-gp1', 'direct-dma', 'chain-dma', 'read-dma',
     'cpu-read-gp0', 'host-gp0', 'host-gp1', 'host-read-gp0', 'host-replay'}
 local failures = {'events', 'bytes', 'thread', 'unsupported', 'association',
@@ -94,7 +95,24 @@ local function fields(record, data)
     local function assign(labels)
         for i, label in ipairs(labels) do result[label] = data[i] end
     end
-    if k >= 34 and k <= 47 then return cd_fields(record, data)
+    if k == 48 then
+        assign({'first', 'byte_count', 'biu', 'writes_enabled', 'ram_control', 'setting_8mb', 'pc', 'cp0_status'})
+        assert(record.device <= 2 and data[1] < 2097152 and data[2] > 0 and
+               data[2] <= 2097152 - data[1] and data[4] <= 1 and data[6] == 0 and
+               record.length == (record.device < 2 and data[2] or 0), 'invalid RAM context')
+        result.phase = ({[0]='begin', [1]='end', [2]='mapping'})[tonumber(record.device)]
+    elseif k == 49 then
+        assign({'address', 'backing_offset', 'byte_count', 'instruction_pc', 'instruction_word',
+                'byte_mask', 'biu', 'store_bytes'})
+        assert((record.device == 4294967295 or record.device <= 6) and data[2] < 2097152 and
+               data[3] > 0 and data[3] <= 2097152 - data[2] and record.length == data[3] and
+               data[6] <= 15 and data[8] >= data[3], 'invalid RAM commit')
+        result.writer = record.device == 4294967295 and 'cpu-handler' or 'dma'
+    elseif k == 50 then
+        assign({'pc', 'backing_offset', 'consumed_word', 'backing_word', 'biu', 'cp0_status', 'delay_slot', 'reserved'})
+        assert(record.device == 0 and record.length == 0 and data[1] % 4 == 0 and
+               data[2] <= 2097148 and data[7] <= 1 and data[8] == 0, 'invalid consumed RAM instruction')
+    elseif k >= 34 and k <= 47 then return cd_fields(record, data)
     elseif k == 1 or k == 2 then
         assign({'address', 'requested_value', 'width', 'aligned_mirror', 'read'})
     elseif k == 3 then
@@ -242,7 +260,9 @@ function M.export(capture)
         complete = ok and status.failures == 0, export_error = not ok and tostring(err) or nil,
         ordering = 'native CPU-thread hook order; bulk records do not imply byte-cycle timing',
         request_zero = 'absent or pre-capture owner; inspect initial state and pending events',
-        payload_scope = 'device context and copied buffers; only dma-data counts as transferred bytes',
+        payload_scope = kinds['ram-context'] and 'selected initial/final RAM and committed bytes'
+            or 'device context and copied buffers; only dma-data counts as transferred bytes',
+        ram_scope = kinds['ram-context'] and 'captured emulator interval under audited mission and environment; raw pointer, register, LUT and external shared-memory edits are not monitored; consumed words prove neither cache origin nor retirement, universal residency or declarations' or nil,
         cd_scope = kinds['cd-context'] and 'wire export only; CD lifecycle, ownership and Audio joins require the CD consumer' or nil,
         irq_scope = 'CPU-visible latch/delivery; SPU worker requests may coalesce',
         host_edits = 'audited mission required; arbitrary Lua pointer writes are not intercepted'}

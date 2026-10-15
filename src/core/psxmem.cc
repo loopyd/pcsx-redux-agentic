@@ -187,6 +187,7 @@ bool PCSX::Memory::loadEXP1FromFile(std::filesystem::path rom_path) {
 }
 
 void PCSX::Memory::reset() {
+    History::ramHostEdit();
     const uint8_t memsetValue = g_emulator->settings.get<Emulator::SettingMemoryFillValue>().value;
     const uint32_t bios_size = 0x00080000;
     const uint32_t exp1_size = 0x00040000;
@@ -537,6 +538,7 @@ void PCSX::Memory::write8(uint32_t address, uint32_t value) {
         [[likely]];
         const uint32_t offset = address & 0xffff;
         *(pointer + offset) = static_cast<uint8_t>(value);
+        History::ramCommit(address, pointer + offset, 1, UINT32_MAX, 1);
         g_emulator->m_cpu->Clear((address & (~3)), 1);
     } else if (page == 0x1f80 || page == 0x9f80 || page == 0xbf80) {
         if ((address & 0xffff) < 0x400) {
@@ -574,6 +576,7 @@ void PCSX::Memory::write16(uint32_t address, uint32_t value) {
         [[likely]];
         const uint32_t offset = address & 0xffff;
         *(uint16_t *)(pointer + offset) = SWAP_LEu16(static_cast<uint16_t>(value));
+        History::ramCommit(address, pointer + offset, 2, UINT32_MAX, 3);
         g_emulator->m_cpu->Clear((address & (~3)), 1);
     } else if (page == 0x1f80 || page == 0x9f80 || page == 0xbf80) {
         if ((address & 0xffff) < 0x400) {
@@ -595,6 +598,10 @@ void PCSX::Memory::write16(uint32_t address, uint32_t value) {
 }
 
 void PCSX::Memory::write32(uint32_t address, uint32_t value) {
+    write32Impl(address, value, 15);
+}
+
+void PCSX::Memory::write32Impl(uint32_t address, uint32_t value, uint32_t byteMask) {
     g_emulator->m_cpu->m_regs.cycle += 1;
     const uint32_t page = address >> 16;
     const auto pointer = (uint8_t *)m_writeLUT[page];
@@ -612,6 +619,7 @@ void PCSX::Memory::write32(uint32_t address, uint32_t value) {
         [[likely]];
         const uint32_t offset = address & 0xffff;
         *(uint32_t *)(pointer + offset) = SWAP_LEu32(value);
+        History::ramCommit(address, pointer + offset, 4, UINT32_MAX, byteMask);
         g_emulator->m_cpu->Clear((address & (~3)), 1);
     } else if (page == 0x1f80 || page == 0x9f80 || page == 0xbf80) {
         if ((address & 0xffff) < 0x400) {
@@ -640,6 +648,7 @@ void PCSX::Memory::write32(uint32_t address, uint32_t value) {
                 }
                 break;
         }
+        History::ramContext(2);
     } else if (sendWriteToLua(address, 4, value)) {
     } else if (isiCacheEnabled()) {
         g_emulator->m_cpu->Clear(address, 1);
@@ -681,7 +690,7 @@ void PCSX::Memory::write32Masked(uint32_t address, uint32_t value, uint32_t byte
         g_emulator->m_cpu->Clear(address, 1);
         return;
     }
-    write32(address, value);
+    write32Impl(address, value, byteMask);
 }
 
 const void *PCSX::Memory::pointerRead(uint32_t address) {
@@ -785,6 +794,7 @@ void PCSX::Memory::applyRamLuts(bool writes) {
         memset(m_writeLUT + 0xa000, 0, 0x80 * sizeof(void *));
     }
     g_system->m_eventBus->signal(PCSX::Events::Memory::SetLuts{});
+    History::ramContext(2);
 }
 
 std::string_view PCSX::Memory::getBiosVersionString() {
@@ -907,6 +917,8 @@ void PCSX::Memory::MemoryAsFile::writeBlock(const void *src_, size_t size, size_
     }
     auto toCopy = std::min(size, c_blockSize - offset);
     memcpy(block + offset, src, toCopy);
+    if (History::CD::dmaActive()) History::ramCommit(ptr, block + offset, toCopy, 3);
+    else History::ramHostEdit();
     if (History::CD::dmaActive()) {
         const uintptr_t destination = reinterpret_cast<uintptr_t>(block) + offset;
         const std::array<std::pair<const uint8_t*, uint32_t>, 5> regions{{{m_memory->m_wram, 0x800000},
@@ -924,6 +936,7 @@ void PCSX::Memory::MemoryAsFile::writeBlock(const void *src_, size_t size, size_
 }
 
 void PCSX::Memory::initMsan(bool reset) {
+    History::ramHostEdit();
     if (reset) {
         free(m_msanRAM);
         free(m_msanUsableBitmap);

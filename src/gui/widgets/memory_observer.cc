@@ -17,6 +17,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
+
 #include "gui/widgets/memory_observer.h"
 
 #ifdef MEMORY_OBSERVER_X86
@@ -37,6 +39,7 @@ PCSX::Widgets::MemoryObserver::MemoryObserver(bool& show) : m_show(show), m_list
         for (const auto& addressValuePair : m_addressValuePairs) {
             if (addressValuePair.frozen) {
                 const auto dataSize = getStrideFromValueType(m_scanValueType);
+                History::ramHostEdit();
                 memcpy(g_emulator->m_mem->m_wram + addressValuePair.address - 0x80000000, &addressValuePair.frozenValue,
                        dataSize);
             }

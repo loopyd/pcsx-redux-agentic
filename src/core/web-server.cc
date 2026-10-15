@@ -17,6 +17,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
+
 #include "core/web-server.h"
 
 #include <llhttp.h>
@@ -144,6 +146,7 @@ class RamExecutor : public PCSX::WebExecutor {
                 return true;
             }
 
+            PCSX::History::ramHostEdit();
             memcpy(PCSX::g_emulator->m_mem->m_wram + offset, request.body.data<uint8_t>(), size);
             client->write("HTTP/1.1 200 OK\r\n\r\n");
             return true;

@@ -15,6 +15,7 @@ Supply state with matching origin receipt, or executable/target. Required
 | `stop` | Optional aligned PC; frame exhaustion before arrival fails |
 | `events` | Native records, 1–65536 / 16384; includes initial state |
 | `bytes` | Payload budget, 0–8388608 / 1048576 |
+| `ram_start`, `ram_length` | Optional pair selecting one physical standard 2 MiB RAM range |
 
 Unexpected pauses and overflow fail. Finish setup edits before recording;
 maintained helpers reject active capture. Audit custom Lua because arbitrary
@@ -92,6 +93,41 @@ PIO DMA, MSAN and unsupported paths reject; reset/restore are discontinuities.
 Cyclic lists, bounds failures and lost associations prevent completeness. Compare
 raw records with independent fixture bytes/native state, not merely exporter labels.
 Capture establishes emulator observations, not hardware fidelity, PCM or streaming.
+
+## RAM interval profile
+
+Supply both `ram_start` and `ram_length` to select RAM observation instead of
+device history. `PCSX.History.beginRAM(events, bytes, first, length)` exposes the
+same profile to trusted Lua. The nonempty range must fit physical 2 MiB RAM;
+payload capacity must hold both boundary images. Other recorder bounds and
+paused ownership rules still apply. Eight MiB mode, MSAN and dynarec refuse.
+
+`ram-context` contains initial/final range bytes and ordered BIU/LUT mappings.
+`ram-write` records committed destination bytes from CPU handlers and implemented
+device-to-RAM DMA paths. Offsets come from actual destination pointers, including
+mirrors and partial overlaps. Repeated writes remain separate. CPU records carry
+the executing PC, instruction and byte mask. SWL/SWR records contain the merged
+four-byte handler store; the mask identifies selected lanes, not observed hardware
+bus activity. DMA records retain channel/request identity; zero means pre-capture
+or absent ownership. A zero instruction PC means the copy occurred outside CPU
+instruction dispatch. DMA pointers advance linearly; no RAM wrap is invented.
+
+`ram-instruction` records the word consumed for interpreter dispatch and the
+contemporaneous backing RAM word, raw PC, physical offset, BIU, Status and slot
+marker. Debugger predecode reads do not count. Equality proves only equality at
+that observation. Neither equality nor disagreement proves cache origin,
+instruction retirement or residency on unexecuted paths.
+
+Mappings are validated at begin, transitions and freeze. Final bytes must match
+the initial image plus observed commits. Invalid extents, unsupported paths,
+overflow, reset/restore and instrumented host edits invalidate completeness.
+Known host patch, loader, debugger and GUI mutation paths fail the profile.
+The mission and environment must exclude arbitrary raw Lua pointer writes,
+direct register/LUT edits and external shared-memory writers. These accesses
+cannot be monitored by the hooks; final reconciliation cannot detect a write
+that is later undone. A complete recorder therefore describes the selected
+emulator interval under those audited assumptions. It proves no universal
+ownership, C declaration, device semantics or hardware fidelity.
 
 Under `src/core/`, `history.*` and `journal.h` own
 storage/API; `psxhw.*` register dispatch; `psxmem.h` DMA/IRQ

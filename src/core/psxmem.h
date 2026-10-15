@@ -338,6 +338,7 @@ class Memory {
     friend class MemoryAsFile;
     IO<MemoryAsFile> m_memoryAsFile;
     void applyRamLuts(bool writes);
+    void write32Impl(uint32_t address, uint32_t value, uint32_t byteMask);
 
     // The scratchpad and the hardware registers share a single 64kB page, and the guest path has
     // to dispatch register accesses to the hardware itself for their side effects, so that page is

@@ -17,6 +17,8 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
  ***************************************************************************/
 
+#include "core/history.h"
+
 #include "core/patchmanager.h"
 
 #include "core/psxemulator.h"
@@ -35,6 +37,7 @@ int PCSX::PatchManager::registerPatch(uint32_t address, Patch::Type type) {
 }
 
 void PCSX::PatchManager::doPatch(Patch& patch) {
+    History::ramHostEdit();
     switch (patch.type) {
         case PatchManager::Patch::Type::Return:
             g_emulator->m_mem->write32(patch.addr, 0x03e00008);
@@ -54,6 +57,7 @@ void PCSX::PatchManager::doPatch(Patch& patch) {
 }
 
 void PCSX::PatchManager::undoPatch(Patch& patch) {
+    History::ramHostEdit();
     switch (patch.type) {
         case PatchManager::Patch::Type::Return:
             g_emulator->m_mem->write32(patch.addr, patch.org0);

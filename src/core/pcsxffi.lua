@@ -92,6 +92,7 @@ bool historyBeginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, ui
 bool historyCDWorkerStatus(CDWorkerStatus* out);
 bool historyCDWorkerRecords(uint32_t first, uint32_t count, CDWorkerRecord* out);
 bool historyBegin(uint32_t events, uint32_t bytes);
+bool historyBeginRAM(uint32_t events, uint32_t bytes, uint32_t first, uint32_t length);
 bool historyBeginCD(uint32_t events, uint32_t bytes, bool audio);
 bool historyStop();
 bool historyClear();
@@ -190,6 +191,15 @@ local history = {
         assert(type(audio) == 'boolean', 'CD capture requires explicit joined-audio boolean')
         assert(events > 0 and C.historyBeginCDV3(events, bytes, 0, audio and 1 or 0),
                'CD begin requires empty recorder, context capacity, idle paused interpreter and active joined Audio')
+    end,
+    beginRAM = function(events, bytes, first, length)
+        historyInteger(events, 65536, 'event limit')
+        historyInteger(bytes, 8388608, 'byte limit')
+        historyInteger(first, 2097151, 'physical RAM start')
+        historyInteger(length, 2097152, 'physical RAM length')
+        assert(events > 0 and length > 0 and length <= 2097152 - first and
+               C.historyBeginRAM(events, bytes, first, length),
+               'RAM history requires a valid range, boundary capacity and a paused standard 2 MiB interpreter')
     end,
     begin = function(events, bytes)
         historyInteger(events, 65536, 'event limit')

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "core/history.h"
 
+#include <algorithm>
 #include <memory>
 #include <atomic>
 
@@ -30,6 +31,11 @@ std::array<uint64_t, 11> scheduled{};
 std::array<uint64_t, 7> owners{};
 std::array<bool, 7> owned{};
 std::array<uint32_t, 2> reading{};
+std::atomic<bool> ramEnabled{false};
+uint32_t ramFirst = 0, ramLength = 0, ramBiu = 0;
+uint32_t instructionPC = 0, instructionCode = 0;
+bool inInstruction = false;
+std::vector<uint8_t> ramShadow;
 
 bool paused() {
     return journal() && journal()->owner() && !g_system->running() && !g_system->quitting();
@@ -89,14 +95,29 @@ bool ownerThread() {
     if (journal()->owner()) return true;
     journal()->fail(Failure::Thread); return false;
 }
-static bool beginProfile(uint32_t events, uint32_t bytes, bool cd, bool audio, uint32_t workerEvents = 0, uint32_t flags = 0) {
+static bool beginProfile(uint32_t events, uint32_t bytes, bool cd, bool audio, uint32_t workerEvents = 0, uint32_t flags = 0,
+                         uint32_t first = 0, uint32_t length = 0) {
     if (!paused() || !CD::idle() || gpuDepth || epoch == UINT64_MAX ||
         g_emulator->m_cpu->isDynarec() || g_emulator->m_mem->msanInitialized()) return false;
     const auto identity = g_emulator->m_spu->captureIdentity();
     Status before;
     if (!journal()->status(before) || before.state || (audio && identity[0] != 1)) return false;
     if (cd && !CD::prepare(events, bytes, workerEvents, flags)) return false;
+    std::vector<uint8_t> initial;
+    if (length) {
+        Memory::RamState mapping;
+        if (!g_emulator->m_mem->captureRamState(mapping) || mapping.setting8MB) return false;
+        try {
+            initial.assign(g_emulator->m_mem->m_wram + first, g_emulator->m_mem->m_wram + first + length);
+        } catch (...) { return false; }
+    }
     if (!journal()->begin(events, bytes, cycles())) return false;
+    ramFirst = first;
+    ramLength = length;
+    ramShadow.swap(initial);
+    inInstruction = false;
+    instructionPC = instructionCode = 0;
+    ramEnabled.store(length != 0, std::memory_order_release);
     requests.fill(0);
     serial = 0;
     gpuSerial = 0;
@@ -108,6 +129,7 @@ static bool beginProfile(uint32_t events, uint32_t bytes, bool cd, bool audio, u
     ++epoch;
     CD::configure(cd, epoch, audio, audio ? identity[1] : 0);
     reading = {};
+    if (length) { ramContext(0); return true; }
     for (uint32_t n = 0; n < 7; ++n) {
         const auto* p = g_emulator->m_mem->m_hard + 0x1080 + 16 * n;
         std::array<uint32_t, 8> data{};
@@ -130,6 +152,10 @@ static bool beginProfile(uint32_t events, uint32_t bytes, bool cd, bool audio, u
     return true;
 }
 bool begin(uint32_t events, uint32_t bytes) { return beginProfile(events, bytes, false, false); }
+bool beginRAM(uint32_t events, uint32_t bytes, uint32_t first, uint32_t length) {
+    if (!length || first >= 0x200000 || length > 0x200000 - first || bytes < 2 * length) return false;
+    return beginProfile(events, bytes, false, false, 0, 0, first, length);
+}
 bool beginCD(uint32_t events, uint32_t bytes, bool audio) { return beginProfile(events, bytes, true, audio, 0, audio ? 1 : 0); }
 bool beginCDV3(uint32_t events, uint32_t bytes, uint32_t workerEvents, uint32_t flags) { return beginProfile(events, bytes, true, flags & 1, workerEvents, flags); }
 bool stop() {
@@ -143,10 +169,15 @@ bool stop() {
         g_emulator->m_cdrom->history(1);
     }
     if (gpuDepth) fail(Failure::Association);
-    return journal()->stop(cycles());
+    if (ramActive()) ramContext(1);
+    const bool stopped = journal()->stop(cycles());
+    if (stopped) ramEnabled.store(false, std::memory_order_release);
+    return stopped;
 }
 bool clear() {
     if (!paused() || !CD::idle() || !journal()->clear()) return false;
+    ramEnabled.store(false, std::memory_order_release);
+    ramShadow.clear();
     CD::configure(false, epoch, false, 0); return true;
 }
 bool status(Status* out) { return out && journal() && journal()->status(*out); }
@@ -158,6 +189,69 @@ bool snapshot(Snapshot& out) {
     return true;
 }
 void fail(Failure reason) { if (journal()) journal()->fail(reason); }
+
+bool ramActive() { return ramEnabled.load(std::memory_order_acquire) && recording(); }
+void ramHostEdit() { if (ramActive()) fail(Failure::Discontinuity); }
+
+void ramContext(uint32_t phase) {
+    if (!ramActive()) return;
+    if (phase == 2 && !inInstruction) fail(Failure::Discontinuity);
+    Memory::RamState mapping;
+    auto& memory = *g_emulator->m_mem;
+    if (phase > 2 || !memory.captureRamState(mapping) || mapping.setting8MB ||
+        g_emulator->m_cpu->isDynarec() || memory.msanInitialized()) {
+        fail(Failure::Unsupported); return;
+    }
+    ramBiu = mapping.biu;
+    if (phase == 1 && std::memcmp(ramShadow.data(), memory.m_wram + ramFirst, ramLength))
+        fail(Failure::Discontinuity);
+    const auto& cpu = g_emulator->m_cpu->m_regs;
+    emit(Kind::RamContext, phase, {ramFirst, ramLength, mapping.biu, uint32_t(mapping.writes),
+         memory.m_hard[0x1061], uint32_t(mapping.setting8MB), cpu.pc, cpu.CP0.n.Status},
+         0, phase < 2 ? memory.m_wram + ramFirst : nullptr, phase < 2 ? ramLength : 0);
+}
+
+void ramCommit(uint32_t address, const void* destination, uint32_t length, uint32_t channel, uint32_t byteMask) {
+    if (!ramActive()) return;
+    const auto base = reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram);
+    const auto pointer = reinterpret_cast<uintptr_t>(destination);
+    if (pointer < base || pointer - base >= 0x800000) {
+        if (channel != UINT32_MAX) fail(Failure::Bounds);
+        return;
+    }
+    const auto offset = uint32_t(pointer - base);
+    if (offset >= 0x200000 || length > 0x200000 - offset) { fail(Failure::Bounds); return; }
+    if (channel == UINT32_MAX && !inInstruction) { fail(Failure::Discontinuity); return; }
+    const uint32_t first = std::max(offset, ramFirst), end = std::min(offset + length, ramFirst + ramLength);
+    if (first >= end) return;
+    const auto* bytes = g_emulator->m_mem->m_wram + first;
+    std::memcpy(ramShadow.data() + first - ramFirst, bytes, end - first);
+    emit(Kind::RamWrite, channel, {address, first, end - first, inInstruction ? instructionPC : 0,
+         inInstruction ? instructionCode : 0,
+         byteMask, ramBiu, length}, 0, bytes, end - first);
+}
+
+Instruction::Instruction(uint32_t pc, uint32_t code, bool delaySlot) {
+    if (!ramActive()) return;
+    if (inInstruction || g_emulator->m_cpu->isDynarec() || g_emulator->m_mem->msanInitialized()) {
+        fail(Failure::Unsupported); return;
+    }
+    m_observed = inInstruction = true;
+    instructionPC = pc;
+    instructionCode = code;
+    const auto base = reinterpret_cast<uintptr_t>(g_emulator->m_mem->m_wram);
+    const auto pointer = reinterpret_cast<uintptr_t>(g_emulator->m_mem->getPointer(pc));
+    if (pointer < base || pointer - base >= 0x200000) return;
+    const auto offset = uint32_t(pointer - base);
+    if (offset >= ramFirst + ramLength || uint64_t(offset) + 4 <= ramFirst) return;
+    if ((pc & 3) || offset > 0x200000 - 4) { fail(Failure::Bounds); return; }
+    const auto* bytes = reinterpret_cast<const uint8_t*>(pointer);
+    uint32_t backing = 0;
+    for (unsigned n = 0; n < 4; ++n) backing |= uint32_t(bytes[n]) << (8 * n);
+    emit(Kind::RamInstruction, 0, {pc, offset, code, backing, ramBiu,
+         g_emulator->m_cpu->m_regs.CP0.n.Status, uint32_t(delaySlot)});
+}
+Instruction::~Instruction() { if (m_observed) inInstruction = false; }
 
 Gpu::Gpu(GPU& gpu, GpuSource source, uint32_t origin, uint32_t words, uint32_t value)
     : m_source(source), m_origin(origin), m_words(words), m_value(value) {
@@ -234,6 +328,10 @@ void emit(Kind kind, uint32_t device, std::array<uint32_t, 8> data,
         scheduled[device] = 0;
     }
     if (request != UINT64_MAX) event.request = request;
+    if (kind == Kind::RamWrite && device < requests.size())
+        event.request = owned[device] ? owners[device] : requests[device];
+    if (ramEnabled.load(std::memory_order_relaxed) && kind != Kind::RamContext &&
+        kind != Kind::RamWrite && kind != Kind::RamInstruction) return;
     journal()->append(event, cycles, payload, length);
 }
 
@@ -294,6 +392,10 @@ void scalar(uint32_t channel, uint32_t address, uint32_t destination,
     if (width != 1 && width != 2 && width != 4) { fail(Failure::Bounds); return; }
     uint8_t payload[4];
     for (uint32_t b = 0; b < width; ++b) payload[b] = value >> (8 * b);
+    if (ramActive() && direction == 0 && channel == 4) {
+        if (address >= 0x200000 || width > 0x200000 - address) { fail(Failure::Bounds); return; }
+        ramCommit(address, g_emulator->m_mem->m_wram + address, width, channel);
+    }
     emit(Kind::DmaData, channel, {address, destination, width, direction}, 0, payload, width);
 }
 
@@ -305,6 +407,7 @@ void span(uint32_t channel, uint32_t address, const void* data, uint32_t length,
         fail(Failure::Bounds);
         return;
     }
+    if (direction == 0) ramCommit(address, data, length, channel);
     emit(Kind::DmaData, channel, {address, 0, length, direction}, related, data, length);
 }
 
