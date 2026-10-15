@@ -87,6 +87,7 @@ class CDRom {
     const std::string& getCDRomID() { return m_cdromId; }
     const std::string& getCDRomLabel() { return m_cdromLabel; }
 
+    virtual bool mediaReplacementIdle(uint32_t scheduleMask) const noexcept = 0;
     virtual bool acceptsPreparedState(const SaveStates::CDRom&, uint32_t scheduleMask) const noexcept = 0;
     virtual bool acceptsPreparedMedia(const SaveStates::CDRom&, uint32_t scheduleMask,
                                       const std::shared_ptr<CDRIso>&) const noexcept = 0;

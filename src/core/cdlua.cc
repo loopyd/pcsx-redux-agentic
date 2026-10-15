@@ -238,6 +238,7 @@ int replaceMedia(lua_State* state, bool eject) {
                 const auto& cd = current.get<CDRomField>();
                 if (!cd.get<CDLidOpen>().decodedValue()) return Result::InvalidState;
                 const auto mask = current.get<RegistersField>().get<ScheduleMask>().decodedValue();
+                if (!g_emulator->m_cdrom->mediaReplacementIdle(mask)) return Result::Busy;
                 if (!g_emulator->m_cdrom->acceptsPreparedMedia(cd, mask, prepared)) return Result::TopologyMismatch;
                 g_emulator->m_cdrom->swapPreparedIso(prepared);
                 committed = true;

@@ -127,7 +127,9 @@ listeners and callback references. Retain the handle when cancellation is needed
 scheduled closure uses the existing one-second guest-cycle target. `mount(path)`
 prepares an owned image and checks media topology before replacing it; `eject()`
 installs an owned failed image. Both require an open lid and idle controller
-transfers. Failed preparation retains the old image. Successful mounting signals
+transfers. Pending commands/responses, unread or unrequested buffered data,
+read/seek/play work and CD DMA refuse with `Busy`. Fully consumed cached data
+does not count as pending transfer work. Failed preparation retains the old image. Successful mounting signals
 `IsoMounted` after releasing the lease and never closes the lid or resets the
 guest. A notification failure after replacement is `CommitFailed`; rollback is
 not promised. The baked mission exposes these operations with actions `open-lid`,

@@ -106,6 +106,17 @@ class CDRomImpl final : public PCSX::CDRom {
         return m_seed >> 9;
     }
 
+    bool mediaReplacementIdle(uint32_t mask) const noexcept override {
+        const uint32_t work = (1u << static_cast<unsigned>(PCSX::Schedule::CDRCOMMANDS)) |
+                              (1u << static_cast<unsigned>(PCSX::Schedule::CDREAD)) |
+                              (1u << static_cast<unsigned>(PCSX::Schedule::CDRDMA));
+        return !(mask & work) && !PCSX::g_emulator->m_mem->isDMABusy<3>() &&
+               m_readingState == ReadingState::None && m_status == Status::Idle && !m_startPlaying &&
+               !m_dataRequested && m_dataFIFOIndex >= m_dataFIFOSize && m_dataFIFOIndex >= m_dataFIFOPending &&
+               m_commandFifo.empty() &&
+               m_responseFifo[0].empty() && m_responseFifo[1].empty();
+    }
+
     bool acceptsPreparedState(const PCSX::SaveStates::CDRom& cd, uint32_t mask) const noexcept override {
         return acceptsPreparedMedia(cd, mask, m_iso);
     }
