@@ -59,7 +59,12 @@ PCM export accepts ASCII filenames of 1–255 bytes, starting with a letter or d
 then letters, digits, `_`, `.` or `-`. It writes 2048-frame chunks without a full
 Lua PCM string, preserving float bits and the 58-byte IEEE-float WAV header. Files
 close before success or error; failed output prefixes remain on disk. Successful
-`pcm.export` registers both captures. Failed frozen recorder prefixes remain readable.
+`pcm.export` registers both captures. `pcm.export(prefix)` selects a simple
+filename prefix for repeated captures. It allows at most 200 ASCII letters,
+digits, `_`, `.` or `-`, starting with a letter or digit. Its returned `files`
+names each raw, WAV,
+block, event and report capture. [Replay](replay.md#native-sound-comparison) uses
+this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
 Native Audio ABI and `psx.native-audio` report version: 2. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,

@@ -44,10 +44,15 @@ local function writeJournalBeforeValidation(name, count, read, validate)
     return {rows = rows, bytes = bytes, complete = ok, error = not ok and tostring(err) or nil}
 end
 
-function M.export()
+function M.export(prefix)
+    if prefix == nil then prefix = '' end
+    assert(type(prefix) == 'string' and (#prefix == 0 or
+        (#prefix <= 200 and prefix:match('^[%a%d][%w_.-]*$'))), 'invalid PCM capture prefix')
+    local files = {pcm = prefix .. 'audio.f32', wav = prefix .. 'audio.wav',
+        blocks = prefix .. 'blocks.ndjson', events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v2', native = status, complete = false,
+    local result = {schema = 'psx.native-audio/v2', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
@@ -96,17 +101,17 @@ function M.export()
             status.streaming_dropped == '0'), 'native loss without failure')
 
         for _, capture in ipairs(m.captures) do
-            assert(capture.path ~= 'audio.f32' and capture.path ~= 'audio.wav', 'duplicate capture')
+            assert(capture.path ~= files.pcm and capture.path ~= files.wav, 'duplicate capture')
         end
-        local exported = h.exportPCM('audio.f32', 'audio.wav')
+        local exported = h.exportPCM(files.pcm, files.wav)
         assert(exported.frames == status.frames and exported.pcm_bytes == status.frames * 8 and
             exported.wav_bytes == exported.pcm_bytes + 58, 'native PCM export counts differ')
-        m.captures[#m.captures + 1] = {path = 'audio.f32', bytes = exported.pcm_bytes}
-        m.captures[#m.captures + 1] = {path = 'audio.wav', bytes = exported.wav_bytes}
+        m.captures[#m.captures + 1] = {path = files.pcm, bytes = exported.pcm_bytes}
+        m.captures[#m.captures + 1] = {path = files.wav, bytes = exported.wav_bytes}
         result.pcm_bytes, result.duration = exported.pcm_bytes, status.frames / 44100
         local offset, previous = 0, status.begin_cycle
         local voice_fill, disc_fill = 0, 0
-        result.blocks = writeJournalBeforeValidation('blocks.ndjson', status.blocks, h.blocks, function(b, index)
+        result.blocks = writeJournalBeforeValidation(files.blocks, status.blocks, h.blocks, function(b, index)
             assert(b.index == index and b.offset == offset, 'noncontiguous native PCM block')
             integer(b.frames, 1, 2048, 'block frames')
             integer(b.voice_frames, 0, b.frames, 'voice frames')
@@ -126,7 +131,7 @@ function M.export()
         result.zero_fill = {voice_frames = voice_fill, disc_frames = disc_fill}
         previous = status.begin_cycle
         local observed = '0'
-        result.events = writeJournalBeforeValidation('spu.ndjson', status.events, h.events, function(e, index)
+        result.events = writeJournalBeforeValidation(files.events, status.events, h.events, function(e, index)
             assert(e.id == index + 1, 'noncontiguous native SPU event')
             integer(e.kind, 1, 6, 'event kind')
             local cycle, frame, parent = decimal(e.cycle), decimal(e.observed_frame), decimal(e.parent)
@@ -154,7 +159,7 @@ function M.export()
         result.complete = status.failures == 0
     end)
     if not ok then result.export_error = tostring(err) end
-    m.report('audio.json', result)
+    m.report(files.report, result)
     return result
 end
 

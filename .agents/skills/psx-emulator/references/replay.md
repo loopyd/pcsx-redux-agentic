@@ -79,8 +79,8 @@ schedules, scripts, tools and media. Observations follow paused Vsync dispatch,
 not instruction/audio-sample boundaries; [Runtime](runtime.md#evidence-contract)
 defines unpinned settings and host effects.
 
-Equal subtrees prove neither whole-state nor execution equality. Hidden device
-state, host audio queues and PCM are unexamined. Pad overrides
+Equal subtrees prove neither whole-state nor execution equality. Hidden device state and host audio queues are not qualified. PCM is unexamined
+unless `audio=1` is selected. Pad overrides
 and native poll counters are host controls outside saved state. Native serial
 replies record bytes returned by the pad owner, including partial packets. They
 do not prove guest UART reads. Check packet completion and compare guest serial
@@ -90,3 +90,47 @@ and dimensions/format/availability separately; equal unavailable displays remain
 
 Preserve deferred Vsync boundaries through `PCSX.nextPause`. Start the next
 restoration only after CPU execution and event dispatch have unwound.
+
+## Native sound comparison
+
+Set `audio=1` to capture and compare native [Audio](audio.md) alongside the
+scheduled device/display observations. Optional capacities apply to each segment:
+`samples=1..2646000` (441000 stereo frames), `blocks=1..65536` (16384) and
+`events=1..65536` (16384). These operands reject without `audio=1`. The native
+Audio binding and an empty recorder are required; unavailable support refuses.
+
+Each run starts recording after restoration and frame-zero commands. State and
+screen checkpoints freeze/export the active segment before any checked state
+capture. Recording resumes in a fresh segment immediately before guest resume.
+The final stop freezes before comparison or the next restoration. Same-frame
+checkpoints share the pause and do not create empty segments. Checkpoint/export
+work leaves unrecorded host-time gaps. No queue is flushed or restored to hide
+those gaps, and input commands retain their scheduled order.
+
+Each segment writes `run-RR-segment-SS-audio.f32`, `-audio.wav`, `-blocks.ndjson`,
+`-spu.ndjson` and `-audio.json`. The native report retains the capture stage,
+settings, sample/block/event counts, failure bits and exposed queue snapshots.
+Replay compares exact PCM float bits and exact callback/access journal bytes,
+including observed cycles. It also compares settings, counts, all exposed native
+metadata, segment frames and guest boundary cycles. A byte mismatch reports its
+first offset and values. WAV payload/count validation uses the same PCM exporter.
+
+`runs[].audio` retains every segment and its comparison with run one's matching
+segment. `audio_complete` requires every requested interval; `audio_equal` and
+`equal` become false on a compared difference. `first_divergence` identifies the
+first differing boundary and the relevant sound comparison. A completed run may
+report unequal PCM or host callback timing even with identical schedules.
+The `alternate` schedule uses the same sound comparison; changed controller input
+does not imply changed PCM unless the guest observes it and changes its sound.
+
+Missing segments, zero recorded PCM frames, overflow, failed native export and
+capture-budget exhaustion fail with available prefixes and a diagnostic replay
+report. Run/checkpoint combinations that could exceed the harness's 128 capture
+files reject before execution. PCM, WAV and journals count toward replay's
+120 MiB artifact budget. Choose bounds for the selected interval; capacities are
+not automatic duration stops.
+
+Sound equality covers the selected native observations. Hidden host queues,
+uncaptured gaps, audible onset, SDL conversion and physical playback remain
+unqualified. Callback cycles are CPU publications, not per-sample timing. State
+serialization and host scheduling can change subsequent observations.
