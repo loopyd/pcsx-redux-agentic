@@ -14,6 +14,51 @@ the slot's configured backing file. Edits and imports mark the live image dirty;
 they do not flush it. Guest card traffic can later trigger the existing automatic
 flush. `savestate=1` captures the resulting full machine state.
 
+## Guest capture and continuation
+
+`action=capture` starts at the EXE entry or `target`. It requires a word-aligned
+`stop` PC and counts at most `frames=1..36000` Vsyncs, default 180. The stop is a
+pre-instruction observation at a settled paused boundary. A frame deadline retains
+the final boundary and fails. Use fresh harness output and the portable backing
+files `memcard1.mcd` and `memcard2.mcd`; never configure an original input as a
+working backing file.
+
+An optional `--input card=PATH` imports into `slot` before the initial capture.
+The harness keeps that staged input separate from backing files and checks its
+hash. Both boundaries export both complete raw card images, checked v6 states,
+CPU registers and card/SIO status in `memcard.json`, schema
+`psx.runtime-memcard-capture/v1`. Optional `address` and `length` export a guest RAM
+transcript at both boundaries. The range must fit physical 2 MiB RAM through
+segments 0, 4 or 5; length defaults to 256. The guest must record the transmitted,
+received and status bytes needed to interpret its protocol.
+
+`block=1..15` additionally extracts `save.bin` at the successful stop. `flush=1`
+attempts explicit persistence afterward and reports the resulting dirty status.
+Extraction or flush failure retains boundary captures and its error, and fails
+without a completion marker. Neither option is required for an interrupted serial
+capture; active card transactions refuse edits, import and explicit flush while
+checked capture remains available.
+
+Continue an interrupted transaction with the successful capture's `--origin` and
+`--input state=.../final.pbuf`. Supply no EXE, target or card reimport. Native
+checked restore resumes the saved PC, both images, FIFO and protocol progress.
+Restoration marks cards dirty. The next guest card byte can automatically flush
+that image before the pending transaction completes; a successful guest sector
+write can also automatically flush it. Compare exported card bytes and guest
+responses separately from backing-file persistence.
+
+For acceptance, use an isolated allocated save and a guest that writes a known
+sector, rereads it and retains the full serial transcript in RAM. Compare the raw
+image and extracted save to independent expected bytes, and verify the original
+input hash. Stop halfway through a write, continue from its checked state, and
+compare the completed protocol and image with an uninterrupted run. Include a
+bad-checksum command, truncated import, unsafe edit at the interrupted boundary,
+and failed flush to an unwritable working destination. Preserve the refusal,
+images and dirty status. A successful host extraction alone does not prove guest
+save success or hardware fidelity.
+
+## Native image operations
+
 Live operations require full checked-state admission at a settled paused owner
 boundary. Running execution, active recorders, pending loads, busy devices and
 leases refuse. Edits, import and flush also refuse an active card serial
