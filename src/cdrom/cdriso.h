@@ -195,7 +195,8 @@ class CDRIso {
 
     void decodeRawSubData();
     bool parsetoc(const char* isofile);
-    bool parsecue(const char* isofile);
+    enum class CueResult { Absent, Loaded, Invalid };
+    CueResult parsecue(const char* isofile);
     bool parseccd(const char* isofile);
     bool parsemds(const char* isofile);
     bool handlepbp(const char* isofile);

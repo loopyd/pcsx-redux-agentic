@@ -287,7 +287,12 @@ bool PCSX::CDRIso::open(IO<File> isoFile) {
         i = {};
     }
 
-    if (parsecue(reinterpret_cast<const char *>(m_isoPath.string().c_str()))) {
+    const auto cue = parsecue(reinterpret_cast<const char *>(m_isoPath.string().c_str()));
+    if (cue == CueResult::Invalid) {
+        close();
+        return false;
+    }
+    if (cue == CueResult::Loaded) {
         PCSX::g_system->printf("[+cue]");
     } else if (parsetoc(reinterpret_cast<const char *>(m_isoPath.string().c_str()))) {
         PCSX::g_system->printf("[+toc]");

@@ -76,8 +76,10 @@ literal declared track identities. Backend zero fill, short/failure outcomes and
 native CDDA/XA feed counts remain distinct observations.
 CUE track views begin at INDEX 01 and exclude their preceding pregap from the
 backed program extent. The full view must fit its file; no extent is silently
-clamped. Track lengths include pregap metadata; the absolute program end and
-leadout subtract that pregap once. Position lookup at or beyond leadout fails,
+clamped. An invalid CUE rejects the mount instead of falling through to another
+descriptor parser or a raw-image guess. Track lengths include pregap metadata;
+the absolute program end and leadout subtract that pregap once. Position lookup
+at or beyond leadout fails,
 and guest GetlocP returns an error instead of its previous position bytes.
 CDDA reads beyond a program extent synthesize silence without a backing read.
 That outcome differs from a short backing read, which clears the destination
@@ -89,8 +91,10 @@ meanings reject.
 Decoded capture also requires bounded worker capacity. Worker records carry batch,
 sequence, epoch, last published CPU cycle, native predicates and publication
 lineage. CPU handoff joins exact publication sequence ranges. These observations
-do not establish DSP/hardware fidelity, worker race/deadlock freedom or acceptable
-performance; those require actual native missions and measured controls.
+establish native predicate and handoff order. They do not establish that a
+captured XA sector caused the IRQ, DSP/hardware fidelity, worker race/deadlock
+freedom or acceptable performance. Those require actual native missions and
+measured controls.
 
 Synthetic rows qualify parser contracts only. Native seed states use v6 and record
 host edits. Preserve failed evidence; validate affected producer/worker/DMA behavior

@@ -27,7 +27,7 @@
 
 // this function tries to get the .cue file of the given .bin
 // the necessary data is put into the ti (trackinformation)-array
-bool PCSX::CDRIso::parsecue(const char *isofileString) {
+PCSX::CDRIso::CueResult PCSX::CDRIso::parsecue(const char *isofileString) {
     std::filesystem::path isofile = MAKEU8(isofileString);
     std::filesystem::path cuename, filepath;
     IO<File> fi;
@@ -39,7 +39,7 @@ bool PCSX::CDRIso::parsecue(const char *isofileString) {
     cuename.replace_extension("cue");
 
     fi.setFile(new UvFile(cuename));
-    if (fi->failed()) return false;
+    if (fi->failed()) return CueResult::Absent;
     if (g_emulator->settings.get<Emulator::SettingFullCaching>()) {
         fi.asA<UvFile>()->startCaching();
     }
@@ -50,7 +50,7 @@ bool PCSX::CDRIso::parsecue(const char *isofileString) {
     if (fi->gets() == "CD_ROM_XA") {
         // Don't proceed further, as this is actually a .toc file rather
         // than a .cue file.
-        return parsetoc(isofileString);
+        return parsetoc(isofileString) ? CueResult::Loaded : CueResult::Invalid;
     }
     fi->rSeek(0, SEEK_SET);
 
@@ -184,7 +184,7 @@ bool PCSX::CDRIso::parsecue(const char *isofileString) {
             }
         }
         Scheduler_run(&scheduler);
-        return false;
+        return CueResult::Invalid;
     }
     Scheduler_run(&scheduler);
 
@@ -212,5 +212,5 @@ bool PCSX::CDRIso::parsecue(const char *isofileString) {
     m_numtracks = disc.trackCount;
     m_multifile = true;
 
-    return true;
+    return CueResult::Loaded;
 }
