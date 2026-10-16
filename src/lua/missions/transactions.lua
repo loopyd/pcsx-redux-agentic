@@ -20,6 +20,27 @@ local function survivingWork(result)
         end
     end
 end
+local function referenceContexts(result)
+    local function context(record)
+        local ref=assert(record.payload)
+        assert(ref.file=='payload.bin' and ref.bytes==384 and ref.offset>=0 and ref.offset%1==0 and
+            ref.offset+ref.bytes<=result.payload_bytes,'invalid owning CD context reference')
+        return ref
+    end
+    local controller=result.controller
+    for _,frame in ipairs(controller.accesses) do
+        frame.before=context(frame.enter)
+        frame.after=context(frame.exit)
+    end
+    local boundaries={}
+    for _,boundary in ipairs(controller.contexts) do
+        boundary.state=context(boundary.record)
+        boundaries[boundary.phase]=boundary.state
+    end
+    controller.initial=assert(boundaries[0])
+    controller.final=assert(boundaries[1])
+    result.context_encoding='wire-3-payload-reference/384'
+end
 function M.scan(h,limits,audio,bindings,correlated)
     if type(h.snapshot)=='function' then h=h.snapshot() end
     local status=h.status();local controller=c.new(status);local sectors=require('sectors').new(limits)
@@ -59,7 +80,7 @@ function M.scan(h,limits,audio,bindings,correlated)
         previous=row
     end
     assert(images[0] and images[1],'native image boundaries incomplete')
-    local result={schema='psx.runtime-cd-transactions/v2',native_envelope_version=1,cd_observation_version=3,
+    local result={schema='psx.runtime-cd-transactions/v3',native_envelope_version=1,cd_observation_version=3,
         build_identity=m.buildIdentity(),complete=true,begin_cycle=m.exact(status.beginCycle),end_cycle=m.exact(status.endCycle),
         events=tonumber(status.events),payload_bytes=tonumber(status.bytes),image={initial=images[0],final=images[1]},decoded=correlated.decoded}
     for i,consumer in ipairs(consumers) do result[names[i]]=consumer.finish() end
@@ -71,6 +92,7 @@ function M.scan(h,limits,audio,bindings,correlated)
     result.scope='wire-3 source-native contexts, queues, scheduler, media, consumed spans, feed joins and separately frozen worker lane'
     result.exclusions=m.array({'old wire-2 fixtures and removed callback meanings','hardware/CD conformance','DSP arithmetic and audible fidelity',
         'per-byte bus timing','worker execution timestamps','worker race/deadlock/performance qualification'})
+    referenceContexts(result)
     return result
 end
 function M.export(h,limits,native,audio,bindings,snapshot_error,prefix)
@@ -98,7 +120,7 @@ function M.export(h,limits,native,audio,bindings,snapshot_error,prefix)
         local bytes=m.json(value);assert(#bytes<=67108864,'native correlation export exceeds 64 MiB')
         return value,bytes
     end)
-    if not ok then result={schema='psx.runtime-cd-transactions/v2',native_envelope_version=1,cd_observation_version=3,complete=false,error=tostring(result)};
+    if not ok then result={schema='psx.runtime-cd-transactions/v3',native_envelope_version=1,cd_observation_version=3,complete=false,error=tostring(result)};
         encoded=m.json(result) end
     m.write(prefix..'transactions.json',encoded..'\n');return result
 end

@@ -37,10 +37,17 @@ cached/transformed Filev2 owners refuse admission.
 ## Capture interpretation
 
 The native envelope is version 1 and CD observation wire version 3. Reports use
-`psx.runtime-cd-capture/v2`, `psx.runtime-cd-transactions/v2` and
+`psx.runtime-cd-capture/v2`, `psx.runtime-cd-transactions/v3` and
 `psx.native-history/v2`, with exact harness binary/source identity. Contexts are
 384 bytes, queues 32 bytes, scheduler projections 48 bytes, worker rows 80 bytes
 and worker status 48 bytes. Use native layouts and capacity floors.
+
+Full controller contexts use `wire-3-payload-reference/384` references into the
+captured payload file. Resolve `controller.initial`, `controller.final`,
+`controller.contexts[].state` and `controller.accesses[].before` and `.after`
+as `{file, offset, bytes}` references with exactly 384 bytes. Validate the capture
+hash and bounds, then decode wire 3. Correlation still checks decoded contexts
+before export.
 
 The context exposes actual register bank, ReadingState/ReadingType, status,
 speed/read span, mask, mode/filter, MSF positions, ATV, LocP/LocL and four queue
