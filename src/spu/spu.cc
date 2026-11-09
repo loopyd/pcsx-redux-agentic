@@ -387,8 +387,11 @@ void PCSX::SPU::impl::synthesizeVoice(int ch, SPUCHAN *voice, int32_t &capVoice1
                 // Debug mute.
                 sval = 0;
             } else {
-                SSumL[ns] += (sval * voice->volume.left()) / kVoiceVolumeUnity;
-                SSumR[ns] += (sval * voice->volume.right()) / kVoiceVolumeUnity;
+                const int left = voice->volume.left();
+                SSumL[ns] += (sval * left) / kVoiceVolumeUnity;
+                const int right = voice->volume.right();
+                SSumR[ns] += (sval * right) / kVoiceVolumeUnity;
+                m_audioOut.capture().gain(m_captureAudioEpoch, m_captureVoiceOffset, ns, ch, left, right);
             }
 
             // Store for reverb.
@@ -478,6 +481,8 @@ void PCSX::SPU::impl::MainThread() {
         const auto audioEpoch = m_audioOut.capture().workerToken();
         const uint64_t voiceOffset = m_audioOut.voiceFramesEnqueued() +
             (reinterpret_cast<uint8_t*>(pS) - reinterpret_cast<uint8_t*>(spuBuffer)) / sizeof(SDLAudio::Frame);
+        m_captureAudioEpoch = audioEpoch;
+        m_captureVoiceOffset = voiceOffset;
         m_captureKeyOnMask = 0;
         m_capturePreSampleSteps.fill(0);
         m_captureStopSamples.fill(-1);

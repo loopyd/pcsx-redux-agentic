@@ -36,6 +36,7 @@ without a success marker. Inspect retained files and logs.
 | `audio.f32`, `audio.wav` | Identical interleaved stereo float32 little-endian payload; WAV uses IEEE-float format and a sample-count `fact` chunk |
 | `blocks.ndjson` | Callback index, output offset/count, absolute voice source offset, dequeued voice/disc counts, flags and observed CPU publication |
 | `workers.ndjson` | Completed worker-batch source ranges, started-voice masks and acknowledged enqueue ranges |
+| `gains.ndjson` | First consumed dry stereo gain pair per voice and later changed pairs, at absolute voice-source frames |
 | `spu.ndjson` | Native named access/feed records, exact cycles, observed frame cursor and parent identity |
 | `audio.json` | Native counts/limits/settings/queues, failure/drop data, export checks and retained PCM duration |
 | `sound.json` | Mission bounds, primary/tail observations, stop reason and outcome |
@@ -50,7 +51,7 @@ requires owner thread, not pause.
 | `begin(samples, blocks, events)` | Paused interpreter, empty recorder, initialized stream, positive capacities, no MSAN |
 | `stop()` | Freeze active recorder, retaining failures; defer outside device/Pause callbacks |
 | `status()` | Owner-thread snapshot; only frozen state has a terminal end cycle |
-| `blocks(first, count)`, `workers(first, count)`, `events(first, count)` | Frozen capture; zero-based range, at most 1024 rows; owning one-based named tables |
+| `blocks(first, count)`, `workers(first, count)`, `gains(first, count)`, `events(first, count)` | Frozen capture; zero-based range, at most 1024 rows; owning one-based named tables |
 | `samples(offset, frames)` | Frozen capture, at most 65536 stereo frames per call, copied binary string |
 | `exportPCM(raw, wav)` | Stream the frozen complete range to distinct simple capture filenames; return frame/raw/WAV byte counts |
 | `clear()` | Release inactive capture explicitly before another begin |
@@ -67,7 +68,7 @@ names each raw, WAV,
 block, worker, event and report capture. [Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 6. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 7. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -83,7 +84,7 @@ by the CD recorder. These settings do not prove DSP or hardware fidelity.
 
 States: empty=0, active=1, frozen=2. Keep uint64 fields as canonical decimal strings,
 never doubles. Failure bits: frames=1, blocks=2, events=4, thread=8, bounds=16,
-clock=32, discontinuity=64, streaming-loss=128, output=256, workers=512. Failures are sticky,
+clock=32, discontinuity=64, streaming-loss=128, output=256, workers=512, gains=1024. Failures are sticky,
 drop counters saturate, buffers never overwrite.
 
 ## Application
@@ -131,6 +132,27 @@ records the first sample whose existing ADSR call consumes a true stop input;
 fetches do not call ADSR. A persistent stop can appear in successive batches,
 so this is neither a new key-off event nor proof of release completion. It adds
 no device read and does not locate the CPU write in sample time.
+
+`gains` records `index`, `voice_offset`, `voice`, `left` and `right`. Voice indices
+are zero-based. Signed 32-bit gains are the effective levels consumed by the dry
+stereo multiplications, rather than raw register values. The first consumed pair
+per voice in an epoch is retained, followed by changed pairs. Each side is copied
+at its existing read, in the original left-multiply/right-multiply order. The pair
+is not an atomic snapshot. No extra gain read or DSP state import occurs.
+
+Inactive voices, startup delay, modulation sources and debug-muted voices do not
+read dry gains. They produce no gain observation. Source offsets increase within
+each voice; records follow channel processing order and need not increase across
+voices. Reverb gain reads remain separate. Join each gain's source frame to a
+completed, acknowledged worker range before using it in a signal comparison.
+Crossing prefixes, incomplete batches and unconfirmed enqueue tails remain unknown.
+These observations locate consumed dry inputs, not CPU writes or hardware latency.
+
+Gain storage has a separate capacity equal to the supplied event limit.
+`gains`, `gain_limit` and `dropped_gains` report its count, bound and loss. Exports
+copy at most 1024 records under the worker mutex before allocating Lua tables.
+The gain journal has a 16 MiB byte bound. Overflow sets the sticky `gains` failure,
+and a failed frozen prefix remains readable.
 
 Capture does not stop the worker. A batch already in progress at begin, or still
 in progress at freeze, has no retained row. Freeze can also precede the worker's

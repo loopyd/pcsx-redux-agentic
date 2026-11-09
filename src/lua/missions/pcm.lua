@@ -4,7 +4,7 @@ local m, bit = require 'support', require 'bit'
 local M = {}
 local block_flags = {mono=1, muted=2, submitted=4}
 local faults = {'frames', 'blocks', 'events', 'thread', 'bounds', 'clock',
-    'discontinuity', 'streaming-loss', 'output', 'workers'}
+    'discontinuity', 'streaming-loss', 'output', 'workers', 'gains'}
 
 local function integer(value, low, high, label)
     assert(type(value) == 'number' and value % 1 == 0 and value >= low and value <= high,
@@ -55,11 +55,11 @@ function M.export(prefix)
     assert(type(prefix) == 'string' and (#prefix == 0 or
         (#prefix <= 200 and prefix:match('^[%a%d][%w_.-]*$'))), 'invalid PCM capture prefix')
     local files = {pcm = prefix .. 'audio.f32', wav = prefix .. 'audio.wav',
-        blocks = prefix .. 'blocks.ndjson', workers = prefix .. 'workers.ndjson',
+        blocks = prefix .. 'blocks.ndjson', workers = prefix .. 'workers.ndjson', gains = prefix .. 'gains.ndjson',
         events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v6', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v7', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
@@ -68,11 +68,12 @@ function M.export(prefix)
             workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
             stop_samples = 'first sample in each channel loop consuming a true ADSR stop input; -1 means none observed',
             pre_sample_steps = 'per-channel installed 16.16 steps before sample loops, not simultaneous or per-sample modulation observations',
+            gains = 'first consumed dry stereo gain pair per voice and later changes at source frames; separate left/right reads, not an atomic snapshot or CPU-write positions; unconfirmed worker ranges remain unknown',
             voice_offsets = 'persistent stream-0 frame coordinates; underflow consumes none, fast-forward discards advance them',
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 6 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 7 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -83,10 +84,13 @@ function M.export(prefix)
         integer(status.events, 0, status.event_limit, 'event count')
         assert(status.worker_limit == status.event_limit, 'native worker capacity differs from event limit')
         integer(status.workers, 0, status.worker_limit, 'worker count')
-        integer(status.failures, 0, 1023, 'failure bits')
-        integer(status.first_failure, 0, 512, 'first failure')
+        assert(status.gain_limit == status.event_limit, 'native gain capacity differs from event limit')
+        integer(status.gains, 0, status.gain_limit, 'gain count')
+        integer(status.failures, 0, 2047, 'failure bits')
+        integer(status.first_failure, 0, 1024, 'first failure')
         integer(status.dropped_events, 0, 4294967295, 'dropped events')
         integer(status.dropped_workers, 0, 4294967295, 'dropped workers')
+        integer(status.dropped_gains, 0, 4294967295, 'dropped gains')
         for _, key in ipairs({'begin_cycle', 'end_cycle', 'dropped_frames', 'streaming_dropped'}) do
             decimal(status[key])
         end
@@ -112,7 +116,7 @@ function M.export(prefix)
         assert((status.failures == 0 and status.first_failure == 0) or
             (status.first_failure > 0 and bit.band(status.first_failure, status.first_failure - 1) == 0 and
             bit.band(status.failures, status.first_failure) ~= 0), 'inconsistent native first failure')
-        assert(status.failures ~= 0 or (status.dropped_events == 0 and status.dropped_workers == 0 and status.dropped_frames == '0' and
+        assert(status.failures ~= 0 or (status.dropped_events == 0 and status.dropped_workers == 0 and status.dropped_gains == 0 and status.dropped_frames == '0' and
             status.streaming_dropped == '0'), 'native loss without failure')
 
         for _, capture in ipairs(m.captures) do
@@ -170,6 +174,18 @@ function M.export(prefix)
             end
         end)
         result.unconfirmed_workers = unconfirmed
+        local gain_previous = {}
+        result.gains = writeJournalBeforeValidation(files.gains, status.gains, h.gains, 16777216, function(g, index)
+            assert(g.index == index, 'noncontiguous native gain index')
+            local voice = integer(g.voice, 0, 23, 'gain voice')
+            local source = decimal(g.voice_offset)
+            integer(g.left, -2147483648, 2147483647, 'left gain')
+            integer(g.right, -2147483648, 2147483647, 'right gain')
+            local before = gain_previous[voice]
+            assert(not before or (less(before.voice_offset, source) and
+                (before.left ~= g.left or before.right ~= g.right)), 'native gain source regression or unchanged pair')
+            gain_previous[voice] = g
+        end)
         previous = status.begin_cycle
         local observed = '0'
         local pending_feed
@@ -214,7 +230,7 @@ function M.export(prefix)
             end
         end)
         assert(not pending_feed or status.failures ~= 0, 'unfinished native feed wait pair')
-        assert(result.blocks.complete and result.workers.complete and result.events.complete, 'incomplete native journal export')
+        assert(result.blocks.complete and result.workers.complete and result.gains.complete and result.events.complete, 'incomplete native journal export')
         assert(offset == status.frames, 'native PCM not covered by blocks')
         assert(bit.band(status.failures, 32) ~= 0 or not less(status.end_cycle, status.begin_cycle),
             'native end clock regression without failure')

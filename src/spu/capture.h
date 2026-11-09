@@ -19,7 +19,7 @@ class Capture {
     static constexpr size_t VOICE_COUNT = 24;
     enum Failure : uint32_t {
         Frames = 1, Blocks = 2, Events = 4, Thread = 8, Bounds = 16,
-        Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256, Workers = 512,
+        Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256, Workers = 512, Gains = 1024,
     };
     enum class Kind : uint32_t { Access = 1, Write = 2, Feed = 3, Read = 4, Result = 5, Return = 6, FeedWait = 7 };
     enum BlockFlag : uint32_t { Mono = 1, Muted = 2, Submitted = 4, ValidBlockFlags = 7 };
@@ -38,12 +38,18 @@ class Capture {
         std::array<int32_t, VOICE_COUNT> preSampleSteps{};
         std::array<int32_t, VOICE_COUNT> stopSamples{};
     };
+    struct Gain {
+        uint64_t voiceOffset = 0;
+        uint32_t voice = 0;
+        int32_t left = 0, right = 0;
+    };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 6, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = 7, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
         uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;
+        uint32_t gains = 0, gainLimit = 0, droppedGains = 0;
     };
     struct Snapshot {
         Status status;
@@ -73,8 +79,10 @@ class Capture {
             std::vector<Block> records(blocks);
             std::vector<Event> writes(events);
             std::vector<Worker> workers(events);
+            std::vector<Gain> gains(events);
             m_pcm.swap(pcm); m_blocks.swap(records); m_events.swap(writes);
             m_workers.swap(workers);
+            m_gains.swap(gains);
         } catch (...) { return false; }
         m_status = {};
         m_status.beginCycle = m_status.endCycle = cycle;
@@ -82,6 +90,7 @@ class Capture {
         m_cycle.store(cycle); m_frame.store(0);
         m_lastCycle = cycle;
         m_workerCount = m_workerQueued = m_droppedWorkers = 0;
+        m_gainCount = m_droppedGains = m_gainSeen = 0;
         m_workerThread = {};
         m_lifecycle.store((++m_epoch << EPOCH_SHIFT) | 1, std::memory_order_release);
         return true;
@@ -103,7 +112,9 @@ class Capture {
         std::vector<Block>().swap(m_blocks);
         std::vector<Event>().swap(m_events);
         std::vector<Worker>().swap(m_workers);
+        std::vector<Gain>().swap(m_gains);
         m_workerCount = m_workerQueued = m_droppedWorkers = 0;
+        m_gainCount = m_droppedGains = m_gainSeen = 0;
         m_status = {};
         m_cycle.store(0); m_frame.store(0);
         m_lifecycle.store(m_epoch << EPOCH_SHIFT, std::memory_order_release);
@@ -116,6 +127,9 @@ class Capture {
         result.workers = m_workerCount;
         result.workerLimit = m_workers.size();
         result.droppedWorkers = m_droppedWorkers;
+        result.gains = m_gainCount;
+        result.gainLimit = m_gains.size();
+        result.droppedGains = m_droppedGains;
         const auto state = m_lifecycle.load(std::memory_order_acquire);
         result.state = state & STATE_MASK;
         result.failures = (state >> FAILURE_SHIFT) & FAILURE_MASK;
@@ -177,6 +191,29 @@ class Capture {
     uint64_t workerToken() const {
         const auto state = m_lifecycle.load(std::memory_order_acquire);
         return (state & STATE_MASK) == 1 ? state >> EPOCH_SHIFT : 0;
+    }
+    void gain(uint64_t epoch, uint64_t voiceOffset, uint32_t sample, uint32_t voice, int32_t left, int32_t right) {
+        if (!epoch) return;
+        std::lock_guard lock(m_workerMutex);
+        if (epoch != workerToken() || !workerThread()) return;
+        if (voice >= VOICE_COUNT || sample >= MAX_CHUNK || voiceOffset > UINT64_MAX - sample) {
+            fail(Bounds); return;
+        }
+        const auto offset = voiceOffset + sample;
+        const auto bit = uint32_t(1) << voice;
+        if ((m_gainSeen & bit) && offset <= m_gainLastOffset[voice]) {
+            fail(Discontinuity); return;
+        }
+        m_gainLastOffset[voice] = offset;
+        if ((m_gainSeen & bit) && m_gainLast[voice] == std::array<int32_t, 2>{left, right}) return;
+        m_gainSeen |= bit;
+        m_gainLast[voice] = {left, right};
+        if (failures() || m_gainCount == m_gains.size()) {
+            if (!failures()) fail(Gains);
+            if (m_droppedGains != UINT32_MAX) ++m_droppedGains;
+            return;
+        }
+        m_gains[m_gainCount++] = {offset, voice, left, right};
     }
     void workerBatch(uint64_t epoch, uint64_t voiceOffset, uint32_t frames, uint32_t keyOnMask,
                      const std::array<int32_t, VOICE_COUNT>& preSampleSteps,
@@ -250,6 +287,13 @@ class Capture {
         if (count) std::memcpy(out, m_workers.data() + first, size_t(count) * sizeof(Worker));
         return true;
     }
+    bool gains(uint32_t first, uint32_t count, Gain* out) {
+        std::lock_guard lock(m_workerMutex);
+        if (!frozen() || count > MAX_BATCH || first > m_gainCount || count > m_gainCount - first ||
+            (count && !out)) return false;
+        if (count) std::memcpy(out, m_gains.data() + first, size_t(count) * sizeof(Gain));
+        return true;
+    }
     bool snapshot(Snapshot& out) {
         if (!frozen() || m_status.events > MAX_RECORDS) return false;
         if (!status(out.status)) return false;
@@ -281,8 +325,8 @@ class Capture {
     void drop(uint32_t frames) {
         m_status.droppedFrames += std::min<uint64_t>(frames, UINT64_MAX - m_status.droppedFrames);
     }
-    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 1023;
-    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 12, EPOCH_SHIFT = 22;
+    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 2047;
+    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 13, EPOCH_SHIFT = 24;
     static constexpr uint64_t MAX_EPOCH = UINT64_MAX >> EPOCH_SHIFT;
     uint32_t failures() const { return (m_lifecycle.load(std::memory_order_acquire) >> FAILURE_SHIFT) & FAILURE_MASK; }
     const std::thread::id m_owner;
@@ -298,6 +342,10 @@ class Capture {
     std::thread::id m_workerThread;
     uint32_t m_workerCount = 0, m_workerQueued = 0, m_droppedWorkers = 0;
     std::vector<Worker> m_workers;
+    uint32_t m_gainCount = 0, m_droppedGains = 0, m_gainSeen = 0;
+    std::array<uint64_t, VOICE_COUNT> m_gainLastOffset{};
+    std::array<std::array<int32_t, 2>, VOICE_COUNT> m_gainLast{};
+    std::vector<Gain> m_gains;
 };
 
 }

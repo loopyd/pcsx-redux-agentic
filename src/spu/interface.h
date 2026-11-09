@@ -152,6 +152,7 @@ class impl final : public SPUInterface {
     uint32_t m_captureKeyOnMask = 0;
     std::array<int32_t, Capture::VOICE_COUNT> m_capturePreSampleSteps{};
     std::array<int32_t, Capture::VOICE_COUNT> m_captureStopSamples{};
+    uint64_t m_captureAudioEpoch = 0, m_captureVoiceOffset = 0;
     uint16_t readRegisterValue(uint32_t);
     std::array<uint32_t, 2> captureInfluences() const;
     struct ADSRFlags {
