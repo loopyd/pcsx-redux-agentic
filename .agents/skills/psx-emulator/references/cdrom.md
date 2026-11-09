@@ -95,13 +95,30 @@ and fails. These rules do not establish hardware error-code fidelity.
 Audio joined capture requires native Audio ABI 5 and the exact revision-2
 14-slot settings environment described in [Audio](audio.md); incompatible setting
 meanings reject.
-Decoded capture also requires bounded worker capacity. Worker records carry batch,
+Decoded capture requires worker-lane version 4 and bounded capacity; older worker
+versions reject. CD observation wire 3 and Audio ABI 5 remain separate contracts.
+Worker records carry batch,
 sequence, epoch, last published CPU cycle, native predicates and publication
 lineage. CPU handoff joins exact publication sequence ranges. These observations
 establish native predicate and handoff order. They do not establish that a
 captured XA sector caused the IRQ, DSP/hardware fidelity, worker race/deadlock
 freedom or acceptable performance. Those require actual native missions and
 measured controls.
+
+Each complete batch has one adjacent, uncompressed pair for CD capture. Kind 7
+records `{start_before, end, cursor_before, start_after, cursor_after, requested}`.
+Queue indices are modulo 16,384; RAM cursors are modulo 512 samples. Kind 8 records
+`{cpu_cycle_low, cpu_cycle_high, last_feed_low, last_feed_high, feeding_threshold, flags}`.
+Flags mark armed capture, CPU presence, evaluated CPU cycle and recent feed in
+bits 0–3. The CPU cycle is the single read used by the native predicate, evaluated
+only with armed capture, a CPU and nonzero last feed. Unevaluated cycles are zero.
+These operands differ from the record header's last published CPU cycle.
+
+Correlation requires complete pairs, exact unsigned recent-feed subtraction and
+strict threshold comparison, and matching queue/cursor movement. Buffered frames
+are consumed independently of callback output. An empty recent-feed queue holds
+the CD cursor; other empty frames write silence. Voice/IRQ walking remains
+independent. These rows expose decisions without establishing CPU/sample phase.
 
 Synthetic rows qualify parser contracts only. Native seed states use v6 and record
 host edits. Preserve failed evidence; validate affected producer/worker/DMA behavior

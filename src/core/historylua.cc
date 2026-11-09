@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "core/historylua.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <optional>
@@ -57,6 +58,30 @@ CD::WorkerStatus workerStatus(const uint8_t* bytes) {
     return result;
 }
 
+void captureDecision(const CD::WorkerRecord& state, const CD::WorkerRecord& clock) {
+    const auto& positions = state.data;
+    const auto& timing = clock.data;
+    require(state.kind == 7 && clock.kind == 8 && !state.flags && !clock.flags &&
+                state.batch == clock.batch && state.epoch == clock.epoch && clock.sequence == state.sequence + 1,
+            "incomplete CD capture decision pair");
+    require(positions[0] < 16384 && positions[1] < 16384 && positions[2] < 512 &&
+                positions[3] < 16384 && positions[4] < 512 && positions[5] > 0 && positions[5] < 512 && timing[5] <= 15,
+            "invalid CD capture decision bounds");
+    const bool armed = timing[5] & 1, cpu = timing[5] & 2, evaluated = timing[5] & 4, feeding = timing[5] & 8;
+    const uint64_t cycle = uint64_t(timing[0]) | (uint64_t(timing[1]) << 32);
+    const uint64_t lastFeed = uint64_t(timing[2]) | (uint64_t(timing[3]) << 32);
+    require(evaluated == (armed && cpu && lastFeed != 0) && (evaluated || cycle == 0) &&
+                (armed ? timing[4] > 0 : (!timing[5] && !lastFeed && !timing[4])) &&
+                feeding == (evaluated && cycle - lastFeed < timing[4]),
+            "CD capture recent-feed predicate mismatch");
+    const uint32_t available = (positions[1] + 16384 - positions[0]) % 16384;
+    const uint32_t consumed = (positions[3] + 16384 - positions[0]) % 16384;
+    const uint32_t written = (positions[4] + 512 - positions[2]) % 512;
+    const uint32_t expected = armed ? std::min(available, positions[5]) : 0;
+    require(consumed == expected && written == (armed ? (feeding ? expected : positions[5]) : 0),
+            "CD capture queue/cursor transition mismatch");
+}
+
 Correlations correlate(const FrozenCapture& capture) {
     const auto& history = capture.history;
     const auto& status = history.status;
@@ -96,7 +121,7 @@ Correlations correlate(const FrozenCapture& capture) {
             }
         } else if (row.kind == uint32_t(Kind::CdTransition) && row.device >= 16) {
             const auto value = workerStatus(payload(capture, row, 48));
-            require(value.version == 3 && !value.failures && !value.dropped && value.limit >= 1 && value.limit <= 65536,
+            require(value.version == 4 && !value.failures && !value.dropped && value.limit >= 1 && value.limit <= 65536,
                     "incomplete native worker boundary");
             if (row.device == 16) {
                 require(!first && value.state == 1 && !value.events, "invalid native worker start");
@@ -143,23 +168,23 @@ Correlations correlate(const FrozenCapture& capture) {
     }
     require(final.has_value(), "worker lane not frozen");
     const auto& native = capture.worker.status;
-    require(native.version == 3 && native.state == 2 && !native.failures && !native.dropped && native.epoch == final->epoch &&
+    require(native.version == 4 && native.state == 2 && !native.failures && !native.dropped && native.epoch == final->epoch &&
                 native.events == final->events && native.limit == final->limit && native.beginBatch == final->beginBatch &&
                 native.endBatch == final->endBatch && native.events == capture.worker.records.size(),
             "native worker status differs from CPU freeze receipt");
-    bool open = false;
+    bool open = false, captured = false;
     std::optional<uint64_t> batch, published;
     std::vector<bool> producers(native.events), used(native.events);
     for (uint32_t index = 0; index < native.events; ++index) {
         const auto& row = capture.worker.records[index];
         const auto& data = row.data;
-        require(row.sequence == uint64_t(index) + 1 && row.epoch == native.epoch && row.kind >= 1 && row.kind <= 6 &&
+        require(row.sequence == uint64_t(index) + 1 && row.epoch == native.epoch && row.kind >= 1 && row.kind <= 8 &&
                     row.flags <= 1 && (!published || row.cpuPublicationCycle >= *published),
                 "invalid native worker chronology");
         published = row.cpuPublicationCycle;
         if (row.kind == 1) {
             require(!open && !row.flags && (!batch || row.batch > *batch), "nested/nonmonotonic worker batch");
-            batch = row.batch; open = true;
+            batch = row.batch; open = true; captured = false;
         } else require(open && batch && *batch == row.batch, "worker observation outside complete batch");
         switch (row.kind) {
             case 2:
@@ -181,7 +206,18 @@ Correlations correlate(const FrozenCapture& capture) {
                 require(!row.flags && data[4] <= 1, "invalid atomic SPU publication");
                 producers[index] = true;
                 break;
-            case 6: open = false; break;
+            case 6:
+                require(captured, "worker batch lacks CD capture decision");
+                open = false;
+                break;
+            case 7:
+                require(!captured && index + 1 < native.events, "missing/duplicate CD capture decision");
+                captureDecision(row, capture.worker.records[index + 1]);
+                captured = true;
+                break;
+            case 8:
+                require(index > 0 && capture.worker.records[index - 1].kind == 7, "orphan CD capture clock");
+                break;
         }
     }
     require(!open && (!native.events || (capture.worker.records.front().batch == final->beginBatch && batch == final->endBatch)),

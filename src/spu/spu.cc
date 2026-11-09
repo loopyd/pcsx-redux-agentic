@@ -611,15 +611,22 @@ void PCSX::SPU::impl::MainThread() {
 
 void PCSX::SPU::impl::writeCaptureBufferCD(int numbSamples) {
     std::lock_guard<std::mutex> lock(cbMtx);
+    const uint32_t start = captureBuffer.startIndex, end = captureBuffer.endIndex;
+    const uint32_t cursor = captureBuffer.currIndex;
+    uint64_t sampledCycle = 0, lastFeed = 0, feeding = 0;
+    uint32_t flags = 0;
     if (mixIrqAddress) {
         // CD audio arrives once per sector, 1/75 s apart in emulated time. Within a few
         // sectors of the last one the CD is still feeding, and an empty buffer only means
         // the emulation runs slower than the mixer: wait for it instead of writing silence.
         // The mixer starts before the CPU exists.
         const auto *cpu = PCSX::g_emulator->m_cpu.get();
-        const uint64_t feeding = PCSX::g_emulator->m_psxClockSpeed * 4 / 75;
-        const uint64_t lastFeed = cdFeedCycle;
-        const bool cdFeeding = cpu && (lastFeed != 0) && (cpu->m_regs.cycle - lastFeed < feeding);
+        feeding = PCSX::g_emulator->m_psxClockSpeed * 4 / 75;
+        lastFeed = cdFeedCycle;
+        const bool evaluated = cpu && lastFeed != 0;
+        if (evaluated) sampledCycle = cpu->m_regs.cycle;
+        const bool cdFeeding = evaluated && (sampledCycle - lastFeed < feeding);
+        flags = 1 | (uint32_t(bool(cpu)) << 1) | (uint32_t(evaluated) << 2) | (uint32_t(cdFeeding) << 3);
         for (int n = 0; n < numbSamples; n++) {
             if (captureBuffer.startIndex == captureBuffer.endIndex) {
                 if (cdFeeding) break;
@@ -636,6 +643,10 @@ void PCSX::SPU::impl::writeCaptureBufferCD(int numbSamples) {
         // capBufVoiceIndex, tmpCapVoice1Index, tmpCapVoice3Index and captureBuffer.currIndex are
         // expected to track each other and end up equal.
     }
+    History::CD::workerObserve(7, {start, end, cursor, uint32_t(captureBuffer.startIndex),
+        uint32_t(captureBuffer.currIndex), uint32_t(numbSamples)});
+    History::CD::workerObserve(8, {uint32_t(sampledCycle), uint32_t(sampledCycle >> 32), uint32_t(lastFeed),
+        uint32_t(lastFeed >> 32), uint32_t(feeding), flags});
 }
 
 ////////////////////////////////////////////////////////////////////////

@@ -27,7 +27,7 @@ struct WorkerRecord {
 static_assert(sizeof(WorkerRecord) == 80);
 struct WorkerStatus {
     uint64_t epoch = 0, beginBatch = 0, endBatch = 0;
-    uint32_t version = 3, state = 0, events = 0, limit = 0, failures = 0, dropped = 0;
+    uint32_t version = 4, state = 0, events = 0, limit = 0, failures = 0, dropped = 0;
 };
 static_assert(sizeof(WorkerStatus) == 48);
 struct WorkerSnapshot {
