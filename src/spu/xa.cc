@@ -83,13 +83,17 @@ void PCSX::SPU::impl::FeedXA(xa_decode_t *xap) {
 
     const auto submit = [&](uint32_t frames) {
         if (!frames) { observeCDFeed(5, xap, 0, cdda); return; }
-        const bool accepted = m_audioOut.feedStreamData(XABuffer, frames, 1, 0);
+        const auto admission = m_audioOut.feedCDData(XABuffer, frames);
+        const bool accepted = admission.accepted;
         if (!m_audioOut.capture().ownerThread()) {
             m_audioOut.capture().fail(Capture::Thread); observeCDFeed(accepted ? 6 : 7, nullptr, frames, cdda); return;
         }
         m_audioOut.checkCaptureSettings();
         const uint64_t event = m_audioOut.capture().event(g_emulator->m_cpu->m_regs.cycle, Capture::Kind::Feed,
             xap->freq, frames, xap->nsamples, 0, xap->stereo, uint32_t(accepted) | (uint32_t(cdda)<<1));
+        m_audioOut.capture().event(g_emulator->m_cpu->m_regs.cycle, Capture::Kind::FeedWait,
+            admission.queuedBefore, admission.queuedAfter, uint32_t(admission.waitNanoseconds), event,
+            uint32_t(admission.waitNanoseconds >> 32), uint32_t(admission.blocked) | (uint32_t(accepted) << 1));
         observeCDFeed(accepted ? 6 : 7, xap, frames, cdda, event);
         if (!accepted) m_audioOut.capture().streamingLoss(frames);
     };

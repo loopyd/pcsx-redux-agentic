@@ -305,6 +305,10 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
                 number(L, "source_rate", result.address); number(L, "output_frames", result.value);
                 number(L, "source_frames", result.width); number(L, "stereo", result.detail);
                 number(L, "accepted", result.flags & 1); number(L, "cdda", (result.flags >> 1) & 1);
+            } else if (result.kind == uint32_t(Capture::Kind::FeedWait)) {
+                number(L, "queued_before", result.address); number(L, "queued_after", result.value);
+                wide(L, "wait_nanoseconds", uint64_t(result.width) | (uint64_t(result.detail) << 32));
+                number(L, "blocked", result.flags & 1); number(L, "accepted", (result.flags >> 1) & 1);
             } else {
                 number(L, "address", result.address); number(L, "value", result.value); number(L, "width", result.width);
             }

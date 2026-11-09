@@ -21,7 +21,7 @@ class Capture {
         Frames = 1, Blocks = 2, Events = 4, Thread = 8, Bounds = 16,
         Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256, Workers = 512,
     };
-    enum class Kind : uint32_t { Access = 1, Write = 2, Feed = 3, Read = 4, Result = 5, Return = 6 };
+    enum class Kind : uint32_t { Access = 1, Write = 2, Feed = 3, Read = 4, Result = 5, Return = 6, FeedWait = 7 };
     enum BlockFlag : uint32_t { Mono = 1, Muted = 2, Submitted = 4, ValidBlockFlags = 7 };
     struct Block {
         uint64_t lastPublishedCpuCycle = 0;
@@ -40,7 +40,7 @@ class Capture {
     };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 5, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = 6, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
         uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;

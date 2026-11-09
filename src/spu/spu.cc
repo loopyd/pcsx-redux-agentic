@@ -593,9 +593,9 @@ void PCSX::SPU::impl::MainThread() {
         if (iCycle++ > 16) {
             bool done = false;
             while (!done) {
-                done = m_audioOut.feedStreamData(reinterpret_cast<SDLAudio::Frame *>(spuBuffer),
+                done = m_audioOut.feedVoiceData(reinterpret_cast<SDLAudio::Frame *>(spuBuffer),
                                                  (((uint8_t *)pS) - ((uint8_t *)spuBuffer)) / sizeof(SDLAudio::Frame),
-                                                 0, audioEpoch);
+                                                 audioEpoch);
                 if (endThread) {
                     threadEnded = 1;
                     return;

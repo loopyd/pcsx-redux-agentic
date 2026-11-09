@@ -110,7 +110,7 @@ Correlations correlate(const FrozenCapture& capture) {
                 audioEpoch = epoch;
                 if (epoch) {
                     const auto& audio = capture.audio.status;
-                    require(capture.audio.epoch == epoch && audio.version == 5 && audio.state == 2 && !audio.failures &&
+                    require(capture.audio.epoch == epoch && audio.version == 6 && audio.state == 2 && !audio.failures &&
                                 !audio.droppedEvents && !audio.droppedWorkers && !audio.droppedFrames && !audio.streamingDropped &&
                                 audio.events == capture.audio.events.size() && audio.beginCycle <= row.cycle,
                             "joined Audio lifecycle mismatch");
@@ -158,6 +158,18 @@ Correlations correlate(const FrozenCapture& capture) {
                         event.value == data[4] && (event.flags & 1) == uint32_t(data[0] == 6) &&
                         ((event.flags >> 1) & 1) == data[7],
                     "native CD/Audio feed receipt mismatch");
+            require(row.related < capture.audio.events.size(), "native feed lacks wait observation");
+            const auto& wait = capture.audio.events[row.related];
+            const uint64_t duration = uint64_t(wait.width) | (uint64_t(wait.detail) << 32);
+            const uint64_t before = wait.address, after = wait.value, batch = event.value;
+            const bool blocked = wait.flags & 1, accepted = wait.flags & 2;
+            require(wait.kind == uint32_t(SPU::Capture::Kind::FeedWait) && wait.parent == row.related &&
+                        wait.cycle == event.cycle && wait.flags <= 3 && accepted == bool(event.flags & 1) &&
+                        batch > 0 && batch < 16384 && before < 16384 && after < 16384 &&
+                        blocked == (before + batch >= 16384) && blocked == (duration != 0) &&
+                        after <= before + (accepted ? batch : 0) &&
+                        (accepted ? after >= batch : blocked && after + batch >= 16384) &&
+                        (blocked || after == before + batch), "native CD/Audio wait receipt mismatch");
             result.feeds.emplace_back(row.sequence, row.related);
         }
     }

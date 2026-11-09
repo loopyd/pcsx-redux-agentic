@@ -31,6 +31,7 @@ SOFTWARE.
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <stdexcept>
 
@@ -42,6 +43,11 @@ class Circular {
 
   public:
     static constexpr size_t BUFFER_SIZE = BS;
+    struct Admission {
+        size_t queuedBefore, queuedAfter;
+        uint64_t waitNanoseconds;
+        bool blocked, accepted;
+    };
     size_t available() {
         std::unique_lock<std::mutex> l(m_mu);
         return availableLocked();
@@ -50,14 +56,20 @@ class Circular {
         std::unique_lock<std::mutex> l(m_mu);
         return bufferedLocked();
     }
-    bool enqueue(const T* data, size_t N, ms maxWait = ms{200}) {
+    Admission enqueue(const T* data, size_t N, ms maxWait = ms{200}) {
         if (N > BUFFER_SIZE) {
             throw std::runtime_error("Trying to enqueue too much data");
         }
         std::unique_lock<std::mutex> l(m_mu);
+        const auto before = bufferedLocked();
+        const bool blocked = N >= availableLocked();
+        using Clock = std::chrono::steady_clock;
+        const auto begin = blocked ? Clock::now() : Clock::time_point{};
         bool safe = m_cv.wait_for(l, maxWait, [this, N]() -> bool { return N < availableLocked(); });
+        const uint64_t elapsed = blocked
+            ? std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count() : 0;
         if (safe) enqueueSafe(data, N);
-        return safe;
+        return {before, bufferedLocked(), elapsed, blocked, safe};
     }
     size_t dequeue(T* data, size_t N) {
         std::unique_lock<std::mutex> l(m_mu);

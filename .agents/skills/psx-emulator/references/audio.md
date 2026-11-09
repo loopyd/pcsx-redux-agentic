@@ -67,7 +67,7 @@ names each raw, WAV,
 block, worker, event and report capture. [Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 5. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 6. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -149,8 +149,22 @@ Retriggers and overlapping CPU writes require additional evidence.
 | 4 | Bus read attempt |
 | 5 | Effective read-handler result |
 | 6 | Bus returned value |
+| 7 | Feed wait: queue occupancy, initial capacity predicate and host duration |
 
-Non-feed kinds include address/value/width. Parent IDs connect dispatcher/handler;
+Each feed has an adjacent kind-7 record with `parent` set to its feed ID and the
+same CPU cycle. `queued_before` and `queued_after` are sampled under the queue
+mutex, before waiting and after admission or rejection. The latter includes an
+accepted batch. `blocked=1` means the initial queued plus incoming count was at
+least 16,384; it does not prove an OS sleep. `accepted` matches the parent feed.
+`wait_nanoseconds` is a decimal uint64 duration around `wait_for`, including
+mutex reacquisition and excluding initial lock acquisition, copying and export.
+It is zero for immediate admission. The existing strict capacity predicate and
+200 ms deadline are unchanged. Host duration is not emulated time, and these
+observations do not establish a CPU-to-output sample mapping. A rejected feed
+and its wait record precede the sticky streaming-loss failure; later rows can be
+missing. Preserve failed captures and their loss counters.
+
+Bus kinds include address/value/width. Parent IDs connect dispatcher/handler;
 zero means no recorded parent, not necessarily guest root. Words may contain
 halfword children. Preserve aliases, widths and returns; labels imply no extra accesses.
 

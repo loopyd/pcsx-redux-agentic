@@ -59,11 +59,12 @@ function M.export(prefix)
         events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v5', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v6', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
             events = 'CPU access cycles with observed capture cursor; not audible-effect positions',
+            feed_waits = 'queue occupancy under its mutex; initial blocked predicate and host wait_for duration, excluding initial lock acquisition and copying; not CPU time or proof of OS sleep',
             workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
             stop_samples = 'first sample in each channel loop consuming a true ADSR stop input; -1 means none observed',
             pre_sample_steps = 'per-channel installed 16.16 steps before sample loops, not simultaneous or per-sample modulation observations',
@@ -71,7 +72,7 @@ function M.export(prefix)
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 5 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 6 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -171,9 +172,10 @@ function M.export(prefix)
         result.unconfirmed_workers = unconfirmed
         previous = status.begin_cycle
         local observed = '0'
+        local pending_feed
         result.events = writeJournalBeforeValidation(files.events, status.events, h.events, 16777216, function(e, index)
             assert(e.id == index + 1, 'noncontiguous native SPU event')
-            integer(e.kind, 1, 6, 'event kind')
+            integer(e.kind, 1, 7, 'event kind')
             local cycle, frame, parent = decimal(e.cycle), decimal(e.observed_frame), decimal(e.parent)
             assert(not less(cycle, previous) and not less(frame, observed) and
                 not less(tostring(status.frames), frame), 'native event cursor regression or overflow')
@@ -181,17 +183,37 @@ function M.export(prefix)
                 'native event after end cycle')
             assert(less(parent, tostring(e.id)), 'native event parent must be absent or earlier')
             previous, observed = cycle, frame
+            assert(not pending_feed or e.kind == 7, 'native feed lacks adjacent wait observation')
             if e.kind == 3 then
                 for _, key in ipairs({'source_rate', 'output_frames', 'source_frames'}) do
                     integer(e[key], 0, 4294967295, key)
                 end
                 for _, key in ipairs({'stereo', 'accepted', 'cdda'}) do integer(e[key], 0, 1, key) end
+                pending_feed = e
+            elseif e.kind == 7 then
+                assert(pending_feed and parent == tostring(pending_feed.id) and cycle == pending_feed.cycle and
+                    e.accepted == pending_feed.accepted, 'native feed wait parent or result mismatch')
+                local before = integer(e.queued_before, 0, 16383, 'feed queue before')
+                local after = integer(e.queued_after, 0, 16383, 'feed queue after')
+                local batch = integer(pending_feed.output_frames, 1, 16383, 'feed batch')
+                local blocked = integer(e.blocked, 0, 1, 'feed blocked')
+                local elapsed = decimal(e.wait_nanoseconds)
+                assert((blocked == 1) == (before + batch >= 16384), 'native feed initial predicate mismatch')
+                assert((blocked == 1 and elapsed ~= '0') or (blocked == 0 and elapsed == '0'),
+                    'native feed wait duration mismatch')
+                assert(after <= before + e.accepted * batch and
+                    ((e.accepted == 1 and after >= batch) or
+                     (e.accepted == 0 and blocked == 1 and after + batch >= 16384)),
+                    'native feed queue result mismatch')
+                assert(blocked == 1 or after == before + batch, 'native immediate feed queue changed')
+                pending_feed = nil
             else
                 integer(e.address, 0, 4294967295, 'event address')
                 integer(e.value, 0, 4294967295, 'event value')
                 assert(e.width == 8 or e.width == 16 or e.width == 32, 'invalid native SPU access width')
             end
         end)
+        assert(not pending_feed or status.failures ~= 0, 'unfinished native feed wait pair')
         assert(result.blocks.complete and result.workers.complete and result.events.complete, 'incomplete native journal export')
         assert(offset == status.frames, 'native PCM not covered by blocks')
         assert(bit.band(status.failures, 32) ~= 0 or not less(status.end_cycle, status.begin_cycle),

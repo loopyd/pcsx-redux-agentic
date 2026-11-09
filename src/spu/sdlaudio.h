@@ -132,20 +132,14 @@ class SDLAudio {
     const std::vector<std::string>& getDevices() { return m_devices; }
     // Stream 0 has one SPU worker producer; the callback alone drains it.
     uint64_t voiceFramesEnqueued() const { return m_voiceEnqueued; }
-    bool feedStreamData(const Frame* data, size_t frames, unsigned streamId, uint64_t workerEpoch) {
-        switch (streamId) {
-            case 0:
-                if (!m_voicesStream.enqueue(data, frames)) return false;
-                m_capture.workerQueued(workerEpoch, m_voiceEnqueued, frames);
-                m_voiceEnqueued += frames;
-                return true;
-            case 1:
-                return m_audioStream.enqueue(data, frames);
-                break;
-            default:
-                throw std::runtime_error("Invalid stream ID");
-                return false;
-        }
+    bool feedVoiceData(const Frame* data, size_t frames, uint64_t workerEpoch) {
+        if (!m_voicesStream.enqueue(data, frames).accepted) return false;
+        m_capture.workerQueued(workerEpoch, m_voiceEnqueued, frames);
+        m_voiceEnqueued += frames;
+        return true;
+    }
+    Circular<Frame, AudioStreamCapacity>::Admission feedCDData(const Frame* data, size_t frames) {
+        return m_audioStream.enqueue(data, frames);
     }
     size_t getBytesBuffered(unsigned streamId = 0) {
         switch (streamId) {
