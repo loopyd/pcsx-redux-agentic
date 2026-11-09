@@ -75,6 +75,12 @@ mask/target tests retain callback chronology even if another callback cancels a
 slot after the pass selected it. Existing native targets and owning identifiers
 are recorded; no replacement scheduler or guessed callback lineage is supplied.
 
+For CD-port `CpuRead` and `CpuWrite` records, `fields.pc` is the accessing
+instruction's address plus four. The interpreter increments `m_regs.pc` before
+the port handler runs, including for a delay-slot access. Pending branch
+destinations take effect afterward. Compare this sequential PC and the recorded
+absolute access cycle separately.
+
 FIFO mutation and consumed spans are native byte receipts. DMA reports actual
 copied and dropped destination extents, including unmapped destinations and
 scratchpad prefixes; they do not infer a full copy from requested byte count.
