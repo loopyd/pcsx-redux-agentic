@@ -92,7 +92,7 @@ CDDA reads beyond a program extent synthesize silence without a backing read.
 That outcome differs from a short backing read, which clears the destination
 and fails. These rules do not establish hardware error-code fidelity.
 
-Audio joined capture requires native Audio ABI 4 and the exact revision-2
+Audio joined capture requires native Audio ABI 5 and the exact revision-2
 14-slot settings environment described in [Audio](audio.md); incompatible setting
 meanings reject.
 Decoded capture also requires bounded worker capacity. Worker records carry batch,

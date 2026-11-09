@@ -67,7 +67,7 @@ names each raw, WAV,
 block, worker, event and report capture. [Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 4. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 5. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -107,7 +107,7 @@ the source coordinate without adding PCM. Source coordinates are observations of
 the host queue, not restored PSX state or CPU sample deadlines.
 
 Worker rows contain `index`, `voice_offset`, `frames`, `key_on_mask`,
-`enqueue_offset`, `enqueue_frames` and `pre_sample_steps`. Each bit in the 24-bit mask marks a voice
+`enqueue_offset`, `enqueue_frames`, `pre_sample_steps` and `stop_samples`. Each bit in the 24-bit mask marks a voice
 that actually entered `StartSound` in that batch. Enqueue fields identify the
 successful stream-0 submission containing the complete batch. Zero
 `enqueue_frames` means unconfirmed; exclude that row from signal comparisons.
@@ -122,8 +122,15 @@ the sample loop; inactive channels record before their silent walk. Channels are
 observed in sequence. These values are not a simultaneous snapshot or proof of
 sample consumption. Startup silence can retain a step, never-started channels can
 report zero, and modulation can replace a step inside the loop. The worker journal
-has a 32 MiB export bound; block and event journals each retain 16 MiB bounds.
+has a 48 MiB export bound; block and event journals each retain 16 MiB bounds.
 The harness capture and replay aggregate limits still apply.
+
+`stop_samples` contains 24 signed batch-relative sample indices. Each channel
+records the first sample whose existing ADSR call consumes a true stop input;
+`-1` means no such call occurred. Startup delay, inactive walking and stopped
+fetches do not call ADSR. A persistent stop can appear in successive batches,
+so this is neither a new key-off event nor proof of release completion. It adds
+no device read and does not locate the CPU write in sample time.
 
 Capture does not stop the worker. A batch already in progress at begin, or still
 in progress at freeze, has no retained row. Freeze can also precede the worker's

@@ -369,7 +369,9 @@ void PCSX::SPU::impl::synthesizeVoice(int ch, SPUCHAN *voice, int32_t &capVoice1
         }
 
         // Apply the ADSR envelope (hardware: sample*env>>15).
-        int32_t mixedSample = (voice->adsr.step(stop, on) * rawSample) >> kAdsrEnvelopeShift;
+        const bool stopRequested = stop;
+        if (stopRequested && m_captureStopSamples[ch] < 0) m_captureStopSamples[ch] = ns;
+        int32_t mixedSample = (voice->adsr.step(stopRequested, on) * rawSample) >> kAdsrEnvelopeShift;
         sval = mixedSample;
 
         // The capture mirror holds the voice 1/3 sample after ADSR but before volume.
@@ -478,6 +480,7 @@ void PCSX::SPU::impl::MainThread() {
             (reinterpret_cast<uint8_t*>(pS) - reinterpret_cast<uint8_t*>(spuBuffer)) / sizeof(SDLAudio::Frame);
         m_captureKeyOnMask = 0;
         m_capturePreSampleSteps.fill(0);
+        m_captureStopSamples.fill(-1);
 
         {
             // capBufVoiceIndex is reset from the emulation thread (resetCaptureBuffer).
@@ -580,7 +583,7 @@ void PCSX::SPU::impl::MainThread() {
         irqLock.unlock();
         historyBatch.finish();
         m_audioOut.capture().workerBatch(audioEpoch, voiceOffset, NSSIZE, m_captureKeyOnMask,
-                                       m_capturePreSampleSteps);
+                                       m_capturePreSampleSteps, m_captureStopSamples);
 
         m_reverb.init(NSSIZE);
 

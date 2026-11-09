@@ -271,6 +271,11 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
             wide(L, "voice_offset", result.voiceOffset); wide(L, "enqueue_offset", result.enqueueOffset);
             number(L, "frames", result.frames); number(L, "key_on_mask", result.keyOnMask);
             number(L, "enqueue_frames", result.enqueueFrames);
+            L.push("stop_samples"); L.newtable();
+            for (size_t channel = 0; channel < result.stopSamples.size(); ++channel) {
+                L.push(lua_Number(result.stopSamples[channel])); L.rawseti(channel + 1);
+            }
+            L.settable();
             L.push("pre_sample_steps"); L.newtable();
             for (size_t channel = 0; channel < result.preSampleSteps.size(); ++channel) {
                 L.push(lua_Number(result.preSampleSteps[channel])); L.rawseti(channel + 1);

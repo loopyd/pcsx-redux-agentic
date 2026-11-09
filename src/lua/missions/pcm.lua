@@ -59,18 +59,19 @@ function M.export(prefix)
         events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v4', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v5', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
             events = 'CPU access cycles with observed capture cursor; not audible-effect positions',
             workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
+            stop_samples = 'first sample in each channel loop consuming a true ADSR stop input; -1 means none observed',
             pre_sample_steps = 'per-channel installed 16.16 steps before sample loops, not simultaneous or per-sample modulation observations',
             voice_offsets = 'persistent stream-0 frame coordinates; underflow consumes none, fast-forward discards advance them',
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 4 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 5 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -147,13 +148,15 @@ function M.export(prefix)
         end)
         result.zero_fill = {voice_frames = voice_fill, disc_frames = disc_fill}
         local worker_end, unconfirmed = nil, 0
-        result.workers = writeJournalBeforeValidation(files.workers, status.workers, h.workers, 33554432, function(w, index)
+        result.workers = writeJournalBeforeValidation(files.workers, status.workers, h.workers, 50331648, function(w, index)
             assert(w.index == index, 'noncontiguous native worker index')
             local voice, enqueue = decimal(w.voice_offset), decimal(w.enqueue_offset)
             integer(w.frames, 1, 2048, 'worker frames')
             integer(w.key_on_mask, 0, 16777215, 'worker key-on mask')
             assert(type(w.pre_sample_steps) == 'table' and #w.pre_sample_steps == 24, 'worker requires 24 installed steps')
             for _, step in ipairs(w.pre_sample_steps) do integer(step, -2147483648, 2147483647, 'worker installed step') end
+            assert(type(w.stop_samples) == 'table' and #w.stop_samples == 24, 'worker requires 24 stop sample indices')
+            for _, sample in ipairs(w.stop_samples) do integer(sample, -1, w.frames - 1, 'worker stop sample') end
             integer(w.enqueue_frames, 0, 2048, 'worker enqueue frames')
             assert(worker_end == nil or worker_end == voice, 'noncontiguous native worker source ranges')
             worker_end = plus(voice, w.frames)
