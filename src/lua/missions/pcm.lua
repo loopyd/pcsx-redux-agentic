@@ -30,7 +30,7 @@ local function plus(value, count)
     return result
 end
 
-local function writeJournalBeforeValidation(name, count, read, validate)
+local function writeJournalBeforeValidation(name, count, read, byte_limit, validate)
     local file = assert(io.open(name, 'wb'))
     local bytes, rows = 0, 0
     local ok, err = pcall(function()
@@ -38,7 +38,7 @@ local function writeJournalBeforeValidation(name, count, read, validate)
             local records = read(first, math.min(1024, count - first))
             for n, record in ipairs(records) do
                 local line = m.json(record) .. '\n'
-                assert(bytes + #line <= 16777216, 'audio journal exceeds 16 MiB')
+                assert(bytes + #line <= byte_limit, 'audio journal exceeds byte limit')
                 assert(file:write(line)); bytes, rows = bytes + #line, rows + 1
                 validate(record, first + n - 1)
             end
@@ -59,17 +59,18 @@ function M.export(prefix)
         events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v3', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v4', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
             events = 'CPU access cycles with observed capture cursor; not audible-effect positions',
             workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
+            pre_sample_steps = 'per-channel installed 16.16 steps before sample loops, not simultaneous or per-sample modulation observations',
             voice_offsets = 'persistent stream-0 frame coordinates; underflow consumes none, fast-forward discards advance them',
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 3 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 4 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -124,7 +125,7 @@ function M.export(prefix)
         local offset, previous = 0, status.begin_cycle
         local voice_fill, disc_fill = 0, 0
         local voice_end = '0'
-        result.blocks = writeJournalBeforeValidation(files.blocks, status.blocks, h.blocks, function(b, index)
+        result.blocks = writeJournalBeforeValidation(files.blocks, status.blocks, h.blocks, 16777216, function(b, index)
             assert(b.index == index and b.offset == offset, 'noncontiguous native PCM block')
             integer(b.frames, 1, 2048, 'block frames')
             integer(b.voice_frames, 0, b.frames, 'voice frames')
@@ -146,11 +147,13 @@ function M.export(prefix)
         end)
         result.zero_fill = {voice_frames = voice_fill, disc_frames = disc_fill}
         local worker_end, unconfirmed = nil, 0
-        result.workers = writeJournalBeforeValidation(files.workers, status.workers, h.workers, function(w, index)
+        result.workers = writeJournalBeforeValidation(files.workers, status.workers, h.workers, 33554432, function(w, index)
             assert(w.index == index, 'noncontiguous native worker index')
             local voice, enqueue = decimal(w.voice_offset), decimal(w.enqueue_offset)
             integer(w.frames, 1, 2048, 'worker frames')
             integer(w.key_on_mask, 0, 16777215, 'worker key-on mask')
+            assert(type(w.pre_sample_steps) == 'table' and #w.pre_sample_steps == 24, 'worker requires 24 installed steps')
+            for _, step in ipairs(w.pre_sample_steps) do integer(step, -2147483648, 2147483647, 'worker installed step') end
             integer(w.enqueue_frames, 0, 2048, 'worker enqueue frames')
             assert(worker_end == nil or worker_end == voice, 'noncontiguous native worker source ranges')
             worker_end = plus(voice, w.frames)
@@ -165,7 +168,7 @@ function M.export(prefix)
         result.unconfirmed_workers = unconfirmed
         previous = status.begin_cycle
         local observed = '0'
-        result.events = writeJournalBeforeValidation(files.events, status.events, h.events, function(e, index)
+        result.events = writeJournalBeforeValidation(files.events, status.events, h.events, 16777216, function(e, index)
             assert(e.id == index + 1, 'noncontiguous native SPU event')
             integer(e.kind, 1, 6, 'event kind')
             local cycle, frame, parent = decimal(e.cycle), decimal(e.observed_frame), decimal(e.parent)

@@ -300,6 +300,7 @@ void PCSX::SPU::impl::synthesizeVoice(int ch, SPUCHAN *voice, int32_t &capVoice1
     }
 
     if (!on) {
+        m_capturePreSampleSteps[ch] = voice->interp.step();
         // Silent is not stopped. "All voices are permanently reading data from SPU RAM -
         // even in Noise mode, even if the Voice Volume is zero, and even if the ADSR
         // pattern has finished the Release period - so even inaudible voices can trigger
@@ -313,6 +314,7 @@ void PCSX::SPU::impl::synthesizeVoice(int ch, SPUCHAN *voice, int32_t &capVoice1
 
     // A new PSX frequency was programmed.
     if (actFreq != usedFreq) VoiceChangeFrequency(voice);
+    m_capturePreSampleSteps[ch] = voice->interp.step();
 
     // Collect 1 ms of this channel's audio.
     for (int ns = 0; ns < NSSIZE; ns++) {
@@ -475,6 +477,7 @@ void PCSX::SPU::impl::MainThread() {
         const uint64_t voiceOffset = m_audioOut.voiceFramesEnqueued() +
             (reinterpret_cast<uint8_t*>(pS) - reinterpret_cast<uint8_t*>(spuBuffer)) / sizeof(SDLAudio::Frame);
         m_captureKeyOnMask = 0;
+        m_capturePreSampleSteps.fill(0);
 
         {
             // capBufVoiceIndex is reset from the emulation thread (resetCaptureBuffer).
@@ -576,7 +579,8 @@ void PCSX::SPU::impl::MainThread() {
         }
         irqLock.unlock();
         historyBatch.finish();
-        m_audioOut.capture().workerBatch(audioEpoch, voiceOffset, NSSIZE, m_captureKeyOnMask);
+        m_audioOut.capture().workerBatch(audioEpoch, voiceOffset, NSSIZE, m_captureKeyOnMask,
+                                       m_capturePreSampleSteps);
 
         m_reverb.init(NSSIZE);
 

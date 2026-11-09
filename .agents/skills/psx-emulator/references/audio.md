@@ -67,7 +67,7 @@ names each raw, WAV,
 block, worker, event and report capture. [Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 3. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 4. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -107,7 +107,7 @@ the source coordinate without adding PCM. Source coordinates are observations of
 the host queue, not restored PSX state or CPU sample deadlines.
 
 Worker rows contain `index`, `voice_offset`, `frames`, `key_on_mask`,
-`enqueue_offset` and `enqueue_frames`. Each bit in the 24-bit mask marks a voice
+`enqueue_offset`, `enqueue_frames` and `pre_sample_steps`. Each bit in the 24-bit mask marks a voice
 that actually entered `StartSound` in that batch. Enqueue fields identify the
 successful stream-0 submission containing the complete batch. Zero
 `enqueue_frames` means unconfirmed; exclude that row from signal comparisons.
@@ -115,6 +115,15 @@ Worker storage has the supplied event capacity, independently of event storage.
 `workers`, `worker_limit` and `dropped_workers` report its retained count, capacity
 and loss. Frozen exports copy at most 1024 rows under the worker mutex before
 allocating Lua tables.
+
+`pre_sample_steps` contains 24 signed 32-bit installed interpolator steps in
+16.16 units. Active channels record after ordinary frequency installation, before
+the sample loop; inactive channels record before their silent walk. Channels are
+observed in sequence. These values are not a simultaneous snapshot or proof of
+sample consumption. Startup silence can retain a step, never-started channels can
+report zero, and modulation can replace a step inside the loop. The worker journal
+has a 32 MiB export bound; block and event journals each retain 16 MiB bounds.
+The harness capture and replay aggregate limits still apply.
 
 Capture does not stop the worker. A batch already in progress at begin, or still
 in progress at freeze, has no retained row. Freeze can also precede the worker's

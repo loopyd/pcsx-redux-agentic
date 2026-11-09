@@ -16,6 +16,7 @@ namespace PCSX::SPU {
 class Capture {
     static_assert(std::atomic<uint64_t>::is_always_lock_free);
   public:
+    static constexpr size_t VOICE_COUNT = 24;
     enum Failure : uint32_t {
         Frames = 1, Blocks = 2, Events = 4, Thread = 8, Bounds = 16,
         Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256, Workers = 512,
@@ -34,10 +35,11 @@ class Capture {
     struct Worker {
         uint64_t voiceOffset = 0, enqueueOffset = 0;
         uint32_t frames = 0, keyOnMask = 0, enqueueFrames = 0;
+        std::array<int32_t, VOICE_COUNT> preSampleSteps{};
     };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 3, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = 4, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
         uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;
@@ -175,7 +177,8 @@ class Capture {
         const auto state = m_lifecycle.load(std::memory_order_acquire);
         return (state & STATE_MASK) == 1 ? state >> EPOCH_SHIFT : 0;
     }
-    void workerBatch(uint64_t epoch, uint64_t voiceOffset, uint32_t frames, uint32_t keyOnMask) {
+    void workerBatch(uint64_t epoch, uint64_t voiceOffset, uint32_t frames, uint32_t keyOnMask,
+                     const std::array<int32_t, VOICE_COUNT>& preSampleSteps) {
         if (!epoch) return;
         std::lock_guard lock(m_workerMutex);
         if (epoch != workerToken() || !workerThread()) return;
@@ -191,7 +194,7 @@ class Capture {
                                               m_workers[m_workerCount - 1].frames) {
             fail(Discontinuity); return;
         }
-        m_workers[m_workerCount++] = {voiceOffset, 0, frames, keyOnMask, 0};
+        m_workers[m_workerCount++] = {voiceOffset, 0, frames, keyOnMask, 0, preSampleSteps};
     }
     void workerQueued(uint64_t epoch, uint64_t offset, uint32_t frames) {
         if (!epoch) return;
