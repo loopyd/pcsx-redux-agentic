@@ -251,11 +251,13 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
     while (requested > 0) {
         const uint32_t chunk = std::min<uint32_t>(requested, VoiceStream::BUFFER_SIZE);
         std::array<uint32_t, STREAMS> available{};
+        const auto voiceOffset = m_voiceDequeued;
 
         for (unsigned i = 0; i < STREAMS; i++) {
             size_t a = (i == 0) ? m_voicesStream.dequeue(m_mixBuffers[i].data(), chunk)
                                 : m_audioStream.dequeue(m_mixBuffers[i].data(), chunk);
             available[i] = a;
+            if (i == 0) m_voiceDequeued += a;
             for (size_t f = (muted ? 0 : a); f < chunk; f++) {
                 // Same as the previous backend: silently zero-fill on underflow.
                 // CDDA underflow on stream 1 is expected and fine.
@@ -282,7 +284,8 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
 
         const bool submitted = SDL_PutAudioStreamData(stream, m_outputBuffer.data(), chunk * kFrameSizeBytes);
         m_capture.pcm(m_outputBuffer.data(), chunk, available[0], available[1],
-                      (mono ? Capture::Mono : 0u) | (muted ? Capture::Muted : 0u) | (submitted ? Capture::Submitted : 0u));
+                      (mono ? Capture::Mono : 0u) | (muted ? Capture::Muted : 0u) | (submitted ? Capture::Submitted : 0u),
+                      voiceOffset);
 
         // Fast-forward lives at the sink (the master clock). We have already kept the first `chunk`
         // frames of each stream for playback at native 44.1kHz -- pitch is preserved. To run the whole
@@ -293,7 +296,7 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
         // any speed.
         const int speed = effectiveSpeed(m_settings.get<Speed>().value);
         for (int rep = 1; rep < speed; rep++) {
-            m_voicesStream.dequeue(m_mixBuffers[0].data(), chunk);
+            m_voiceDequeued += m_voicesStream.dequeue(m_mixBuffers[0].data(), chunk);
             m_audioStream.dequeue(m_mixBuffers[1].data(), chunk);
         }
 

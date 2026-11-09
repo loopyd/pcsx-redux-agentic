@@ -4,7 +4,7 @@ local m, bit = require 'support', require 'bit'
 local M = {}
 local block_flags = {mono=1, muted=2, submitted=4}
 local faults = {'frames', 'blocks', 'events', 'thread', 'bounds', 'clock',
-    'discontinuity', 'streaming-loss', 'output'}
+    'discontinuity', 'streaming-loss', 'output', 'workers'}
 
 local function integer(value, low, high, label)
     assert(type(value) == 'number' and value % 1 == 0 and value >= low and value <= high,
@@ -22,6 +22,12 @@ end
 
 local function less(a, b)
     return #a < #b or (#a == #b and a < b)
+end
+
+local function plus(value, count)
+    local result = m.exact(m.uint64(value) + m.uint64(tostring(count)))
+    assert(not less(result, value), 'native voice coordinate overflow')
+    return result
 end
 
 local function writeJournalBeforeValidation(name, count, read, validate)
@@ -49,18 +55,21 @@ function M.export(prefix)
     assert(type(prefix) == 'string' and (#prefix == 0 or
         (#prefix <= 200 and prefix:match('^[%a%d][%w_.-]*$'))), 'invalid PCM capture prefix')
     local files = {pcm = prefix .. 'audio.f32', wav = prefix .. 'audio.wav',
-        blocks = prefix .. 'blocks.ndjson', events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
+        blocks = prefix .. 'blocks.ndjson', workers = prefix .. 'workers.ndjson',
+        events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v2', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v3', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
             events = 'CPU access cycles with observed capture cursor; not audible-effect positions',
+            workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
+            voice_offsets = 'persistent stream-0 frame coordinates; underflow consumes none, fast-forward discards advance them',
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 2 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 3 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -69,9 +78,12 @@ function M.export(prefix)
         integer(status.frames, 0, status.frame_limit, 'frame count')
         integer(status.blocks, 0, status.block_limit, 'block count')
         integer(status.events, 0, status.event_limit, 'event count')
-        integer(status.failures, 0, 511, 'failure bits')
-        integer(status.first_failure, 0, 256, 'first failure')
+        assert(status.worker_limit == status.event_limit, 'native worker capacity differs from event limit')
+        integer(status.workers, 0, status.worker_limit, 'worker count')
+        integer(status.failures, 0, 1023, 'failure bits')
+        integer(status.first_failure, 0, 512, 'first failure')
         integer(status.dropped_events, 0, 4294967295, 'dropped events')
+        integer(status.dropped_workers, 0, 4294967295, 'dropped workers')
         for _, key in ipairs({'begin_cycle', 'end_cycle', 'dropped_frames', 'streaming_dropped'}) do
             decimal(status[key])
         end
@@ -97,7 +109,7 @@ function M.export(prefix)
         assert((status.failures == 0 and status.first_failure == 0) or
             (status.first_failure > 0 and bit.band(status.first_failure, status.first_failure - 1) == 0 and
             bit.band(status.failures, status.first_failure) ~= 0), 'inconsistent native first failure')
-        assert(status.failures ~= 0 or (status.dropped_events == 0 and status.dropped_frames == '0' and
+        assert(status.failures ~= 0 or (status.dropped_events == 0 and status.dropped_workers == 0 and status.dropped_frames == '0' and
             status.streaming_dropped == '0'), 'native loss without failure')
 
         for _, capture in ipairs(m.captures) do
@@ -111,11 +123,15 @@ function M.export(prefix)
         result.pcm_bytes, result.duration = exported.pcm_bytes, status.frames / 44100
         local offset, previous = 0, status.begin_cycle
         local voice_fill, disc_fill = 0, 0
+        local voice_end = '0'
         result.blocks = writeJournalBeforeValidation(files.blocks, status.blocks, h.blocks, function(b, index)
             assert(b.index == index and b.offset == offset, 'noncontiguous native PCM block')
             integer(b.frames, 1, 2048, 'block frames')
             integer(b.voice_frames, 0, b.frames, 'voice frames')
             integer(b.disc_frames, 0, b.frames, 'disc frames')
+            local voice = decimal(b.voice_offset)
+            assert(not less(voice, voice_end), 'native voice queue cursor regression')
+            voice_end = plus(voice, b.voice_frames)
             integer(b.flags, 0, 7, 'block flags')
             local cycle = decimal(b.observed_cpu_cycle)
             assert(not less(cycle, previous), 'native block clock regression')
@@ -129,6 +145,24 @@ function M.export(prefix)
             voice_fill, disc_fill = voice_fill + b.frames - b.voice_frames, disc_fill + b.frames - b.disc_frames
         end)
         result.zero_fill = {voice_frames = voice_fill, disc_frames = disc_fill}
+        local worker_end, unconfirmed = nil, 0
+        result.workers = writeJournalBeforeValidation(files.workers, status.workers, h.workers, function(w, index)
+            assert(w.index == index, 'noncontiguous native worker index')
+            local voice, enqueue = decimal(w.voice_offset), decimal(w.enqueue_offset)
+            integer(w.frames, 1, 2048, 'worker frames')
+            integer(w.key_on_mask, 0, 16777215, 'worker key-on mask')
+            integer(w.enqueue_frames, 0, 2048, 'worker enqueue frames')
+            assert(worker_end == nil or worker_end == voice, 'noncontiguous native worker source ranges')
+            worker_end = plus(voice, w.frames)
+            if w.enqueue_frames == 0 then
+                assert(enqueue == '0', 'unconfirmed worker has enqueue position')
+                unconfirmed = unconfirmed + 1
+            else
+                assert(not less(voice, enqueue) and not less(plus(enqueue, w.enqueue_frames), worker_end),
+                    'native worker outside acknowledged enqueue')
+            end
+        end)
+        result.unconfirmed_workers = unconfirmed
         previous = status.begin_cycle
         local observed = '0'
         result.events = writeJournalBeforeValidation(files.events, status.events, h.events, function(e, index)
@@ -152,7 +186,7 @@ function M.export(prefix)
                 assert(e.width == 8 or e.width == 16 or e.width == 32, 'invalid native SPU access width')
             end
         end)
-        assert(result.blocks.complete and result.events.complete, 'incomplete native journal export')
+        assert(result.blocks.complete and result.workers.complete and result.events.complete, 'incomplete native journal export')
         assert(offset == status.frames, 'native PCM not covered by blocks')
         assert(bit.band(status.failures, 32) ~= 0 or not less(status.end_cycle, status.begin_cycle),
             'native end clock regression without failure')

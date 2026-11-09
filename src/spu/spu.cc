@@ -292,6 +292,7 @@ void PCSX::SPU::impl::synthesizeVoice(int ch, SPUCHAN *voice, int32_t &capVoice1
     auto &usedFreq = voice->data.get<Chan::UsedFreq>().value;
 
     if (isNew) {
+        m_captureKeyOnMask |= 1u << ch;
         // Start the new sound.
         StartSound(voice);
         // Clear the new-channel bit.
@@ -470,6 +471,10 @@ void PCSX::SPU::impl::MainThread() {
         }
 
         History::CD::WorkerBatch historyBatch;
+        const auto audioEpoch = m_audioOut.capture().workerToken();
+        const uint64_t voiceOffset = m_audioOut.voiceFramesEnqueued() +
+            (reinterpret_cast<uint8_t*>(pS) - reinterpret_cast<uint8_t*>(spuBuffer)) / sizeof(SDLAudio::Frame);
+        m_captureKeyOnMask = 0;
 
         {
             // capBufVoiceIndex is reset from the emulation thread (resetCaptureBuffer).
@@ -571,6 +576,7 @@ void PCSX::SPU::impl::MainThread() {
         }
         irqLock.unlock();
         historyBatch.finish();
+        m_audioOut.capture().workerBatch(audioEpoch, voiceOffset, NSSIZE, m_captureKeyOnMask);
 
         m_reverb.init(NSSIZE);
 
@@ -581,7 +587,8 @@ void PCSX::SPU::impl::MainThread() {
             bool done = false;
             while (!done) {
                 done = m_audioOut.feedStreamData(reinterpret_cast<SDLAudio::Frame *>(spuBuffer),
-                                                 (((uint8_t *)pS) - ((uint8_t *)spuBuffer)) / sizeof(SDLAudio::Frame));
+                                                 (((uint8_t *)pS) - ((uint8_t *)spuBuffer)) / sizeof(SDLAudio::Frame),
+                                                 0, audioEpoch);
                 if (endThread) {
                     threadEnded = 1;
                     return;
@@ -663,6 +670,7 @@ void PCSX::SPU::impl::wipeChannels() {
 
 // Initialization of certain buffers and of the mixing thread.
 void PCSX::SPU::impl::SetupThread() {
+    invalidateCapture();
     // Initialize the mixing buffers.
     memset(SSumR, 0, NSSIZE * sizeof(int));
     memset(SSumL, 0, NSSIZE * sizeof(int));

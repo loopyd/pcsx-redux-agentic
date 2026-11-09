@@ -149,6 +149,7 @@ class impl final : public SPUInterface {
     bool m_stateRestart = false;
     bool m_stateRestartFailed = false;
     uint64_t m_captureParent = 0;
+    uint32_t m_captureKeyOnMask = 0;
     uint16_t readRegisterValue(uint32_t);
     std::array<uint32_t, 2> captureInfluences() const;
     struct ADSRFlags {

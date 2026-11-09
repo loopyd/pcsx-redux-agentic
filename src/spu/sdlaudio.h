@@ -130,11 +130,15 @@ class SDLAudio {
     }
     const std::vector<std::string>& getBackends() { return m_backends; }
     const std::vector<std::string>& getDevices() { return m_devices; }
-    bool feedStreamData(const Frame* data, size_t frames, unsigned streamId = 0) {
+    // Stream 0 has one SPU worker producer; the callback alone drains it.
+    uint64_t voiceFramesEnqueued() const { return m_voiceEnqueued; }
+    bool feedStreamData(const Frame* data, size_t frames, unsigned streamId, uint64_t workerEpoch) {
         switch (streamId) {
             case 0:
-                return m_voicesStream.enqueue(data, frames);
-                break;
+                if (!m_voicesStream.enqueue(data, frames)) return false;
+                m_capture.workerQueued(workerEpoch, m_voiceEnqueued, frames);
+                m_voiceEnqueued += frames;
+                return true;
             case 1:
                 return m_audioStream.enqueue(data, frames);
                 break;
@@ -174,6 +178,7 @@ class SDLAudio {
 
   private:
     Capture m_capture;
+    uint64_t m_voiceEnqueued = 0, m_voiceDequeued = 0;
     std::function<std::array<uint32_t, 2>()> m_influences;
     std::array<int64_t, 14> captureSettings() const;
     std::array<int64_t, 14> m_captureSettings{};

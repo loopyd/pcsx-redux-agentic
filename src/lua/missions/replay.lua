@@ -161,7 +161,8 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             comparison.cycles_equal = segment.begin_cycles == baseline.begin_cycles and segment.end_cycles == baseline.end_cycles
             comparison.settings_equal = m.json(segment.native.settings) == m.json(baseline.native.settings)
             comparison.counts_equal = segment.native.frames == baseline.native.frames and
-                segment.native.blocks == baseline.native.blocks and segment.native.events == baseline.native.events
+                segment.native.blocks == baseline.native.blocks and segment.native.events == baseline.native.events and
+                segment.native.workers == baseline.native.workers
             local function comparable(metadata)
                 local value = {}
                 for key, item in pairs(metadata) do
@@ -173,10 +174,11 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             comparison.metadata_equal = m.json(comparable(segment.native)) == m.json(comparable(baseline.native))
             comparison.pcm = compareFile(baseline.files.pcm, segment.files.pcm)
             comparison.blocks = compareFile(baseline.files.blocks, segment.files.blocks)
+            comparison.workers = compareFile(baseline.files.workers, segment.files.workers)
             comparison.events = compareFile(baseline.files.events, segment.files.events)
             comparison.equal = comparison.boundary_equal and comparison.cycles_equal and comparison.settings_equal and
                 comparison.counts_equal and comparison.metadata_equal and comparison.pcm.equal and
-                comparison.blocks.equal and comparison.events.equal
+                comparison.blocks.equal and comparison.workers.equal and comparison.events.equal
         end
         if not comparison.equal then
             result.audio_equal = false

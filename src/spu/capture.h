@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -17,23 +18,29 @@ class Capture {
   public:
     enum Failure : uint32_t {
         Frames = 1, Blocks = 2, Events = 4, Thread = 8, Bounds = 16,
-        Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256,
+        Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256, Workers = 512,
     };
     enum class Kind : uint32_t { Access = 1, Write = 2, Feed = 3, Read = 4, Result = 5, Return = 6 };
     enum BlockFlag : uint32_t { Mono = 1, Muted = 2, Submitted = 4, ValidBlockFlags = 7 };
     struct Block {
         uint64_t lastPublishedCpuCycle = 0;
+        uint64_t voiceOffset = 0;
         uint32_t offset = 0, frames = 0, voices = 0, disc = 0, flags = 0;
     };
     struct Event {
         uint64_t cycle = 0, frame = 0, parent = 0;
         uint32_t kind = 0, address = 0, value = 0, width = 0, detail = 0, flags = 0;
     };
+    struct Worker {
+        uint64_t voiceOffset = 0, enqueueOffset = 0;
+        uint32_t frames = 0, keyOnMask = 0, enqueueFrames = 0;
+    };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 2, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = 3, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
+        uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;
     };
     struct Snapshot {
         Status status;
@@ -57,17 +64,22 @@ class Capture {
     bool begin(uint32_t frames, uint32_t blocks, uint32_t events, uint64_t cycle) {
         if (!owner() || (m_lifecycle.load() & STATE_MASK) != 0 || !frames || frames > MAX_FRAMES ||
             !blocks || blocks > MAX_RECORDS || !events || events > MAX_RECORDS || m_epoch == MAX_EPOCH) return false;
+        std::lock_guard lock(m_workerMutex);
         try {
             std::vector<float> pcm(size_t(frames) * 2);
             std::vector<Block> records(blocks);
             std::vector<Event> writes(events);
+            std::vector<Worker> workers(events);
             m_pcm.swap(pcm); m_blocks.swap(records); m_events.swap(writes);
+            m_workers.swap(workers);
         } catch (...) { return false; }
         m_status = {};
         m_status.beginCycle = m_status.endCycle = cycle;
         m_status.frameLimit = frames; m_status.blockLimit = blocks; m_status.eventLimit = events;
         m_cycle.store(cycle); m_frame.store(0);
         m_lastCycle = cycle;
+        m_workerCount = m_workerQueued = m_droppedWorkers = 0;
+        m_workerThread = {};
         m_lifecycle.store((++m_epoch << EPOCH_SHIFT) | 1, std::memory_order_release);
         return true;
     }
@@ -75,6 +87,7 @@ class Capture {
     bool stop(uint64_t cycle) {
         if (!owner() || !active()) return false;
         publish(cycle);
+        std::lock_guard lock(m_workerMutex);
         m_status.endCycle = cycle;
         auto state = m_lifecycle.load();
         while (!m_lifecycle.compare_exchange_weak(state, (state & ~STATE_MASK) | 2)) {}
@@ -82,9 +95,12 @@ class Capture {
     }
     bool clear() {
         if (!owner() || active()) return false;
+        std::lock_guard lock(m_workerMutex);
         std::vector<float>().swap(m_pcm);
         std::vector<Block>().swap(m_blocks);
         std::vector<Event>().swap(m_events);
+        std::vector<Worker>().swap(m_workers);
+        m_workerCount = m_workerQueued = m_droppedWorkers = 0;
         m_status = {};
         m_cycle.store(0); m_frame.store(0);
         m_lifecycle.store(m_epoch << EPOCH_SHIFT, std::memory_order_release);
@@ -92,7 +108,11 @@ class Capture {
     }
     bool status(Status& result) {
         if (!owner()) return false;
+        std::lock_guard lock(m_workerMutex);
         result = m_status;
+        result.workers = m_workerCount;
+        result.workerLimit = m_workers.size();
+        result.droppedWorkers = m_droppedWorkers;
         const auto state = m_lifecycle.load(std::memory_order_acquire);
         result.state = state & STATE_MASK;
         result.failures = (state >> FAILURE_SHIFT) & FAILURE_MASK;
@@ -125,7 +145,8 @@ class Capture {
         return m_status.events;
     }
 
-    void pcm(const float* data, uint32_t frames, uint32_t voices, uint32_t disc, uint32_t flags) {
+    void pcm(const float* data, uint32_t frames, uint32_t voices, uint32_t disc, uint32_t flags,
+             uint64_t voiceOffset) {
         if (!active()) return;
         if (!data || !frames || frames > MAX_CHUNK || voices > frames || disc > frames || (flags & ~ValidBlockFlags)) {
             fail(Bounds);
@@ -141,6 +162,7 @@ class Capture {
         if (m_status.blocks == m_blocks.size()) { fail(Blocks); rejected(); return; }
         Block block;
         block.lastPublishedCpuCycle = m_cycle.load(std::memory_order_acquire);
+        block.voiceOffset = voiceOffset;
         block.offset = m_status.frames; block.frames = frames;
         block.voices = voices; block.disc = disc; block.flags = flags;
         std::memcpy(m_pcm.data() + size_t(m_status.frames) * 2, data, size_t(frames) * 2 * sizeof(float));
@@ -148,6 +170,43 @@ class Capture {
         m_status.frames += frames;
         m_frame.store(m_status.frames, std::memory_order_release);
         if (!(flags & Submitted)) fail(Output);
+    }
+    uint64_t workerToken() const {
+        const auto state = m_lifecycle.load(std::memory_order_acquire);
+        return (state & STATE_MASK) == 1 ? state >> EPOCH_SHIFT : 0;
+    }
+    void workerBatch(uint64_t epoch, uint64_t voiceOffset, uint32_t frames, uint32_t keyOnMask) {
+        if (!epoch) return;
+        std::lock_guard lock(m_workerMutex);
+        if (epoch != workerToken() || !workerThread()) return;
+        if (!frames || frames > MAX_CHUNK || keyOnMask > 0xffffff || voiceOffset > UINT64_MAX - frames) {
+            fail(Bounds); return;
+        }
+        if (failures() || m_workerCount == m_workers.size()) {
+            if (!failures()) fail(Workers);
+            if (m_droppedWorkers != UINT32_MAX) ++m_droppedWorkers;
+            return;
+        }
+        if (m_workerCount && voiceOffset != m_workers[m_workerCount - 1].voiceOffset +
+                                              m_workers[m_workerCount - 1].frames) {
+            fail(Discontinuity); return;
+        }
+        m_workers[m_workerCount++] = {voiceOffset, 0, frames, keyOnMask, 0};
+    }
+    void workerQueued(uint64_t epoch, uint64_t offset, uint32_t frames) {
+        if (!epoch) return;
+        std::lock_guard lock(m_workerMutex);
+        if (epoch != workerToken() || !workerThread()) return;
+        if (!frames || frames > MAX_CHUNK || offset > UINT64_MAX - frames) { fail(Bounds); return; }
+        while (m_workerQueued < m_workerCount) {
+            auto& batch = m_workers[m_workerQueued];
+            if (batch.voiceOffset + batch.frames > offset + frames) break;
+            if (batch.voiceOffset >= offset) {
+                batch.enqueueOffset = offset;
+                batch.enqueueFrames = frames;
+            }
+            ++m_workerQueued;
+        }
     }
     void streamingLoss(uint32_t frames) {
         if (!owner() || !active()) return;
@@ -176,6 +235,13 @@ class Capture {
         if (count) std::memcpy(out, m_events.data() + first, size_t(count) * sizeof(Event));
         return true;
     }
+    bool workers(uint32_t first, uint32_t count, Worker* out) {
+        std::lock_guard lock(m_workerMutex);
+        if (!frozen() || count > MAX_BATCH || first > m_workerCount || count > m_workerCount - first ||
+            (count && !out)) return false;
+        if (count) std::memcpy(out, m_workers.data() + first, size_t(count) * sizeof(Worker));
+        return true;
+    }
     bool snapshot(Snapshot& out) {
         if (!frozen() || m_status.events > MAX_RECORDS) return false;
         if (!status(out.status)) return false;
@@ -193,6 +259,12 @@ class Capture {
     }
 
   private:
+    bool workerThread() {
+        const auto thread = std::this_thread::get_id();
+        if (m_workerThread == std::thread::id{}) m_workerThread = thread;
+        if (m_workerThread == thread && thread != m_owner) return true;
+        fail(Thread); return false;
+    }
     bool owner() {
         if (std::this_thread::get_id() == m_owner) return true;
         fail(Thread); return false;
@@ -201,8 +273,8 @@ class Capture {
     void drop(uint32_t frames) {
         m_status.droppedFrames += std::min<uint64_t>(frames, UINT64_MAX - m_status.droppedFrames);
     }
-    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 511;
-    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 11, EPOCH_SHIFT = 20;
+    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 1023;
+    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 12, EPOCH_SHIFT = 22;
     static constexpr uint64_t MAX_EPOCH = UINT64_MAX >> EPOCH_SHIFT;
     uint32_t failures() const { return (m_lifecycle.load(std::memory_order_acquire) >> FAILURE_SHIFT) & FAILURE_MASK; }
     const std::thread::id m_owner;
@@ -214,6 +286,10 @@ class Capture {
     std::vector<float> m_pcm;
     std::vector<Block> m_blocks;
     std::vector<Event> m_events;
+    std::mutex m_workerMutex;
+    std::thread::id m_workerThread;
+    uint32_t m_workerCount = 0, m_workerQueued = 0, m_droppedWorkers = 0;
+    std::vector<Worker> m_workers;
 };
 
 }

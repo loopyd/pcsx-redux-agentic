@@ -108,12 +108,15 @@ work leaves unrecorded host-time gaps. No queue is flushed or restored to hide
 those gaps, and input commands retain their scheduled order.
 
 Each segment writes `run-RR-segment-SS-audio.f32`, `-audio.wav`, `-blocks.ndjson`,
-`-spu.ndjson` and `-audio.json`. The native report retains the capture stage,
-settings, sample/block/event counts, failure bits and exposed queue snapshots.
-Replay compares exact PCM float bits and exact callback/access journal bytes,
+`-workers.ndjson`, `-spu.ndjson` and `-audio.json`. The native report retains the capture stage,
+settings, sample/block/worker/event counts, failure bits and exposed queue snapshots.
+Replay compares exact PCM float bits and exact callback/worker/access journal bytes,
 including observed cycles. It also compares settings, counts, all exposed native
 metadata, segment frames and guest boundary cycles. A byte mismatch reports its
 first offset and values. WAV payload/count validation uses the same PCM exporter.
+Source coordinates persist across state restoration. Their absolute values can
+make journal and overall sound equality false even when PCM and relative source
+ranges match. Replay retains these differences without normalization.
 
 `runs[].audio` retains every segment and its comparison with run one's matching
 segment. `audio_complete` requires every requested interval; `audio_equal` and

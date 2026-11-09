@@ -216,6 +216,8 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
         number(L, "frames", result.frames); number(L, "blocks", result.blocks); number(L, "events", result.events);
         number(L, "frame_limit", result.frameLimit); number(L, "block_limit", result.blockLimit);
         number(L, "event_limit", result.eventLimit); number(L, "failures", result.failures);
+        number(L, "workers", result.workers); number(L, "worker_limit", result.workerLimit);
+        number(L, "dropped_workers", result.droppedWorkers);
         number(L, "first_failure", result.firstFailure); number(L, "dropped_events", result.droppedEvents);
         wide(L, "begin_cycle", result.beginCycle); wide(L, "end_cycle", result.endCycle);
         wide(L, "dropped_frames", result.droppedFrames); wide(L, "streaming_dropped", result.streamingDropped);
@@ -248,9 +250,27 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
             const auto& result = results[n];
             L.newtable(); number(L, "index", first + n);
             wide(L, "observed_cpu_cycle", result.lastPublishedCpuCycle);
+            wide(L, "voice_offset", result.voiceOffset);
             number(L, "offset", result.offset); number(L, "frames", result.frames);
             number(L, "voice_frames", result.voices); number(L, "disc_frames", result.disc);
             number(L, "flags", result.flags);
+            L.rawseti(n + 1);
+        }
+        return 1;
+    }, -1);
+    L.declareFunc("workers", [this](Lua L) -> int {
+        if (L.gettop() != 2 || !paused(m_capture)) return L.error("audio workers require paused owner, first index and count");
+        const auto first = integer(L, 1, Capture::MAX_RECORDS);
+        const auto count = integer(L, 2, Capture::MAX_BATCH);
+        auto* results = static_cast<Capture::Worker*>(L.newuser(size_t(count) * sizeof(Capture::Worker)));
+        if (!m_capture.workers(first, count, results)) return L.error("audio workers require frozen capture and valid range");
+        L.newtable();
+        for (uint32_t n = 0; n < count; ++n) {
+            const auto& result = results[n];
+            L.newtable(); number(L, "index", first + n);
+            wide(L, "voice_offset", result.voiceOffset); wide(L, "enqueue_offset", result.enqueueOffset);
+            number(L, "frames", result.frames); number(L, "key_on_mask", result.keyOnMask);
+            number(L, "enqueue_frames", result.enqueueFrames);
             L.rawseti(n + 1);
         }
         return 1;

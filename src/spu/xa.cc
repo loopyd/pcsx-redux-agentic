@@ -83,7 +83,7 @@ void PCSX::SPU::impl::FeedXA(xa_decode_t *xap) {
 
     const auto submit = [&](uint32_t frames) {
         if (!frames) { observeCDFeed(5, xap, 0, cdda); return; }
-        const bool accepted = m_audioOut.feedStreamData(XABuffer, frames, 1);
+        const bool accepted = m_audioOut.feedStreamData(XABuffer, frames, 1, 0);
         if (!m_audioOut.capture().ownerThread()) {
             m_audioOut.capture().fail(Capture::Thread); observeCDFeed(accepted ? 6 : 7, nullptr, frames, cdda); return;
         }
