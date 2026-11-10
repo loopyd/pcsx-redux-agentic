@@ -16,6 +16,7 @@ namespace PCSX::SPU {
 class Capture {
     static_assert(std::atomic<uint64_t>::is_always_lock_free);
   public:
+    static constexpr uint32_t ABI_VERSION = 11;
     static constexpr size_t VOICE_COUNT = 24;
     enum Failure : uint32_t {
         Frames = 1, Blocks = 2, Events = 4, Thread = 8, Bounds = 16,
@@ -28,6 +29,7 @@ class Capture {
         uint64_t lastPublishedCpuCycle = 0;
         uint64_t voiceOffset = 0;
         uint32_t offset = 0, frames = 0, voices = 0, disc = 0, flags = 0;
+        std::array<int16_t, 2> mainGain{};
     };
     struct Event {
         uint64_t cycle = 0, frame = 0, parent = 0;
@@ -61,7 +63,7 @@ class Capture {
     };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 10, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = ABI_VERSION, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
         uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;
@@ -212,7 +214,7 @@ class Capture {
     }
 
     void pcm(const float* data, uint32_t frames, uint32_t voices, uint32_t disc, uint32_t flags,
-             uint64_t voiceOffset) {
+             uint64_t voiceOffset, const std::array<int16_t, 2>& mainGain) {
         if (!active()) return;
         if (!data || !frames || frames > MAX_CHUNK || voices > frames || disc > frames || (flags & ~ValidBlockFlags)) {
             fail(Bounds);
@@ -231,6 +233,7 @@ class Capture {
         block.voiceOffset = voiceOffset;
         block.offset = m_status.frames; block.frames = frames;
         block.voices = voices; block.disc = disc; block.flags = flags;
+        block.mainGain = mainGain;
         std::memcpy(m_pcm.data() + size_t(m_status.frames) * 2, data, size_t(frames) * 2 * sizeof(float));
         m_blocks[m_status.blocks++] = block;
         m_status.frames += frames;

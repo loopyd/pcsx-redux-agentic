@@ -128,11 +128,11 @@ CDDA reads beyond a program extent synthesize silence without a backing read.
 That outcome differs from a short backing read, which clears the destination
 and fails. These rules do not establish hardware error-code fidelity.
 
-Audio joined capture requires native Audio ABI 10 and the exact revision-2
+Audio joined capture requires native Audio ABI 11 and the exact revision-2
 14-slot settings environment described in [Audio](audio.md); incompatible setting
 meanings reject.
 Decoded capture requires worker-lane version 4 and bounded capacity; older worker
-versions reject. CD observation wire 3 and Audio ABI 10 remain separate contracts.
+versions reject. CD observations use wire version 3.
 Worker records carry batch,
 sequence, epoch, last published CPU cycle, native predicates and publication
 lineage. CPU handoff joins exact publication sequence ranges. These observations

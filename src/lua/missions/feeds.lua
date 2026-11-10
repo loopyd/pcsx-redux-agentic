@@ -11,7 +11,7 @@ function M.new(controller,audio,correlated)
         assert(joined==(audio~=nil),'Audio export differs from native CD profile')
         if not joined then return end
         native=assert(audio.report and audio.report.native,'missing joined native Audio report')
-        assert(audio.report.complete and (type(correlated)=='table' or type(audio.events)=='function') and native.version==10 and native.state==2 and
+        assert(audio.report.complete and (type(correlated)=='table' or type(audio.events)=='function') and native.version==11 and native.state==2 and
             native.failures==0 and native.dropped_events==0 and native.dropped_frames=='0' and native.streaming_dropped=='0' and
             native.epoch==epoch and m.uint64(native.begin_cycle)<=row.cycle,'joined Audio lifecycle mismatch')
         for i,name in ipairs(settings) do assert(ffi.cast('int64_t',m.u64le(environment,i*8-8))==native.settings[name],

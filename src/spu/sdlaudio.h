@@ -115,6 +115,9 @@ class SDLAudio {
     void setLua(Lua L);
 
     SDLAudio(SettingsType& settings);
+    void setMainVolume(uint16_t left, uint16_t right) {
+        m_mainVolume.store(uint32_t(left) | (uint32_t(right) << 16), std::memory_order_relaxed);
+    }
     Capture& capture() { return m_capture; }
     void setCaptureLua(Lua, std::function<std::array<uint32_t, 2>()>);
     void checkCaptureSettings();
@@ -194,6 +197,7 @@ class SDLAudio {
     void cooperativeWait(uint32_t initialTrigger);
     void consumeCooperativeChunk();
     Capture m_capture;
+    std::atomic<uint32_t> m_mainVolume{0};
     struct ColdStart {
         uint64_t epoch = 0, cycle = 0, previousCycle = 0, voiceEnqueued = 0, voiceDequeued = 0;
         uint32_t pc = 0, voiceQueue = 0, discQueue = 0, masterFrames = 0;

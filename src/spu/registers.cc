@@ -182,6 +182,10 @@ void PCSX::SPU::impl::resetAdpcmWalk(int ch) {
 // Write registers: called by the main emulator.
 ////////////////////////////////////////////////////////////////////////
 
+void PCSX::SPU::impl::publishMainVolume() {
+    m_audioOut.setMainVolume(regArea[(H_SPUmvolXL - 0xc00) >> 1], regArea[(H_SPUmvolXR - 0xc00) >> 1]);
+}
+
 void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
     if (m_audioOut.capture().ownerThread()) {
         m_audioOut.checkCaptureSettings();
@@ -413,11 +417,18 @@ void PCSX::SPU::impl::writeRegister(uint32_t reg, uint16_t val) {
             break;
 
         case H_SPUmvolL:
-            PCSX::PSXSPU_LOGGER::Log("SPU.write, Main Volume Left = %04x, unimplemented\n", val);
+        case H_SPUmvolR:
+            if (val & 0x8000) {
+                PCSX::PSXSPU_LOGGER::Log("SPU.write, Main Volume sweep = %04x, unimplemented\n", val);
+                break;
+            }
+            regArea[(H_SPUmvolXL + (r - H_SPUmvolL) - 0xc00) >> 1] = uint16_t(val << 1);
+            publishMainVolume();
             break;
 
-        case H_SPUmvolR:
-            PCSX::PSXSPU_LOGGER::Log("SPU.write, Main Volume Right = %04x, unimplemented\n", val);
+        case H_SPUmvolXL:
+        case H_SPUmvolXR:
+            publishMainVolume();
             break;
 
         // Voice 0..23 ON/OFF (status) (ENDX), read-only.

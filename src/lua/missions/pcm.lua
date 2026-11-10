@@ -52,10 +52,11 @@ function M.export(prefix)
         events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v10', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v11', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
+            main_gain = 'signed Q15 pair consumed by the output chunk after summing the two streams, before mono',
             events = 'CPU access cycles with observed capture cursor; not audible-effect positions',
             feed_waits = 'queue occupancy under its mutex; initial blocked predicate and host wait_for duration, excluding initial lock acquisition and copying; not CPU time or proof of OS sleep',
             workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
@@ -69,7 +70,7 @@ function M.export(prefix)
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 10 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 11 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -139,6 +140,8 @@ function M.export(prefix)
             integer(b.frames, 1, 2048, 'block frames')
             integer(b.voice_frames, 0, b.frames, 'voice frames')
             integer(b.disc_frames, 0, b.frames, 'disc frames')
+            integer(b.main_gain_left, -32768, 32767, 'main left gain')
+            integer(b.main_gain_right, -32768, 32767, 'main right gain')
             local voice = decimal(b.voice_offset)
             assert(not less(voice, voice_end), 'native voice queue cursor regression')
             voice_end = plus(voice, b.voice_frames)

@@ -90,7 +90,6 @@ remain valid. Use a fresh process for further guest execution.
 `PCSX.Audio.cooperative()` returns separate `psx.audio-cooperative/v1` metadata
 bound to the capture epoch. It retains `quantum`, `chunk`, actor `order`, the
 `retirement_boundary`, opcode and command counts, and failure status.
-Audio ABI 10 and `coldStart()` remain unchanged.
 
 Shared declared actor inputs can qualify independent comparisons between native
 and Rust execution only after checking bounded original music and SFX guest
@@ -144,7 +143,7 @@ names each raw, WAV, block, worker, gain, envelope-input, scheduling, event and 
 [Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 10. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 11. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -167,15 +166,23 @@ and buffers never overwrite.
 ## Application
 
 Capture stage: **44100 Hz stereo float32 after mixer/mute/mono, before SDL
-conversion**. Voice/reverb includes host Volume scaling and signed16 clipping;
-XA/CDDA uses native resampling/scaling before callback summing/mute/mono. Preserve
-values beyond ±1 without clipping/normalizing. SDL/device resampling, gain and
-physical playback are excluded. Retain settings and active/configured driver/device.
+conversion**. Voice and reverb include host Volume scaling and signed 16-bit
+clipping. XA and CDDA use native resampling and scaling. Each callback sums
+the two streams, applies the emulated main volume and folds to mono when
+configured. Preserve values beyond ±1. SDL and device processing are outside
+the capture stage. Retain settings and active and configured driver/device.
 
 Block offsets count stereo frames. Flags: mono=1, mute=2, successful SDL
 submission=4. Short dequeues zero-fill; empty disc streams do not imply loss.
 `zero_fill` totals cover validated block prefixes: check completeness. Enqueue/
 submission losses set failure bits; failed prefixes may retain useful PCM.
+
+`main_gain_left` and `main_gain_right` report the signed Q15 pair read once per
+output chunk. Fixed writes to MVOLL/MVOLR shift left by one bit into the
+current levels. MVOLXL/MVOLXR read and write those levels directly, and checked
+state load restores them from the saved ports. Sweep writes preserve the current
+level. These fields describe callback consumption. They carry no PSX sample
+timing guarantee.
 
 `voice_offset` counts frames dequeued from stream 0 since the audio device owner
 was created. It continues across capture epochs and device reinitialization.

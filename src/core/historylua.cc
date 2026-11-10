@@ -115,7 +115,8 @@ Correlations correlate(const FrozenCapture& capture) {
                 audioEpoch = epoch;
                 if (epoch) {
                     const auto& audio = capture.audio.status;
-                    require(capture.audio.epoch == epoch && audio.version == 10 && audio.state == 2 && !audio.failures &&
+                    require(capture.audio.epoch == epoch && audio.version == SPU::Capture::ABI_VERSION &&
+                                audio.state == 2 && !audio.failures &&
                                 !audio.droppedEvents && !audio.droppedWorkers && !audio.droppedFrames && !audio.streamingDropped &&
                                 audio.events == capture.audio.events.size() && audio.beginCycle <= row.cycle,
                             "joined Audio lifecycle mismatch");

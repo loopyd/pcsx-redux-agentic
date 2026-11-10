@@ -370,6 +370,7 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
             number(L, "offset", result.offset); number(L, "frames", result.frames);
             number(L, "voice_frames", result.voices); number(L, "disc_frames", result.disc);
             number(L, "flags", result.flags);
+            number(L, "main_gain_left", result.mainGain[0]); number(L, "main_gain_right", result.mainGain[1]);
             L.rawseti(n + 1);
         }
         return 1;

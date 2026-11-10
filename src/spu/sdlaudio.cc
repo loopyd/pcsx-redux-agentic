@@ -20,6 +20,7 @@
 #include "spu/sdlaudio.h"
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -340,6 +341,11 @@ void PCSX::SPU::SDLAudio::consumeChunk(SDL_AudioStream* stream, uint32_t chunk, 
     constexpr int kFrameSizeBytes = sizeof(float) * kChannels;
     std::array<uint32_t, STREAMS> available{};
     const auto voiceOffset = m_voiceDequeued;
+    const uint32_t mainVolume = m_mainVolume.load(std::memory_order_relaxed);
+    const std::array<int16_t, 2> mainGain = {
+        std::bit_cast<int16_t>(uint16_t(mainVolume)), std::bit_cast<int16_t>(uint16_t(mainVolume >> 16))};
+    const float gainL = muted ? 1.0f : mainGain[0] / 32768.0f;
+    const float gainR = muted ? 1.0f : mainGain[1] / 32768.0f;
 
     for (unsigned i = 0; i < STREAMS; i++) {
         size_t a = (i == 0) ? dequeueVoice(m_mixBuffers[i].data(), chunk, false)
@@ -360,6 +366,8 @@ void PCSX::SPU::SDLAudio::consumeChunk(SDL_AudioStream* stream, uint32_t chunk, 
             r += static_cast<float>(m_mixBuffers[i][f].R) / static_cast<float>(std::numeric_limits<int16_t>::max());
         }
 
+        l *= gainL;
+        r *= gainR;
         if (mono) {
             const float lr = (l + r) * 0.5f;
             m_outputBuffer[f * 2 + 0] = lr;
@@ -373,7 +381,7 @@ void PCSX::SPU::SDLAudio::consumeChunk(SDL_AudioStream* stream, uint32_t chunk, 
     const bool submitted = SDL_PutAudioStreamData(stream, m_outputBuffer.data(), chunk * kFrameSizeBytes);
     m_capture.pcm(m_outputBuffer.data(), chunk, available[0], available[1],
                   (mono ? Capture::Mono : 0u) | (muted ? Capture::Muted : 0u) | (submitted ? Capture::Submitted : 0u),
-                  voiceOffset);
+                  voiceOffset, mainGain);
 
     // Fast-forward lives at the sink (the master clock). We have already kept the first `chunk`
     // frames of each stream for playback at native 44.1kHz -- pitch is preserved. To run the whole

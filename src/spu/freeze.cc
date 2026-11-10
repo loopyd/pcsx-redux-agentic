@@ -119,6 +119,7 @@ void PCSX::SPU::impl::loadStopped(const SaveStates::SPU &spu) {
 
     spu.get<SaveStates::SPURam>().copyTo(reinterpret_cast<uint8_t *>(spuMem));
     spu.get<SaveStates::SPUPorts>().copyTo(reinterpret_cast<uint8_t *>(regArea));
+    publishMainVolume();
 
 #if 0
 // The xa_decode pointer is grabbed here, which is messy. This needs to be fixed up later.

@@ -289,6 +289,7 @@ class impl final : public SPUInterface {
 
     // PSX buffer and addresses.
     uint16_t regArea[10000];
+    void publishMainVolume();
     // Note that SPU ram is a uint16_t, so total size is 512KB.
     uint16_t spuMem[256 * 1024];
     // Byte-addressable view of spuMem; the base for every sound-RAM pointer and
