@@ -116,7 +116,7 @@ bool limits(uint32_t flags, Limits* out) {
     if (!g_emulator->m_cdrom->historyInitialized() || !g_emulator->m_spu->captureEnvironment(candidate) ||
         !nextDisc || !nextDisc->historyPrepare()) return false;
     const uint64_t floor = 5628ull + candidate.backend.size() + candidate.device.size() + 2ull * nextDisc->historyBytes() + ((flags & 2) ? 96 : 0);
-    if (floor > 8388608) return false;
+    if (floor > CD_PAYLOAD_LIMIT) return false;
     *out = {}; out->minimumBoundaryEvents = (flags & 2) ? 47 : 45; out->minimumBoundaryBytes = floor;
     return true;
 }
@@ -526,7 +526,7 @@ bool workerRecords(uint32_t first, uint32_t count, WorkerRecord* out) {
 bool workerSnapshot(WorkerSnapshot& out) {
     if (!History::ownerThread() || g_system->running() || g_system->quitting()) return false;
     std::lock_guard guard(worker.mutex);
-    if (worker.status.state == 1 || worker.records.size() > 65536) return false;
+    if (worker.status.state == 1 || worker.records.size() > WORKER_EVENT_LIMIT) return false;
     out.status = worker.status;
     if (worker.status.state == 2) out.records = worker.records;
     else out.records.clear();

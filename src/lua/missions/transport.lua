@@ -4,7 +4,7 @@ local m, events, transactions = require 'support', require 'events', require 'tr
 local M = {}
 
 function M.run()
-    m.begin('action,target,identity,frames,stop,events,bytes,mutations,reads,audio,samples,blocks,spuevents,decoded,workers', function()
+    m.begin('action,target,identity,frames,stop,events,bytes,mutations,reads,audio,samples,blocks,spuevents,scheduling,decoded,workers', function()
         local h=assert(PCSX.History,'native CD history binding required')
         assert(type(h.beginCDV3)=='function' and type(h.cdLimits)=='function','native CD history binding required')
         local bindings=require('mount').read()
@@ -16,24 +16,25 @@ function M.run()
         local joined=m.integer('audio',0,0,1)==1
         local decoded=m.integer('decoded',0,0,1)==1
         assert(not decoded or joined,'decoded=1 requires audio=1')
-        local worker_limit=decoded and m.integer('workers',65536,1,65536) or 0
+        local worker_limit=decoded and m.integer('workers',65536,1,4194304) or 0
         assert(decoded or not m.argument('workers'),'workers requires decoded=1')
         local flags=(joined and 1 or 0)+(decoded and 2 or 0)
         local build=m.buildIdentity()
         local a=joined and assert(PCSX.Audio,'native audio capture binding required') or nil
         local pcm=joined and require('pcm') or nil
         local frames=m.integer('frames',60,1,36000)
-        local event_limit=m.integer('events',65536,1,65536)
-        local byte_limit=m.integer('bytes',8388608,1,8388608)
+        local event_limit=m.integer('events',65536,1,67108864)
+        local byte_limit=m.integer('bytes',8388608,1,2147483648)
         local limits={mutations=m.integer('mutations',4096,1,65536),bytes=m.integer('reads',8388608,1,8388608)}
-        local samples,blocks,spuevents
+        local samples,blocks,spuevents,scheduling
         if joined then
             samples=m.integer('samples',441000,1,2646000)
             blocks=m.integer('blocks',16384,1,65536)
             spuevents=m.integer('spuevents',16384,1,65536)
+            scheduling=m.integer('scheduling',spuevents,1,1048576)
         else
-            assert(not m.argument('samples') and not m.argument('blocks') and not m.argument('spuevents'),
-                'samples, blocks and spuevents require audio=1')
+            assert(not m.argument('samples') and not m.argument('blocks') and not m.argument('spuevents') and
+                not m.argument('scheduling'),'samples, blocks, spuevents and scheduling require audio=1')
         end
         local stop=m.argument('stop') and m.address('stop')
         local started,audio_started,closing,count=false,false,false,0
@@ -44,20 +45,39 @@ function M.run()
                 local failures=m.array()
                 if start_error then failures[#failures+1]=start_error end
                 local function attempt(label,callback)
-                    local ok,value=pcall(callback)
+                    local ok,value,detail=pcall(callback)
                     if not ok then failures[#failures+1]=label..': '..tostring(value);return nil,tostring(value) end
-                    return value
+                    return value,detail
                 end
                 if started then attempt('history freeze',function() h.stop();return true end) end
                 if audio_started then attempt('audio freeze',function() a.stop();return true end) end
-                local native,sound,correlation,capture,snapshot_error
+                local native,sound,correlation,capture,snapshot_error,transactions_file
                 if started then capture,snapshot_error=attempt('history snapshot',h.snapshot) end
+                local worker,worker_file
+                if decoded and started then
+                    worker=attempt('worker status',function()
+                        local value=h.cdWorkerStatus()
+                        return {state=tonumber(value.state),version=tonumber(value.version),epoch=m.exact(value.epoch),
+                            events=tonumber(value.events),limit=tonumber(value.limit),failures=tonumber(value.failures),
+                            dropped=tonumber(value.dropped)}
+                    end)
+                    if capture and worker and (worker.events>65536 or worker.failures~=0) then
+                        worker_file=attempt('worker export',function()
+                            local name='decoded.bin.gz'
+                            local size=capture.workerArchive(name)
+                            m.captures[#m.captures+1]={path=name,bytes=size}
+                            return name
+                        end)
+                    end
+                end
                 if started then native=attempt('history export',function() return events.export(capture or h) end) end
                 if audio_started then sound=attempt('audio export',pcm.export) end
                 if started then
-                    correlation=attempt('CD correlation',function()
+                    local result,file=attempt('CD correlation',function()
                         return transactions.export(capture or h,limits,native,joined and {report=sound} or nil,bindings,snapshot_error)
                     end)
+                    correlation=result
+                    transactions_file=result and file
                 end
                 if started or audio_started then
                     attempt('final state',function()
@@ -70,10 +90,11 @@ function M.run()
                 m.report('transport.json',{schema='psx.runtime-cd-capture/v2',native_envelope_version=1,cd_observation_version=3,build_identity=build,identity=identity,
                     identity_authority='caller label; input/tool hashes in receipt',reason=reason,success=success,
                     started=started,audio_started=audio_started,audio_joined=joined,decoded_worker=decoded,worker_limit=worker_limit,frames=count,frame_limit=frames,
+                    worker=worker,worker_file=worker_file,
                     stop=stop,event_limit=event_limit,byte_limit=byte_limit,limits=limits,
-                    sample_limit=samples,block_limit=blocks,spu_event_limit=spuevents,
+                    sample_limit=samples,block_limit=blocks,spu_event_limit=spuevents,scheduling_limit=scheduling,
                     native_complete=native and native.complete or false,
-                    correlation_complete=correlation and correlation.complete or false,
+                    correlation_complete=correlation and correlation.complete or false,transactions_file=transactions_file,
                     audio_complete=sound and sound.complete or false,errors=failures,
                     boundary='paused initial state; Audio then History begin; deferred History then Audio freeze; final state',
                     scope='bounded observations and correlation; no command-completion, disc-conformance or audible-fidelity claim'})
@@ -101,10 +122,13 @@ function M.run()
                 assert(h.status().state==0 and (not joined or a.status().state==0),'CD capture recorders must be empty')
                 m.captureState('initial.pbuf')
                 local ok,err=pcall(function()
-                    if joined then a.begin(samples,blocks,spuevents);audio_started=true end
+                    if joined then a.begin(samples,blocks,spuevents,scheduling);audio_started=true end
                     local capacity=h.cdLimits(flags)
                     assert(capacity.wireVersion==3 and capacity.structureBytes==48 and capacity.schedulerCount==11 and
-                        event_limit>=capacity.minimumBoundaryEvents and byte_limit>=capacity.minimumBoundaryBytes,'native CD profile capacity floor not met')
+                        event_limit>=capacity.minimumBoundaryEvents and event_limit<=capacity.eventCeiling and
+                        byte_limit>=capacity.minimumBoundaryBytes and byte_limit<=capacity.payloadCeiling and
+                        worker_limit<=capacity.workerEventCeiling,
+                        'native CD profile capacity bounds not met')
                     h.beginCDV3(event_limit,byte_limit,worker_limit,flags);started=true
                 end)
                 if not ok then

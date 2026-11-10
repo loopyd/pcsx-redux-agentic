@@ -52,9 +52,9 @@ function M.run()
             local prefix=string.format('segment-%02d-',#report.segments+1)
             local capture=h.snapshot()
             local native=events.export(capture,prefix)
-            local correlation=transactions.export(capture,limits,native,nil,bindings,nil,prefix)
+            local correlation,transactions_file=transactions.export(capture,limits,native,nil,bindings,nil,prefix)
             report.segments[#report.segments+1]={prefix=prefix,frame=frame,complete=native.complete and correlation.complete,
-                begin_cycle=native.begin_cycle,end_cycle=native.end_cycle}
+                begin_cycle=native.begin_cycle,end_cycle=native.end_cycle,transactions_file=transactions_file}
             assert(native.complete and correlation.complete,'incomplete disc schedule segment')
             local total=0
             for _,artifact in ipairs(m.captures) do total=total+artifact.bytes end

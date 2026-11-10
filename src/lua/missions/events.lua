@@ -206,6 +206,18 @@ function M.describe(record)
     return kind, data, decoded
 end
 
+function M.batches(h, count, cd_projection)
+    local first = 0
+    return function()
+        if first == count then return end
+        local start = first
+        local length = math.min(4096, count - start)
+        first = start + length
+        local records, actual = h.records(start, length, cd_projection)
+        return start, actual or length, records
+    end
+end
+
 function M.export(capture, prefix)
     prefix=prefix or ''
     assert(type(prefix)=='string' and #prefix<=32 and prefix:match('^[%w_.-]*$'),'invalid capture prefix')
@@ -214,17 +226,34 @@ function M.export(capture, prefix)
     local status = h.status()
     assert(status.version == 1 and status.state == 2, 'unsupported or unfrozen native history')
     local count, size = tonumber(status.events), tonumber(status.bytes)
-    assert(count <= 65536 and size <= 8388608, 'native history exceeds ABI limits')
-    m.write(prefix..'payload.bin', h.bytes(0, size))
-    local file = assert(io.open(prefix..'events.ndjson', 'wb'))
-    local total, offset, previous = 0, 0, status.beginCycle
+    assert(count <= 67108864 and size <= 2147483648, 'native history exceeds ABI limits')
     local kinds, channels = {}, {}
-    local ok, err = pcall(function()
-        local records = h.records(0, count)
-        for index = 0, count - 1 do
+    local packed = count > 65536 or size > 8388608
+    local journal, payload_file, projection
+    if packed then
+        local name = prefix..'events.hst.gz'
+        payload_file = prefix..'payload.hst.gz'
+        local stats = h.archive(name, payload_file)
+        m.captures[#m.captures + 1] = {path=name, bytes=stats.events_bytes}
+        m.captures[#m.captures + 1] = {path=payload_file, bytes=stats.payload_bytes}
+        for index, kind in ipairs(names) do
+            if stats.kinds[index] > 0 then kinds[kind] = stats.kinds[index] end
+        end
+        for index, bytes in ipairs(stats.dma) do
+            if bytes > 0 then channels[tostring(index - 1)] = bytes end
+        end
+        projection = {passes=stats.passes, target_tests=stats.target_tests}
+        journal = {file=name, bytes=stats.events_bytes, decoded_bytes=8 + 68 * count, complete=true}
+    else
+        payload_file = prefix..'payload.bin'
+        m.write(payload_file, h.bytes(0, size))
+        local offset, previous = 0, status.beginCycle
+        journal = m.writeJournal(prefix..'events.ndjson', false, 67108864, function(write)
+      for first, length, records in M.batches(h, count) do
+        for index = 0, length - 1 do
             local record = records[index]
             local kind, data, decoded = M.describe(record)
-            assert(record.sequence == index + 1, 'noncontiguous native event sequence')
+            assert(record.sequence == first + index + 1, 'noncontiguous native event sequence')
             assert(record.cycle >= previous and record.cycle <= status.endCycle,
                 'native event outside monotonic capture interval')
             previous = record.cycle
@@ -234,9 +263,7 @@ function M.export(capture, prefix)
                 request = M.exact(record.request), related = M.exact(record.related), kind = kind,
                 device = tonumber(record.device), raw = data, fields = decoded,
                 payload = {offset = offset, bytes = tonumber(record.length)}}
-            local line = m.json(value) .. '\n'
-            assert(total + #line <= 67108864, 'event export exceeds 64 MiB')
-            assert(file:write(line)); total = total + #line
+            write(m.json(value) .. '\n')
             offset = offset + tonumber(record.length)
             kinds[kind] = (kinds[kind] or 0) + 1
             if record.kind == 4 then
@@ -245,10 +272,10 @@ function M.export(capture, prefix)
                 channels[channel] = (channels[channel] or 0) + tonumber(record.length)
             end
         end
+      end
         assert(offset == size, 'unreferenced native payload bytes')
-    end)
-    assert(file:close())
-    m.captures[#m.captures + 1] = {path = prefix..'events.ndjson', bytes = total}
+        end)
+    end
     local faults = m.array()
     for i, name in ipairs(failures) do
         if bit.band(status.failures, 2 ^ (i - 1)) ~= 0 then faults[#faults + 1] = name end
@@ -256,10 +283,11 @@ function M.export(capture, prefix)
     if bit.band(status.failures, 0xffffff00) ~= 0 then faults[#faults + 1] = 'unknown-native-failure' end
     local result = {schema = 'psx.native-history/v2', native_envelope_version = 1, cd_observation_version = 3, build_identity = m.buildIdentity(),
         begin_cycle = M.exact(status.beginCycle), end_cycle = M.exact(status.endCycle),
-        events = count, payload_bytes = size, exported_bytes = total, kinds = kinds,
+        events = count, payload_bytes = size, exported_bytes = journal.bytes, decoded_bytes = journal.decoded_bytes, kinds = kinds,
+        encoding = packed and 'hst1-gzip' or 'ndjson', scheduler_projection = projection,
         transferred_bytes = channels, failures = faults, failure_bits = tonumber(status.failures),
         first_failure = tonumber(status.firstFailure), dropped_attempts = tonumber(status.dropped),
-        complete = ok and status.failures == 0, export_error = not ok and tostring(err) or nil,
+        complete = journal.complete and status.failures == 0, export_error = journal.error,
         ordering = 'native CPU-thread hook order; bulk records do not imply byte-cycle timing',
         request_zero = 'absent or pre-capture owner; inspect initial state and pending events',
         payload_scope = kinds['ram-context'] and 'selected initial/final RAM and committed bytes'
@@ -268,7 +296,7 @@ function M.export(capture, prefix)
         cd_scope = kinds['cd-context'] and 'wire export only; CD lifecycle, ownership and Audio joins require the CD consumer' or nil,
         irq_scope = 'CPU-visible latch/delivery; SPU worker requests may coalesce',
         host_edits = 'audited mission required; arbitrary Lua pointer writes are not intercepted'}
-    result.payload_file, result.events_file=prefix..'payload.bin',prefix..'events.ndjson'
+    result.payload_file, result.events_file=payload_file,journal.file
     m.report(prefix..'events.json', result)
     return result
 end

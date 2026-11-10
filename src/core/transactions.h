@@ -13,10 +13,11 @@ enum class Operation : uint32_t {
 
 bool idle();
 bool active();
+inline constexpr uint32_t WORKER_EVENT_LIMIT = 4194304;
 struct Limits {
     uint32_t structureBytes = 48, wireVersion = 3, contextBytes = 384, queueBytes = 32;
-    uint32_t schedulerCount = 11, cdSchedulerMask = 0x41c, eventCeiling = 65536, payloadCeiling = 8388608;
-    uint32_t minimumBoundaryEvents = 0, minimumBoundaryBytes = 0, workerRecordBytes = 80, workerEventCeiling = 65536;
+    uint32_t schedulerCount = 11, cdSchedulerMask = 0x41c, eventCeiling = CD_EVENT_LIMIT, payloadCeiling = CD_PAYLOAD_LIMIT;
+    uint32_t minimumBoundaryEvents = 0, minimumBoundaryBytes = 0, workerRecordBytes = 80, workerEventCeiling = WORKER_EVENT_LIMIT;
 };
 static_assert(sizeof(Limits) == 48);
 struct WorkerRecord {

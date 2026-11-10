@@ -98,6 +98,36 @@ function M.write(name, bytes)
     M.captures[#M.captures + 1] = {path = name, bytes = #bytes}
 end
 
+function M.writeJournal(name, compressed, limit, emit)
+    if compressed then name = name .. '.gz' end
+    assert(name:match('^[%w][%w_.-]*$'), 'invalid capture name')
+    for _, capture in ipairs(M.captures) do assert(capture.path ~= name, 'duplicate capture') end
+    local file = assert(compressed and zlib.open(name, 'wb6', 65536) or
+        (not compressed and io.open(name, 'wb')), 'cannot open journal')
+    local rows, decoded = 0, 0
+    local ok, err = pcall(emit, function(line)
+        if compressed then
+            if rows % 1024 == 0 then assert(file:offset() < limit, 'compressed journal exceeds byte limit') end
+            assert(file:write(line) == #line, 'short compressed journal write')
+        else
+            assert(decoded + #line <= limit, 'journal exceeds byte limit')
+            assert(file:write(line))
+        end
+        rows, decoded = rows + 1, decoded + #line
+    end)
+    if compressed then file:close() else assert(file:close()) end
+    local size = decoded
+    if compressed then
+        local readback = assert(io.open(name, 'rb'))
+        size = assert(readback:seek('end'))
+        assert(readback:close())
+        if size > limit then ok, err = false, 'compressed journal exceeds byte limit' end
+    end
+    M.captures[#M.captures + 1] = {path = name, bytes = size}
+    return {file = name, bytes = size, decoded_bytes = decoded, rows = rows,
+        complete = ok, error = not ok and tostring(err) or nil}
+end
+
 function M.stateBytes()
     local slice = PCSX.createSaveStateChecked()
     local ok, bytes = pcall(tostring, slice)

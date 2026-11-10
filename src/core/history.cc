@@ -111,7 +111,7 @@ static bool beginProfile(uint32_t events, uint32_t bytes, bool cd, bool audio, u
             initial.assign(g_emulator->m_mem->m_wram + first, g_emulator->m_mem->m_wram + first + length);
         } catch (...) { return false; }
     }
-    if (!journal()->begin(events, bytes, cycles())) return false;
+    if (!journal()->begin(events, bytes, cycles(), cd)) return false;
     ramFirst = first;
     ramLength = length;
     ramShadow.swap(initial);

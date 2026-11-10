@@ -76,13 +76,15 @@ class Capture {
     };
     static constexpr uint32_t MAX_FRAMES = 44100 * 60;
     static constexpr uint32_t MAX_RECORDS = 65536;
+    static constexpr uint32_t MAX_SCHEDULING = 1048576;
     static constexpr uint32_t MAX_BATCH = 1024;
     static constexpr uint32_t MAX_CHUNK = 2048;
     struct Limits {
         uint32_t frames = 0, blocks = 0, events = 0;
+        uint32_t scheduling = 0;
         bool valid() const {
             return frames && frames <= MAX_FRAMES && blocks && blocks <= MAX_RECORDS &&
-                   events && events <= MAX_RECORDS;
+                   events && events <= MAX_RECORDS && scheduling <= MAX_SCHEDULING;
         }
     };
 
@@ -96,9 +98,9 @@ class Capture {
         return {value & STATE_MASK, value >> EPOCH_SHIFT};
     }
 
-    bool begin(uint32_t frames, uint32_t blocks, uint32_t events, uint64_t cycle) {
-        if (!owner() || (m_lifecycle.load() & STATE_MASK) != 0 || !frames || frames > MAX_FRAMES ||
-            !blocks || blocks > MAX_RECORDS || !events || events > MAX_RECORDS || m_epoch == MAX_EPOCH) return false;
+    bool begin(const Limits& limits, uint64_t cycle) {
+        if (!owner() || (m_lifecycle.load() & STATE_MASK) != 0 || !limits.valid() || m_epoch == MAX_EPOCH) return false;
+        const auto [frames, blocks, events, schedulingLimit] = limits;
         std::lock_guard lock(m_workerMutex);
         std::lock_guard scheduleLock(m_scheduleMutex);
         try {
@@ -108,7 +110,7 @@ class Capture {
             std::vector<Worker> workers(events);
             std::vector<Gain> gains(events);
             std::vector<EnvelopeInput> envelopeInputs(events);
-            std::vector<Schedule> scheduling(events);
+            std::vector<Schedule> scheduling(schedulingLimit ? schedulingLimit : events);
             m_pcm.swap(pcm); m_blocks.swap(records); m_events.swap(writes);
             m_workers.swap(workers);
             m_gains.swap(gains);

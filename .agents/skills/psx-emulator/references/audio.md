@@ -106,7 +106,7 @@ They do not establish production timing or PCM acceptance.
 | `workers.ndjson` | Completed worker-batch source ranges, started-voice masks and acknowledged enqueue ranges |
 | `gains.ndjson` | First consumed dry stereo gain pair per voice and later changed pairs, at absolute voice-source frames |
 | `envelope_inputs.ndjson` | First consumed ADSR phase controls per voice and later changes, at absolute voice-source frames |
-| `scheduling.ndjson` | Ordered CPU, producer, queue and master-clock observations |
+| `scheduling.ndjson` or `.ndjson.gz` | Ordered CPU, producer, queue and master-clock observations; gzip above 65536 rows |
 | `spu.ndjson` | Native named access/feed records, exact cycles, observed frame cursor and parent identity |
 | `audio.json` | Native counts/limits/settings/queues, failure/drop data, export checks and retained PCM duration |
 | `sound.json` | Mission bounds, primary/tail observations, stop reason and outcome |
@@ -308,7 +308,9 @@ The append order orders observations outside the queue mutex. It does not make
 master atomics, CPU loads or goal publication atomic with recording, and it does
 not locate CPU writes in sample time. Unfinished enqueue and wait pairs at freeze
 remain visible in `pending_scheduling`. Scheduling storage independently uses the
-event capacity. `scheduling`, `scheduling_limit` and `dropped_scheduling` report its
+event capacity by default. `Audio.begin(frames, blocks, events, scheduling)`
+accepts an independent capacity of 1–1048576. `scheduling`, `scheduling_limit`
+and `dropped_scheduling` report its
 count, capacity and loss. Frozen ranges copy at most 1024 rows before Lua allocation.
 Export has a 32 MiB bound; overflow sets sticky `scheduling` failure. Failed prefixes
 remain readable, and the harness capture and replay aggregate limits still apply.

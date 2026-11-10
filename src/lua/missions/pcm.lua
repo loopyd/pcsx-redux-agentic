@@ -30,24 +30,16 @@ local function plus(value, count)
     return result
 end
 
-local function writeJournalBeforeValidation(name, count, read, byte_limit, validate)
-    local file = assert(io.open(name, 'wb'))
-    local bytes, rows = 0, 0
-    local ok, err = pcall(function()
+local function writeJournalBeforeValidation(name, count, read, byte_limit, validate, compressed)
+    return m.writeJournal(name, compressed, byte_limit, function(write)
         for first = 0, count - 1, 1024 do
             local records = read(first, math.min(1024, count - first))
             for n, record in ipairs(records) do
-                local line = m.json(record) .. '\n'
-                assert(bytes + #line <= byte_limit, 'audio journal exceeds byte limit')
-                assert(file:write(line)); bytes, rows = bytes + #line, rows + 1
+                write(m.json(record) .. '\n')
                 validate(record, first + n - 1)
             end
         end
     end)
-    local closed, why = file:close()
-    m.captures[#m.captures + 1] = {path = name, bytes = bytes}
-    assert(closed, why)
-    return {rows = rows, bytes = bytes, complete = ok, error = not ok and tostring(err) or nil}
 end
 
 function M.export(prefix)
@@ -92,7 +84,7 @@ function M.export(prefix)
         integer(status.gains, 0, status.gain_limit, 'gain count')
         assert(status.envelope_input_limit == status.event_limit, 'native envelope input capacity differs from event limit')
         integer(status.envelope_inputs, 0, status.envelope_input_limit, 'envelope input count')
-        assert(status.scheduling_limit == status.event_limit, 'native scheduling capacity differs from event limit')
+        integer(status.scheduling_limit, 1, 1048576, 'scheduling limit')
         integer(status.scheduling, 0, status.scheduling_limit, 'scheduling count')
         integer(status.failures, 0, 8191, 'failure bits')
         integer(status.first_failure, 0, 4096, 'first failure')
@@ -222,8 +214,9 @@ function M.export(prefix)
                 envelope_previous[voice] = e
             end)
         local enqueue, waiting
+        local large_schedule = status.scheduling > 65536
         result.scheduling = writeJournalBeforeValidation(files.scheduling, status.scheduling, h.scheduling,
-            33554432, function(s, index)
+            large_schedule and 67108864 or 33554432, function(s, index)
                 assert(s.index == index, 'noncontiguous native scheduling index')
                 local kind = integer(s.kind, 1, 8, 'scheduling kind')
                 if kind == 1 then
@@ -306,7 +299,8 @@ function M.export(prefix)
                         waiting = nil
                     end
                 end
-            end)
+            end, large_schedule)
+        files.scheduling = result.scheduling.file
         result.pending_scheduling = {enqueue = enqueue ~= nil, cpu_wait = waiting ~= nil}
         previous = status.begin_cycle
         local observed = '0'

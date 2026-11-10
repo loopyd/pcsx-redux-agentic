@@ -169,8 +169,8 @@ local history = {
         return ffi.new('HistoryCDLimits', result[0])
     end,
     beginCDV3 = function(events, bytes, workers, flags)
-        historyInteger(events, 65536, 'event limit'); historyInteger(bytes, 8388608, 'byte limit')
-        historyInteger(workers, 65536, 'worker event limit'); historyInteger(flags, 3, 'CD flags')
+        historyInteger(events, 67108864, 'event limit'); historyInteger(bytes, 2147483648, 'byte limit')
+        historyInteger(workers, 4194304, 'worker event limit'); historyInteger(flags, 3, 'CD flags')
         assert(C.historyBeginCDV3(events, bytes, workers, flags), 'CD v3 begin refused by native ownership, capacity or environment guards')
     end,
     cdWorkerStatus = function()
@@ -179,15 +179,15 @@ local history = {
         return ffi.new('CDWorkerStatus', result[0])
     end,
     cdWorkerRecords = function(first, count)
-        historyInteger(first, 65536, 'worker record first index')
+        historyInteger(first, 4194304, 'worker record first index')
         historyInteger(count, 65536, 'worker record count')
         local result = ffi.new('CDWorkerRecord[?]', count)
         assert(C.historyCDWorkerRecords(first, count, result), 'CD worker records require a frozen lane and valid range')
         return result
     end,
     beginCD = function(events, bytes, audio)
-        historyInteger(events, 65536, 'event limit')
-        historyInteger(bytes, 8388608, 'byte limit')
+        historyInteger(events, 67108864, 'event limit')
+        historyInteger(bytes, 2147483648, 'byte limit')
         assert(type(audio) == 'boolean', 'CD capture requires explicit joined-audio boolean')
         assert(events > 0 and C.historyBeginCDV3(events, bytes, 0, audio and 1 or 0),
                'CD begin requires empty recorder, context capacity, idle paused interpreter and active joined Audio')
@@ -215,14 +215,14 @@ local history = {
         return ffi.new("HistoryStatus", result[0])
     end,
     records = function(first, count)
-        historyInteger(first, 65536, 'record first index')
+        historyInteger(first, 67108864, 'record first index')
         historyInteger(count, 65536, 'record count')
         local result = ffi.new('HistoryRecord[?]', count)
         assert(C.historyRecords(first, count, result), 'history records require paused frozen capture and a valid range')
         return result
     end,
     bytes = function(offset, length)
-        historyInteger(offset, 8388608, 'payload offset')
+        historyInteger(offset, 2147483648, 'payload offset')
         historyInteger(length, 8388608, 'payload length')
         local result = ffi.new('uint8_t[?]', math.max(1, length))
         assert(C.historyBytes(offset, length, result), 'history bytes require paused frozen capture and a valid range')
@@ -429,29 +429,29 @@ return function()
     end
     history.snapshot = function()
         local owner = nativeSnapshot()
-        local statusBytes, recordBytes, payload = owner:statusBytes(), owner:recordBytes(), owner:payload()
+        local statusBytes = owner:statusBytes()
         assert(#statusBytes == ffi.sizeof('HistoryStatus'), 'invalid native history status size')
         local status = ffi.new('HistoryStatus')
         ffi.copy(status, statusBytes, #statusBytes)
         local count = tonumber(status.events)
-        assert(#recordBytes == count * ffi.sizeof('HistoryRecord'), 'invalid native history record size')
-        local records = ffi.new('HistoryRecord[?]', math.max(1, count))
-        ffi.copy(records, recordBytes, #recordBytes)
         return {
             status = function() return ffi.new('HistoryStatus', status) end,
-            records = function(first, length)
+            records = function(first, length, cd_projection)
                 historyInteger(first, count, 'record first index')
-                historyInteger(length, count - first, 'record count')
-                if first == 0 and length == count then return records end
-                local result = ffi.new('HistoryRecord[?]', math.max(1, length))
-                ffi.copy(result, records + first, length * ffi.sizeof('HistoryRecord'))
-                return result
+                historyInteger(length, math.min(65536, count - first), 'record count')
+                local bytes = owner:recordBytes(first, length, cd_projection == true)
+                local actual = #bytes / ffi.sizeof('HistoryRecord')
+                assert(actual % 1 == 0 and actual <= length and (cd_projection or actual == length),
+                    'invalid native history record size')
+                local result = ffi.new('HistoryRecord[?]', math.max(1, actual))
+                ffi.copy(result, bytes, #bytes)
+                return result, actual
             end,
             bytes = function(offset, length)
-                historyInteger(offset, #payload, 'payload offset')
-                historyInteger(length, #payload - offset, 'payload length')
-                return payload:sub(offset + 1, offset + length)
+                return owner:slice(offset, length)
             end,
+            archive = function(events, payload) return owner:archive(events, payload) end,
+            workerArchive = function(name) return owner:workerArchive(name) end,
             correlateCD = function() return owner:correlateCD() end,
         }
     end

@@ -86,9 +86,9 @@ function M.reference(row)
     return {sequence=m.exact(row.sequence),cycle=m.exact(row.cycle),request=m.exact(row.request),related=m.exact(row.related),
         payload={file='payload.bin',offset=tonumber(row.offset),bytes=tonumber(row.length)}}
 end
-function M.new(status)
-    assert(status.version==1 and status.state==2 and status.failures==0 and status.dropped==0 and status.events<=65536 and
-        status.bytes<=8388608 and status.beginCycle<=status.endCycle, 'CD controller requires complete frozen history')
+function M.new(status,projected)
+    assert(status.version==1 and status.state==2 and status.failures==0 and status.dropped==0 and status.events<=67108864 and
+        status.bytes<=2147483648 and status.beginCycle<=status.endCycle, 'CD controller requires complete frozen history')
     local tracker={};local stack,seen={},{};local count,offset,previous=0,0,status.beginCycle
     local result={accesses=m.array(),commands=m.array(),responses=m.array(),irqs=m.array(),contexts=m.array()}
     local first,final,environment,last,closed
@@ -97,9 +97,11 @@ function M.new(status)
         return frame
     end
     function tracker.push(row,payload)
-        count=count+1
-        assert(row.sequence==count and count<=status.events and row.cycle>=previous and row.cycle<=status.endCycle and
-            row.offset==offset and #payload==tonumber(row.length) and offset+#payload<=status.bytes,'CD journal order/bounds mismatch')
+        assert((projected and row.sequence>count and row.offset>=offset or
+            row.sequence==count+1 and row.offset==offset) and row.sequence<=status.events and
+            row.cycle>=previous and row.cycle<=status.endCycle and #payload==tonumber(row.length) and
+            row.offset+#payload<=status.bytes,'CD journal order/bounds mismatch')
+        count=tonumber(row.sequence)
         previous,offset=row.cycle,offset+#payload
         local kind,phase,d=tonumber(row.kind),tonumber(row.device),M.data(row)
         closed=nil
@@ -187,7 +189,8 @@ function M.new(status)
     function tracker.initial() return first end
     function tracker.environment() return environment end
     function tracker.finish()
-        assert(count==status.events and offset==status.bytes and first and final and environment and #stack==0,'incomplete wire-3 controller boundaries')
+        assert((projected or count==status.events and offset==status.bytes) and first and final and environment and
+            #stack==0,'incomplete wire-3 controller boundaries')
         result.environment=environment;result.initial=first;result.final=final
         result.scope='wire-3 native scopes, four qualified queues, handler returns and response branches'
         return result

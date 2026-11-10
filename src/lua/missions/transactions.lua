@@ -41,35 +41,36 @@ local function referenceContexts(result)
     controller.final=assert(boundaries[1])
     result.context_encoding='wire-3-payload-reference/384'
 end
-function M.scan(h,limits,audio,bindings,correlated)
+local function scan(h,limits,audio,bindings,projection)
     if type(h.snapshot)=='function' then h=h.snapshot() end
-    local status=h.status();local controller=c.new(status);local sectors=require('sectors').new(limits)
-    correlated=correlated or (type(h.correlateCD)=='function' and h.correlateCD())
+    local status=h.status();local controller=c.new(status,projection~=nil);local sectors=require('sectors').new(limits)
+    local correlated=type(h.correlateCD)=='function' and h.correlateCD()
     assert(type(correlated)=='table' and type(correlated.decoded)=='table' and type(correlated.feeds)=='table',
         'native CD correlation or an owning correlated report is required')
     local names={'controller','scheduler','streams','media','sectors','audio','eligibility','delivery','transfers','command',
         'submission','playback','lid'}
-    local consumers={controller,require('scheduler').new(controller),require('streams').new(controller),
+    local scheduler=require('scheduler').new(projection)
+    local consumers={controller,scheduler,require('streams').new(controller),
         require('media').new(controller),sectors,require('feeds').new(controller,audio,correlated.feeds),require('eligibility').new(controller),
         require('delivery').new(controller),require('transfers').new(controller),require('command').new(controller),
         require('submission').new(controller),require('playback').new(controller),require('lid').new(controller)}
     local images,geometry,previous,boundaries={}
-    local records=h.records(0,tonumber(status.events))
-    local frozen=h.bytes(0,tonumber(status.bytes))
-    for index=0,tonumber(status.events)-1 do
-        local row=records[index];events.describe(row)
+    for _,length,records in events.batches(h,tonumber(status.events),projection~=nil) do
+      for index=0,length-1 do
+        local row=records[index]
         local offset,length=tonumber(row.offset),tonumber(row.length)
         assert(offset>=0 and length>=0 and offset%1==0 and length%1==0 and offset+length<=tonumber(status.bytes),
             'native CD payload exceeds frozen journal')
-        local payload=frozen:sub(offset+1,offset+length);assert(#payload==length,'short owning native payload copy')
+        local payload=h.bytes(offset,length);assert(#payload==length,'short owning native payload copy')
         if row.kind==47 then
             local phase=tonumber(row.device);assert(not controller.current() and not images[phase],'nested or duplicate image boundary')
             local decoded=image.decode(row,payload)
-            if phase==0 then assert(previous and previous.kind==34 and previous.device==2,'initial native image lacks environment');geometry=payload
+            if phase==0 then assert(previous and previous.sequence+1==row.sequence and previous.kind==34 and previous.device==2,
+                'initial native image lacks environment');geometry=payload
             else assert(images[0] and geometry==payload,'native mounted image changed across capture') end
             images[phase]={descriptor=decoded,payload=c.reference(row).payload,binding=image.bind(decoded,bindings)}
         elseif row.kind==34 and row.device==0 then assert(images[0] and not images[1],'native controller starts without image')
-        elseif row.kind==34 and row.device==1 then assert(images[1] and previous and previous.kind==47 and previous.device==1,
+        elseif row.kind==34 and row.device==1 then assert(images[1] and previous and previous.sequence+1==row.sequence and previous.kind==47 and previous.device==1,
             'native controller ends without adjacent final image')
         elseif images[1] then assert((row.kind==41 and row.device==1) or (row.kind==37 and row.device==7),
             'unexpected activity after final native image') end
@@ -78,6 +79,7 @@ function M.scan(h,limits,audio,bindings,correlated)
             boundaries=boundaries or {};boundaries[tonumber(row.device)]=c.reference(row).payload
         end
         previous=row
+      end
     end
     assert(images[0] and images[1],'native image boundaries incomplete')
     local result={schema='psx.runtime-cd-transactions/v3',native_envelope_version=1,cd_observation_version=3,
@@ -95,10 +97,53 @@ function M.scan(h,limits,audio,bindings,correlated)
     referenceContexts(result)
     return result
 end
+local function writeArchive(name,value)
+    local archive=m.writeJournal(name,true,67108864,function(write)
+        local function object(fields,sections)
+            local keys={}
+            for key in pairs(fields) do keys[#keys+1]=key end
+            table.sort(keys)
+            write('{')
+            for index,key in ipairs(keys) do
+                if index>1 then write(',') end
+                write(m.json(key)..':')
+                local item=fields[key]
+                local length=type(item)=='table' and #item or 0
+                if sections and type(item)=='table' and length==0 and getmetatable(item)==nil then
+                    object(item,false)
+                elseif length>256 then
+                    local count=0
+                    for key in pairs(item) do
+                        assert(type(key)=='number' and key>=1 and key<=length and key%1==0,
+                            'transaction array keys must be contiguous positive integers')
+                        count=count+1
+                    end
+                    assert(count==length,'transaction array has a gap')
+                    write('[')
+                    for first=1,length,256 do
+                        local batch=m.array()
+                        for row=first,math.min(first+255,length) do batch[#batch+1]=item[row] end
+                        if first>1 then write(',') end
+                        write(m.json(batch):sub(2,-2))
+                    end
+                    write(']')
+                else
+                    write(m.json(item))
+                end
+            end
+            write('}')
+        end
+        object(value,true)
+        write('\n')
+    end)
+    assert(archive.complete,archive.error)
+    return archive.file
+end
 function M.export(h,limits,native,audio,bindings,snapshot_error,prefix)
     prefix=prefix or ''
     assert(type(prefix)=='string' and #prefix<=32 and prefix:match('^[%w_.-]*$'),'invalid capture prefix')
-    local ok,result,encoded=pcall(function()
+    local name=prefix..'transactions.json'
+    local ok,result,file=pcall(function()
         assert(not snapshot_error,'native CD snapshot unavailable: '..tostring(snapshot_error))
         local status=h.status();local build_identity=m.buildIdentity()
         assert(native and native.schema=='psx.native-history/v2' and native.native_envelope_version==1 and native.cd_observation_version==3 and
@@ -106,23 +151,35 @@ function M.export(h,limits,native,audio,bindings,snapshot_error,prefix)
             native.complete and native.failure_bits==0 and native.dropped_attempts==0 and native.events==tonumber(status.events) and
             native.payload_bytes==tonumber(status.bytes) and native.begin_cycle==m.exact(status.beginCycle) and native.end_cycle==m.exact(status.endCycle),
             'native CD correlation requires matching complete revisioned journal and exact build receipt')
-        local value=M.scan(h,limits,audio,bindings)
-        if prefix~='' then
+        local projection=native.scheduler_projection
+        if projection then projection.file=native.events_file end
+        local value=scan(h,limits,audio,bindings,projection)
+        if native.payload_file~='payload.bin' then
             local function files(node)
                 if type(node)~='table' then return end
                 for key,item in pairs(node) do
-                    if key=='file' and item=='payload.bin' then node[key]=prefix..item
+                    if key=='file' and item=='payload.bin' then node[key]=native.payload_file
                     elseif type(item)=='table' then files(item) end
                 end
             end
             files(value)
         end
-        local bytes=m.json(value);assert(#bytes<=67108864,'native correlation export exceeds 64 MiB')
-        return value,bytes
+        if projection then return value,writeArchive(name,value) end
+        local encoded,bytes=pcall(m.json,value)
+        if not encoded then
+            assert(bytes:find('value budget exceeded',1,true) or bytes:find('output exceeds 64 MiB',1,true),bytes)
+        end
+        if not encoded or #bytes>=67108864 then return value,writeArchive(name,value) end
+        m.write(name,bytes..'\n')
+        return value,name
     end)
-    if not ok then result={schema='psx.runtime-cd-transactions/v3',native_envelope_version=1,cd_observation_version=3,complete=false,error=tostring(result)};
-        encoded=m.json(result) end
-    m.write(prefix..'transactions.json',encoded..'\n');return result
+    if not ok then
+        result={schema='psx.runtime-cd-transactions/v3',native_envelope_version=1,cd_observation_version=3,
+            complete=false,error=tostring(result)}
+        m.report(name,result)
+        file=name
+    end
+    return result,file
 end
 return M
 -- )EOF"

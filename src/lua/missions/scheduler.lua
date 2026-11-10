@@ -1,16 +1,26 @@
 -- lualoader, R"EOF(--
 local ffi,bit,m,c=require 'ffi',require 'bit',require 'support',require 'controller'
 local M={}
-function M.new(controller)
+function M.new(projection)
     local tracker={};local owners,targets={},{};local boundaries={};local pass
     local result={records=m.array(),slots=m.array({2,3,4,10}),scale_bits=m.array(),passes=0}
+    if projection then
+        result.passes=projection.passes
+        result.target_tests=projection.target_tests
+        result.pass_records={file=projection.file,kind='cd-schedule',device=3}
+        result.target_test_records={file=projection.file,kind='cd-schedule',device=4}
+    end
     function tracker.push(row,payload)
         if row.kind==34 and row.device==2 then
             assert(tonumber(row.data[3])==11,'scheduler scale catalogue differs')
             for i=0,10 do result.scale_bits[i+1]=m.u32le(payload,112+i*4) end
         elseif row.kind==37 then
-            local phase,d=tonumber(row.device),c.data(row);local record=c.reference(row);record.variant=phase
-            if phase==3 then pass=m.exact(row.request);result.passes=result.passes+1;record.pass=pass;record.snapshot_mask=d[1];record.live_mask=d[2]
+            local phase=tonumber(row.device)
+            if phase==3 then
+                pass=m.exact(row.request);result.passes=result.passes+1
+            end
+            local d=c.data(row);local record=c.reference(row);record.variant=phase
+            if phase==3 then record.pass=pass;record.snapshot_mask=d[1];record.live_mask=d[2]
             elseif phase==6 or phase==7 then
                 local slot=d[1];assert(slot==2 or slot==3 or slot==4 or slot==10,'unknown native CD slot')
                 boundaries[phase]=boundaries[phase] or {};assert(not boundaries[phase][slot],'duplicate schedule boundary');boundaries[phase][slot]=true
@@ -27,7 +37,7 @@ function M.new(controller)
                 if phase==1 or phase==2 then owners[slot]=m.exact(row.request);targets[slot]=target
                     assert(d[2]==(phase==2 and 1 or 0),'schedule cancel branch mismatch')
                 else
-                    assert(pass and record.pass==pass and target==m.exact(old),'scheduler target-test pass mismatch')
+                    assert((projection or pass and record.pass==pass) and target==m.exact(old),'scheduler target-test pass mismatch')
                     if phase==5 then assert(d[2]==1,'dispatch predicate missing');owners[slot]='0' end
                 end
             end

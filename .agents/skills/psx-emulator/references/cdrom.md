@@ -23,14 +23,15 @@ guest MMIO stores. Response wait leaves FIFO unconsumed/unacknowledged.
 `savestate` applies only to commands.
 
 Capture bounds/defaults: `frames=1..36000` (60),
-`events=1..65536` (65536), `bytes=1..8388608` (8388608), correlation
+`events=1..67108864` (65536), `bytes=1..2147483648` (8388608), correlation
 `mutations=1..65536` (4096), `reads=1..8388608` (8388608).
 Optional aligned `stop` must arrive before frame exhaustion. Native capacity
 floors also apply.
 
 `audio=1` joins PCM with `samples=1..2646000` (441000), `blocks=1..65536`
-(16384), `spuevents=1..65536` (16384). `decoded=1` requires audio and
-`workers=1..65536` (65536); worker arguments otherwise refuse. Audio capacities
+(16384), `spuevents=1..65536` (16384), and `scheduling=1..1048576` (the
+`spuevents` value). `decoded=1` requires audio and
+`workers=1..4194304` (65536); worker arguments otherwise refuse. Audio capacities
 without audio refuse. Capture requires actual media ownership; unsupported
 cached/transformed Filev2 owners refuse admission.
 
@@ -41,6 +42,35 @@ The native envelope is version 1 and CD observation wire version 3. Reports use
 `psx.native-history/v2`, with exact harness binary/source identity. Contexts are
 384 bytes, queues 32 bytes, scheduler projections 48 bytes, worker rows 80 bytes
 and worker status 48 bytes. Use native layouts and capacity floors.
+
+Use `events.json.events_file`, `events.json.payload_file` and
+`audio.json.files.scheduling` to locate the journals. History above 65536
+records or 8 MiB of payload uses `events.hst.gz` and `payload.hst.gz`.
+Run the decoder from the emulator checkout, using the paths from the capture:
+
+```sh
+python3 tools/history-unpack.py events.hst.gz \
+  --payload payload.hst.gz --payload-output payload.bin > events.bin
+```
+
+Omit both payload options to decode only records. The decoder writes every
+original 80-byte record in order: sequence, cycle, request and related as
+four little-endian u64 values, then kind, device, eight data words, payload
+offset and length as twelve little-endian u32 values. Payload references
+always address the decompressed bytes. The transaction report references
+the archived scheduler passes and target tests through `pass_records` and
+`target_test_records`; other variants stay in `scheduler.records`.
+Find the correlation report through `transport.json.transactions_file` or
+the disc schedule segment's `transactions_file`. Packed history and reports
+that exceed the plain JSON encoder limits use `transactions.json.gz` with the
+same JSON schema after decompression.
+Audio scheduling above 65536 rows uses gzip over the original NDJSON rows.
+Decoded-worker histories above 65536 rows use `decoded.bin.gz`. Decompress
+to read the original 80-byte records: sequence, epoch, batch, sample ordinal,
+CPU publication cycle and related feed as six little-endian u64 values, then
+kind, flags and six data words as eight little-endian u32 values.
+`transport.json.worker` reports worker status, including overflow.
+Capture limits are 64 MiB per file and 128 MiB total on disk.
 
 Full controller contexts use `wire-3-payload-reference/384` references into the
 captured payload file. Resolve `controller.initial`, `controller.final`,

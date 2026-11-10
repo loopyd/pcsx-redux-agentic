@@ -5,11 +5,17 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 namespace PCSX::History {
+
+inline constexpr uint32_t RECORD_BATCH_LIMIT = 65536;
+inline constexpr uint32_t CD_EVENT_LIMIT = 67108864;
+inline constexpr uint32_t PAYLOAD_BATCH_LIMIT = 8388608;
+inline constexpr uint32_t CD_PAYLOAD_LIMIT = 2147483648u;
 
 enum class Failure : uint32_t {
     Events = 1, Bytes = 2, Thread = 4, Unsupported = 8,
@@ -31,29 +37,31 @@ struct Status {
 };
 static_assert(sizeof(Status) == 48);
 
+struct Storage {
+    std::vector<Record> records;
+    std::vector<uint8_t> payload;
+};
 struct Snapshot {
     Status status;
     uint64_t epoch = 0;
-    std::vector<Record> records;
-    std::vector<uint8_t> payload;
+    std::shared_ptr<const Storage> storage;
 };
 
 class Journal {
   public:
     explicit Journal(std::thread::id owner = std::this_thread::get_id()) : m_owner(owner) {}
-    bool begin(uint32_t events, uint32_t bytes, uint64_t cycle) {
+    bool begin(uint32_t events, uint32_t bytes, uint64_t cycle, bool cd = false) {
         std::lock_guard guard(m_mutex);
-        if (!owner() || m_status.state != 0 || events == 0 || events > 65536 || bytes > 8 * 1024 * 1024) return false;
-        std::vector<Record> records;
-        std::vector<uint8_t> payload;
+        if (!owner() || m_status.state != 0 || events == 0 || events > (cd ? CD_EVENT_LIMIT : RECORD_BATCH_LIMIT) ||
+            bytes > (cd ? CD_PAYLOAD_LIMIT : PAYLOAD_BATCH_LIMIT)) return false;
         try {
-            records.reserve(events);
-            payload.reserve(bytes);
+            auto storage = std::make_shared<Storage>();
+            storage->records.reserve(events);
+            storage->payload.reserve(bytes);
+            m_storage = std::move(storage);
         } catch (...) {
             return false;
         }
-        m_records.swap(records);
-        m_payload.swap(payload);
         m_eventLimit = events;
         m_byteLimit = bytes;
         m_status = {};
@@ -69,23 +77,23 @@ class Journal {
         if (m_status.state != 1) return false;
         if (!owner()) return drop(Failure::Thread);
         if (m_status.failures) return drop();
-        if (m_records.size() >= m_eventLimit) return drop(Failure::Events);
-        if (length > m_byteLimit - m_payload.size()) return drop(Failure::Bytes);
+        if (m_storage->records.size() >= m_eventLimit) return drop(Failure::Events);
+        if (length > m_byteLimit - m_storage->payload.size()) return drop(Failure::Bytes);
         if (length && !bytes) return drop(Failure::Bounds);
         uint64_t cycle = clock();
         if (cycle < m_status.endCycle) return drop(Failure::Clock);
-        record.sequence = m_records.size() + 1;
+        record.sequence = m_storage->records.size() + 1;
         record.cycle = cycle;
-        record.offset = m_payload.size();
+        record.offset = m_storage->payload.size();
         record.length = length;
         if (length) {
             const auto* first = static_cast<const uint8_t*>(bytes);
-            m_payload.insert(m_payload.end(), first, first + length);
+            m_storage->payload.insert(m_storage->payload.end(), first, first + length);
         }
-        m_records.push_back(record);
+        m_storage->records.push_back(record);
         m_status.endCycle = cycle;
-        m_status.events = m_records.size();
-        m_status.bytes = m_payload.size();
+        m_status.events = m_storage->records.size();
+        m_status.bytes = m_storage->payload.size();
         return true;
     }
 
@@ -106,8 +114,7 @@ class Journal {
     bool clear() {
         std::lock_guard guard(m_mutex);
         if (!owner() || m_status.state == 1) return false;
-        m_records.clear();
-        m_payload.clear();
+        m_storage.reset();
         m_status = {};
         return true;
     }
@@ -119,25 +126,24 @@ class Journal {
     }
     bool records(uint32_t first, uint32_t count, Record* out) const {
         std::lock_guard guard(m_mutex);
-        if (!owner() || m_status.state != 2 || count > 65536 || first > m_records.size() ||
-            count > m_records.size() - first || (count && !out)) return false;
-        if (count) std::memcpy(out, m_records.data() + first, size_t(count) * sizeof(Record));
+        if (!owner() || m_status.state != 2 || count > RECORD_BATCH_LIMIT || first > m_storage->records.size() ||
+            count > m_storage->records.size() - first || (count && !out)) return false;
+        if (count) std::memcpy(out, m_storage->records.data() + first, size_t(count) * sizeof(Record));
         return true;
     }
     bool bytes(uint32_t offset, uint32_t length, void* out) const {
         std::lock_guard guard(m_mutex);
-        if (!owner() || m_status.state != 2 || offset > m_payload.size() ||
-            length > m_payload.size() - offset || (length && !out)) return false;
-        if (length) std::memcpy(out, m_payload.data() + offset, length);
+        if (!owner() || m_status.state != 2 || offset > m_storage->payload.size() ||
+            length > m_storage->payload.size() - offset || (length && !out)) return false;
+        if (length) std::memcpy(out, m_storage->payload.data() + offset, length);
         return true;
     }
     bool snapshot(Snapshot& out) const {
         std::lock_guard guard(m_mutex);
-        if (!owner() || m_status.state != 2 || m_records.size() > 65536 || m_payload.size() > 8 * 1024 * 1024)
+        if (!owner() || m_status.state != 2 || m_storage->records.size() > m_eventLimit || m_storage->payload.size() > m_byteLimit)
             return false;
         out.status = m_status;
-        out.records = m_records;
-        out.payload = m_payload;
+        out.storage = m_storage;
         return true;
     }
     bool owner() const { return std::this_thread::get_id() == m_owner; }
@@ -155,8 +161,7 @@ class Journal {
     }
     const std::thread::id m_owner;
     mutable std::mutex m_mutex;
-    std::vector<Record> m_records;
-    std::vector<uint8_t> m_payload;
+    std::shared_ptr<Storage> m_storage;
     Status m_status;
     uint32_t m_eventLimit = 0, m_byteLimit = 0;
 };

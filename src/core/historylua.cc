@@ -2,10 +2,14 @@
 #include "core/historylua.h"
 
 #include <algorithm>
+#include <bit>
 #include <charconv>
 #include <cmath>
+#include <filesystem>
 #include <optional>
 #include <unordered_set>
+#include <utility>
+#include <zlib.h>
 
 #include "core/history.h"
 #include "core/psxemulator.h"
@@ -35,6 +39,7 @@ struct FrozenCapture {
     CD::WorkerSnapshot worker;
     SPU::Capture::Snapshot audio;
     std::optional<Correlations> correlations;
+    std::string workerFile;
 };
 struct CaptureOwner { FrozenCapture* value = nullptr; };
 
@@ -45,10 +50,10 @@ uint64_t little(const uint8_t* bytes, uint32_t size) {
     return value;
 }
 const uint8_t* payload(const FrozenCapture& capture, const Record& row, uint32_t size) {
-    require(row.length == size && row.offset <= capture.history.payload.size() &&
-                size <= capture.history.payload.size() - row.offset,
+    require(row.length == size && row.offset <= capture.history.storage->payload.size() &&
+                size <= capture.history.storage->payload.size() - row.offset,
             "native CD payload exceeds frozen journal");
-    return size ? capture.history.payload.data() + row.offset : nullptr;
+    return size ? capture.history.storage->payload.data() + row.offset : nullptr;
 }
 CD::WorkerStatus workerStatus(const uint8_t* bytes) {
     CD::WorkerStatus result;
@@ -86,7 +91,7 @@ Correlations correlate(const FrozenCapture& capture) {
     const auto& history = capture.history;
     const auto& status = history.status;
     require(status.version == 1 && status.state == 2 && !status.failures && !status.dropped &&
-                status.events == history.records.size() && status.bytes == history.payload.size() &&
+                status.events == history.storage->records.size() && status.bytes == history.storage->payload.size() &&
                 status.beginCycle <= status.endCycle,
             "CD correlation requires complete frozen history");
     Correlations result;
@@ -95,8 +100,8 @@ Correlations correlate(const FrozenCapture& capture) {
     uint64_t previous = status.beginCycle;
     uint32_t offset = 0;
     std::unordered_set<uint64_t> audioJoins;
-    for (uint32_t index = 0; index < history.records.size(); ++index) {
-        const auto& row = history.records[index];
+    for (uint32_t index = 0; index < history.storage->records.size(); ++index) {
+        const auto& row = history.storage->records[index];
         require(row.sequence == uint64_t(index) + 1 && row.cycle >= previous && row.cycle <= status.endCycle &&
                     row.offset == offset && row.length <= status.bytes - offset,
                 "CD journal order/bounds mismatch");
@@ -121,7 +126,8 @@ Correlations correlate(const FrozenCapture& capture) {
             }
         } else if (row.kind == uint32_t(Kind::CdTransition) && row.device >= 16) {
             const auto value = workerStatus(payload(capture, row, 48));
-            require(value.version == 4 && !value.failures && !value.dropped && value.limit >= 1 && value.limit <= 65536,
+            require(value.version == 4 && !value.failures && !value.dropped && value.limit >= 1 &&
+                        value.limit <= CD::WORKER_EVENT_LIMIT,
                     "incomplete native worker boundary");
             if (row.device == 16) {
                 require(!first && value.state == 1 && !value.events, "invalid native worker start");
@@ -291,8 +297,13 @@ void pushWorkerStatus(lua_State* state, const CD::WorkerStatus& status) {
 }
 void pushDecoded(lua_State* state, const FrozenCapture& capture, const Correlations& result) {
     lua_newtable(state); boolean(state, "enabled", result.enabled);
-    array(state);
-    if (result.enabled) for (const auto& row : capture.worker.records) {
+    if (!capture.workerFile.empty()) {
+        string(state, "records_file", capture.workerFile.c_str());
+        string(state, "records_encoding", "worker-record-le-gzip");
+        number(state, "record_bytes", sizeof(CD::WorkerRecord));
+    } else {
+      array(state);
+      if (result.enabled) for (const auto& row : capture.worker.records) {
         lua_newtable(state); number(state, "sequence", row.sequence); wide(state, "epoch", row.epoch); wide(state, "batch", row.batch);
         wide(state, "sample_ordinal", row.sampleOrdinal); wide(state, "last_published_cpu_cycle", row.cpuPublicationCycle);
         wide(state, "last_published_feed", row.relatedFeed); number(state, "kind", row.kind); number(state, "flags", row.flags);
@@ -301,11 +312,12 @@ void pushDecoded(lua_State* state, const FrozenCapture& capture, const Correlati
         array(state);
         for (uint32_t n = 0; n < row.data.size(); ++n) { lua_pushnumber(state, row.data[n]); lua_rawseti(state, -2, n + 1); }
         lua_setfield(state, -2, "raw"); lua_rawseti(state, -2, row.sequence);
+      }
+      lua_setfield(state, -2, "records");
     }
-    lua_setfield(state, -2, "records");
     array(state);
     for (uint32_t n = 0; n < result.handoffs.size(); ++n) {
-        const auto& handoff = result.handoffs[n]; reference(state, capture.history.records[handoff.record]);
+        const auto& handoff = result.handoffs[n]; reference(state, capture.history.storage->records[handoff.record]);
         wide(state, "epoch", handoff.epoch); wide(state, "first", handoff.first); wide(state, "last", handoff.last);
         number(state, "count", handoff.count); number(state, "flags", handoff.flags); lua_rawseti(state, -2, n + 1);
     }
@@ -340,16 +352,6 @@ int statusBytes(lua_State* state) {
     const auto& value = frozen(state).history.status;
     lua_pushlstring(state, reinterpret_cast<const char*>(&value), sizeof(value)); return 1;
 }
-int recordBytes(lua_State* state) {
-    if (lua_gettop(state) != 1) return luaL_error(state, "recordBytes requires one History capture");
-    const auto& value = frozen(state).history.records;
-    lua_pushlstring(state, value.empty() ? "" : reinterpret_cast<const char*>(value.data()), value.size() * sizeof(Record)); return 1;
-}
-int payloadBytes(lua_State* state) {
-    if (lua_gettop(state) != 1) return luaL_error(state, "payload requires one History capture");
-    const auto& value = frozen(state).history.payload;
-    lua_pushlstring(state, value.empty() ? "" : reinterpret_cast<const char*>(value.data()), value.size()); return 1;
-}
 uint32_t integer(lua_State* state, int index, uint32_t maximum) {
     if (lua_type(state, index) != LUA_TNUMBER) luaL_error(state, "history range must be numeric");
     const auto value = lua_tonumber(state, index);
@@ -357,12 +359,223 @@ uint32_t integer(lua_State* state, int index, uint32_t maximum) {
         luaL_error(state, "history range must be an integer within its bound");
     return uint32_t(value);
 }
+int recordBytes(lua_State* state) {
+    if (lua_gettop(state) != 4 || !lua_isboolean(state, 4))
+        return luaL_error(state, "recordBytes requires History capture, first index, count and CD projection flag");
+    const auto& value = frozen(state).history.storage->records;
+    const auto first = integer(state, 2, CD_EVENT_LIMIT), count = integer(state, 3, RECORD_BATCH_LIMIT);
+    if (first > value.size() || count > value.size() - first)
+        return luaL_error(state, "history record range exceeds frozen capture");
+    if (!lua_toboolean(state, 4)) {
+        lua_pushlstring(state, count ? reinterpret_cast<const char*>(value.data() + first) : "", count * sizeof(Record));
+        return 1;
+    }
+    auto* rows = static_cast<Record*>(lua_newuserdata(state, count * sizeof(Record)));
+    uint32_t written = 0;
+    for (uint32_t n = first; n < first + count; ++n) {
+        const auto& row = value[n];
+        if (row.kind < uint32_t(Kind::CdContext) || row.kind > uint32_t(Kind::CdImage) ||
+            (row.kind == uint32_t(Kind::CdSchedule) && (row.device == 3 || row.device == 4))) continue;
+        std::memcpy(rows + written++, &row, sizeof(row));
+    }
+    lua_pushlstring(state, written ? reinterpret_cast<const char*>(rows) : "", written * sizeof(Record));
+    return 1;
+}
 int slice(lua_State* state) {
     if (lua_gettop(state) != 3) return luaL_error(state, "slice requires History capture, offset and length");
-    const auto& value = frozen(state).history.payload;
-    const auto offset = integer(state, 2, 8388608), length = integer(state, 3, 8388608);
+    const auto& value = frozen(state).history.storage->payload;
+    const auto offset = integer(state, 2, CD_PAYLOAD_LIMIT), length = integer(state, 3, PAYLOAD_BATCH_LIMIT);
     if (offset > value.size() || length > value.size() - offset) return luaL_error(state, "history slice exceeds frozen payload");
     lua_pushlstring(state, length ? reinterpret_cast<const char*>(value.data() + offset) : "", length); return 1;
+}
+
+// Keep archive I/O on the frozen owner. Offsets always address decompressed payload bytes.
+class GzipOutput {
+  public:
+    explicit GzipOutput(const char* path) : m_path(path), m_file(gzopen(path, "wb6")) {
+        require(m_file != nullptr, "cannot open compressed history journal");
+    }
+    ~GzipOutput() { if (m_file) gzclose(m_file); }
+    void write(const void* bytes, unsigned size) {
+        require(gzwrite(m_file, bytes, size) == int(size), "short compressed history write");
+        const auto offset = gzoffset(m_file);
+        require(offset >= 0 && uint64_t(offset) <= limit, "compressed history exceeds 64 MiB");
+    }
+    uint64_t close() {
+        require(gzclose(std::exchange(m_file, nullptr)) == Z_OK, "compressed history close failed");
+        const auto size = std::filesystem::file_size(m_path);
+        require(size <= limit, "compressed history exceeds 64 MiB");
+        return size;
+    }
+  private:
+    static constexpr uint64_t limit = 64 * 1024 * 1024;
+    const char* m_path;
+    gzFile m_file;
+};
+
+struct ArchiveStats {
+    std::array<uint32_t, uint32_t(Kind::RamInstruction) + 1> kinds{};
+    std::array<uint64_t, 7> dma{};
+    uint32_t passes = 0, tests = 0;
+    uint64_t eventsBytes = 0, payloadBytes = 0;
+};
+
+ArchiveStats writeArchive(const Snapshot& capture, const char* recordsPath, const char* payloadPath) {
+    const auto& status = capture.status;
+    const auto& [records, payload] = *capture.storage;
+    require(status.events == records.size() && status.bytes == payload.size() &&
+                status.beginCycle <= status.endCycle, "invalid frozen history size or interval");
+    ArchiveStats stats;
+    GzipOutput events(recordsPath);
+    GzipOutput bytes(payloadPath);
+    const std::array<uint8_t, 8> header{'H', 'S', 'T', '1', uint8_t(status.events), uint8_t(status.events >> 8),
+                                         uint8_t(status.events >> 16), uint8_t(status.events >> 24)};
+    events.write(header.data(), header.size());
+    const std::array<uint8_t, 8> payloadHeader{'H', 'S', 'P', '1', uint8_t(status.bytes), uint8_t(status.bytes >> 8),
+                                                uint8_t(status.bytes >> 16), uint8_t(status.bytes >> 24)};
+    bytes.write(payloadHeader.data(), payloadHeader.size());
+    constexpr uint32_t batch = 4096, width = 68;
+    std::vector<uint8_t> columns(batch * width);
+    std::vector<uint8_t> payloadBatch;
+    payloadBatch.reserve(2 * PAYLOAD_BATCH_LIMIT);
+    std::array<std::array<uint64_t, 6>, 11> targetBytes{};
+    std::array<std::array<std::array<uint64_t, 2>, 9>, uint32_t(Kind::RamInstruction) + 1> ids{};
+    std::array<uint64_t, 11> owners{};
+    std::array<uint32_t, 11> scales{};
+    uint64_t cycle = 0, delta = 0, pass = 0;
+    uint32_t offset = 0;
+    bool finalImage = false;
+    for (uint32_t first = 0; first < status.events; first += batch) {
+        const auto count = std::min(batch, status.events - first);
+        for (uint32_t n = 0; n < count; ++n) {
+            const auto& row = records[first + n];
+            require(row.sequence == uint64_t(first) + n + 1 && row.cycle >= std::max(cycle, status.beginCycle) &&
+                        row.cycle <= status.endCycle && row.offset == offset && row.length <= status.bytes - offset &&
+                        row.kind && row.kind < stats.kinds.size(), "frozen history order or range mismatch");
+            ++stats.kinds[row.kind];
+            if (row.kind == uint32_t(Kind::DmaData)) {
+                require(row.device < stats.dma.size() && row.length == row.data[2], "invalid DMA payload");
+                stats.dma[row.device] += row.length;
+            }
+            if (finalImage) require((row.kind == uint32_t(Kind::CdContext) && row.device == 1) ||
+                                        (row.kind == uint32_t(Kind::CdBuffer) && row.device == 1) ||
+                                        (row.kind == uint32_t(Kind::CdSchedule) && row.device == 7),
+                                    "unexpected activity after final native image");
+            if (row.kind == uint32_t(Kind::CdImage) && row.device == 1) finalImage = true;
+            if (row.kind == uint32_t(Kind::CdContext) && row.device == 2) {
+                require(row.length >= 156 && row.data[3] == 11, "invalid native schedule environment");
+                for (size_t slot = 0; slot < scales.size(); ++slot)
+                    scales[slot] = little(payload.data() + offset + 112 + slot * 4, 4);
+            } else if (row.kind == uint32_t(Kind::CdSchedule)) {
+                const auto phase = row.device, slot = row.data[0];
+                if (phase == 3) {
+                    require(!row.length, "unexpected native pass payload");
+                    pass = row.request;
+                    ++stats.passes;
+                } else {
+                    require(slot == 2 || slot == 3 || slot == 4 || slot == 10, "invalid native CD slot");
+                    if (phase == 6) owners[slot] = row.request;
+                    else if (phase == 7) require(owners[slot] == row.request, "final native schedule ancestry differs");
+                    else {
+                        require(phase >= 1 && phase <= 5 && row.length == 48, "invalid native scheduler transition");
+                        const auto* bytes = payload.data() + offset;
+                        require(owners[slot] == little(bytes + 8, 8) && scales[slot] == little(bytes + 40, 4) &&
+                                    !little(bytes + 44, 4), "native schedule owner or scale mismatch");
+                        if (phase <= 2) owners[slot] = row.request;
+                        else {
+                            require(pass && pass == little(bytes, 8) && little(bytes + 16, 8) == little(bytes + 24, 8),
+                                    "native scheduler target-test pass mismatch");
+                            if (phase == 4) ++stats.tests;
+                            else owners[slot] = 0;
+                        }
+                    }
+                }
+            }
+            uint32_t col = 0;
+            const auto write = [&](uint64_t value, uint32_t size) {
+                for (uint32_t i = 0; i < size; ++i, ++col) columns[col * count + n] = uint8_t(value >> (8 * i));
+            };
+            auto& previous = ids[row.kind][std::min(row.device, 8u)];
+            const auto step = row.cycle - cycle;
+            write(step - delta, 8); write(row.request - previous[0], 8); write(row.related - previous[1], 8);
+            cycle = row.cycle; delta = step; previous = {row.request, row.related};
+            write(row.kind, 4); write(row.device, 4);
+            for (auto value : row.data) write(value, 4);
+            write(row.length, 4);
+            if (row.length) {
+                const auto* source = payload.data() + offset;
+                if (row.kind == uint32_t(Kind::CdSchedule) && row.device == 4) {
+                    auto& prior = targetBytes[row.data[0]];
+                    for (uint32_t i = 0; i < prior.size(); ++i) {
+                        const auto value = little(source + i * 8, 8), difference = value - prior[i];
+                        prior[i] = value;
+                        for (uint32_t j = 0; j < 8; ++j) payloadBatch.push_back(uint8_t(difference >> (8 * j)));
+                    }
+                } else {
+                    payloadBatch.insert(payloadBatch.end(), source, source + row.length);
+                }
+                if (payloadBatch.size() >= PAYLOAD_BATCH_LIMIT) {
+                    bytes.write(payloadBatch.data(), payloadBatch.size());
+                    payloadBatch.clear();
+                }
+            }
+            offset += row.length;
+        }
+        events.write(columns.data(), count * width);
+    }
+    require(offset == status.bytes, "unreferenced native history payload");
+    stats.eventsBytes = events.close();
+    if (!payloadBatch.empty()) bytes.write(payloadBatch.data(), payloadBatch.size());
+    stats.payloadBytes = bytes.close();
+    return stats;
+}
+
+int archive(lua_State* state) {
+    if (lua_gettop(state) != 3) return luaL_error(state, "archive requires frozen History and two capture names");
+    auto& capture = frozen(state);
+    const auto* events = luaL_checkstring(state, 2);
+    const auto* payload = luaL_checkstring(state, 3);
+    ArchiveStats stats;
+    try { stats = writeArchive(capture.history, events, payload); }
+    catch (const char* error) { return luaL_error(state, "%s", error); }
+    catch (...) { return luaL_error(state, "compressed history archive failed"); }
+    lua_newtable(state);
+    number(state, "events_bytes", stats.eventsBytes); number(state, "payload_bytes", stats.payloadBytes);
+    number(state, "passes", stats.passes); number(state, "target_tests", stats.tests);
+    array(state);
+    for (uint32_t i = 1; i < stats.kinds.size(); ++i) { lua_pushnumber(state, stats.kinds[i]); lua_rawseti(state, -2, i); }
+    lua_setfield(state, -2, "kinds");
+    array(state);
+    for (uint32_t i = 0; i < stats.dma.size(); ++i) { lua_pushnumber(state, stats.dma[i]); lua_rawseti(state, -2, i + 1); }
+    lua_setfield(state, -2, "dma");
+    return 1;
+}
+int workerArchive(lua_State* state) {
+    static_assert(std::endian::native == std::endian::little);
+    if (lua_gettop(state) != 2) return luaL_error(state, "workerArchive requires frozen History and a capture name");
+    auto& capture = frozen(state);
+    const auto* path = luaL_checkstring(state, 2);
+    uint64_t size = 0;
+    try {
+        const auto& lane = capture.worker;
+        require(lane.status.state == 2 && lane.status.events == lane.records.size(), "invalid frozen decoded-worker journal");
+        GzipOutput file(path);
+        constexpr size_t batch = 4096;
+        for (size_t first = 0; first < lane.records.size(); first += batch) {
+            const auto rows = std::min(batch, lane.records.size() - first);
+            for (size_t n = 0; n < rows; ++n) {
+                const auto& row = lane.records[first + n];
+                require(row.sequence == first + n + 1 && row.epoch == lane.status.epoch,
+                        "decoded-worker archive sequence or epoch mismatch");
+            }
+            file.write(lane.records.data() + first, rows * sizeof(CD::WorkerRecord));
+        }
+        size = file.close();
+        capture.workerFile = path;
+    } catch (const char* error) { return luaL_error(state, "%s", error); }
+    catch (...) { return luaL_error(state, "compressed decoded-worker archive failed"); }
+    lua_pushnumber(state, size);
+    return 1;
 }
 int snapshot(lua_State* state) {
     if (lua_gettop(state)) return luaL_error(state, "History.snapshot requires no arguments");
@@ -377,7 +590,7 @@ int snapshot(lua_State* state) {
         require(CD::workerSnapshot(capture->value->worker), "History.snapshot requires a frozen worker lane");
         require(capture->value->worker.status.epoch == capture->value->history.epoch,
                 "History.snapshot worker epoch differs from journal");
-        for (const auto& row : capture->value->history.records) {
+        for (const auto& row : capture->value->history.storage->records) {
             if (row.kind != uint32_t(Kind::CdContext) || row.device != 0) continue;
             const auto* bytes = payload(*capture->value, row, 384);
             const uint64_t audioEpoch = little(bytes + 24, 8);
@@ -401,9 +614,9 @@ void PCSX::LuaFFI::openHistoryCapture(Lua L) {
         lua_pushcfunction(state, destroy); lua_setfield(state, -2, "__gc");
         lua_pushvalue(state, -1); lua_setfield(state, -2, "__index");
         lua_pushliteral(state, "owning immutable History capture"); lua_setfield(state, -2, "__metatable");
-        for (const auto& [name, function] : std::array<std::pair<const char*, lua_CFunction>, 5>{{
-                 {"statusBytes", statusBytes}, {"recordBytes", recordBytes}, {"payload", payloadBytes},
-                 {"slice", slice}, {"correlateCD", correlations}}}) {
+        for (const auto& [name, function] : std::array<std::pair<const char*, lua_CFunction>, 6>{{
+                 {"statusBytes", statusBytes}, {"recordBytes", recordBytes}, {"archive", archive},
+                 {"slice", slice}, {"correlateCD", correlations}, {"workerArchive", workerArchive}}}) {
             lua_pushcfunction(state, function); lua_setfield(state, -2, name);
         }
     }

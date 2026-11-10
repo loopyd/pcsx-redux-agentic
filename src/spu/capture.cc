@@ -200,7 +200,7 @@ bool PCSX::SPU::SDLAudio::beginCapture(const Capture::Limits& limits, bool coldS
     m_captureDriver = driver ? driver : "unavailable";
     m_captureInitial = queues;
     m_captureFinal = {};
-    if (!m_capture.begin(limits.frames, limits.blocks, limits.events, g_emulator->m_cpu->m_regs.cycle)) return false;
+    if (!m_capture.begin(limits, g_emulator->m_cpu->m_regs.cycle)) return false;
     origin.epoch = coldStart ? m_capture.identity()[1] : 0;
     m_coldStart = origin;
     if (coldStart) m_coldCaptureLimits = {};
@@ -214,9 +214,12 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
     L.getfieldtable("PCSX", LUA_GLOBALSINDEX);
     L.getfieldtable("Audio");
     L.declareFunc("begin", [this](Lua L) -> int {
-        if (L.gettop() != 3) return L.error("Audio.begin requires frame, block and event limits");
+        const auto args = L.gettop();
+        if (args != 3 && args != 4) return L.error("Audio.begin requires frame, block and event limits and optional scheduling limit");
         const Capture::Limits limits{integer(L, 1, Capture::MAX_FRAMES), integer(L, 2, Capture::MAX_RECORDS),
-                                     integer(L, 3, Capture::MAX_RECORDS)};
+                                     integer(L, 3, Capture::MAX_RECORDS),
+                                     args == 4 ? integer(L, 4, Capture::MAX_SCHEDULING) : 0};
+        if (args == 4 && !limits.scheduling) return L.error("audio scheduling limit must be positive");
         if (!beginCapture(limits)) return L.error("audio begin requires positive limits, paused interpreter without MSAN, initialized stream, empty recorder and supported settings");
         return 0;
     }, -1);
@@ -435,7 +438,7 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
     }, -1);
     L.declareFunc("scheduling", [this](Lua L) -> int {
         if (L.gettop() != 2 || !paused(m_capture)) return L.error("audio scheduling requires paused owner, first index and count");
-        const auto first = integer(L, 1, Capture::MAX_RECORDS);
+        const auto first = integer(L, 1, Capture::MAX_SCHEDULING);
         const auto count = integer(L, 2, Capture::MAX_BATCH);
         auto* results = static_cast<Capture::Schedule*>(L.newuser(size_t(count) * sizeof(Capture::Schedule)));
         if (!m_capture.scheduling(first, count, results)) return L.error("audio scheduling requires frozen capture and valid range");
