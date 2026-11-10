@@ -371,7 +371,14 @@ void PCSX::SPU::impl::synthesizeVoice(int ch, SPUCHAN *voice, int32_t &capVoice1
         // Apply the ADSR envelope (hardware: sample*env>>15).
         const bool stopRequested = stop;
         if (stopRequested && m_captureStopSamples[ch] < 0) m_captureStopSamples[ch] = ns;
-        int32_t mixedSample = (voice->adsr.step(stopRequested, on) * rawSample) >> kAdsrEnvelopeShift;
+        AdsrEnvelope::Inputs envelopeInputs;
+        const auto envelope = voice->adsr.step(stopRequested, on, m_captureAudioEpoch ? &envelopeInputs : nullptr);
+        int32_t mixedSample = (envelope * rawSample) >> kAdsrEnvelopeShift;
+        if (envelopeInputs.phase >= 0) {
+            m_audioOut.capture().envelopeInput(m_captureAudioEpoch, m_captureVoiceOffset, ns, ch,
+                envelopeInputs.phase, envelopeInputs.rate, envelopeInputs.exponential,
+                envelopeInputs.increasing, envelopeInputs.sustainLevel);
+        }
         sval = mixedSample;
 
         // The capture mirror holds the voice 1/3 sample after ADSR but before volume.

@@ -30,7 +30,7 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
         end
         local segments = 0
         for _ in pairs(boundaries) do segments = segments + 1 end
-        assert(runs * segments * 7 + #schedule.samples + 7 <= 128, 'replay audio exceeds capture file limit')
+        assert(runs * segments * 8 + #schedule.samples + 7 <= 128, 'replay audio exceeds capture file limit')
     else
         for _, name in ipairs({'samples', 'blocks', 'events'}) do
             assert(not m.argument(name), name .. ' requires audio=1')
@@ -162,7 +162,8 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             comparison.settings_equal = m.json(segment.native.settings) == m.json(baseline.native.settings)
             comparison.counts_equal = segment.native.frames == baseline.native.frames and
                 segment.native.blocks == baseline.native.blocks and segment.native.events == baseline.native.events and
-                segment.native.workers == baseline.native.workers and segment.native.gains == baseline.native.gains
+                segment.native.workers == baseline.native.workers and segment.native.gains == baseline.native.gains and
+                segment.native.envelope_inputs == baseline.native.envelope_inputs
             local function comparable(metadata)
                 local value = {}
                 for key, item in pairs(metadata) do
@@ -176,10 +177,12 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             comparison.blocks = compareFile(baseline.files.blocks, segment.files.blocks)
             comparison.workers = compareFile(baseline.files.workers, segment.files.workers)
             comparison.gains = compareFile(baseline.files.gains, segment.files.gains)
+            comparison.envelope_inputs = compareFile(baseline.files.envelope_inputs, segment.files.envelope_inputs)
             comparison.events = compareFile(baseline.files.events, segment.files.events)
             comparison.equal = comparison.boundary_equal and comparison.cycles_equal and comparison.settings_equal and
                 comparison.counts_equal and comparison.metadata_equal and comparison.pcm.equal and
-                comparison.blocks.equal and comparison.workers.equal and comparison.gains.equal and comparison.events.equal
+                comparison.blocks.equal and comparison.workers.equal and comparison.gains.equal and
+                comparison.envelope_inputs.equal and comparison.events.equal
         end
         if not comparison.equal then
             result.audio_equal = false
@@ -196,7 +199,7 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
         assert(ok, err)
     end
     if audio then
-        result.audio_scope = 'Native PCM/settings/counts and callback/worker/gain/access journals between checked checkpoints; capture gaps are unobserved, host queues are not restored or drained.'
+        result.audio_scope = 'Native PCM/settings/counts and callback/worker/gain/envelope-input/access journals between checked checkpoints; capture gaps are unobserved, host queues are not restored or drained.'
         m.onCleanup(function()
             local ok, err = pcall(freezeAudio, 'mission cleanup', false)
             if not replayPublished then

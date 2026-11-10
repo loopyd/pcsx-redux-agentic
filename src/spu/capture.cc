@@ -220,6 +220,9 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
         number(L, "dropped_workers", result.droppedWorkers);
         number(L, "gains", result.gains); number(L, "gain_limit", result.gainLimit);
         number(L, "dropped_gains", result.droppedGains);
+        number(L, "envelope_inputs", result.envelopeInputs);
+        number(L, "envelope_input_limit", result.envelopeInputLimit);
+        number(L, "dropped_envelope_inputs", result.droppedEnvelopeInputs);
         number(L, "first_failure", result.firstFailure); number(L, "dropped_events", result.droppedEvents);
         wide(L, "begin_cycle", result.beginCycle); wide(L, "end_cycle", result.endCycle);
         wide(L, "dropped_frames", result.droppedFrames); wide(L, "streaming_dropped", result.streamingDropped);
@@ -299,6 +302,24 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
             L.newtable(); number(L, "index", first + n);
             wide(L, "voice_offset", result.voiceOffset); number(L, "voice", result.voice);
             number(L, "left", result.left); number(L, "right", result.right);
+            L.rawseti(n + 1);
+        }
+        return 1;
+    }, -1);
+    L.declareFunc("envelopeInputs", [this](Lua L) -> int {
+        if (L.gettop() != 2 || !paused(m_capture)) return L.error("audio envelope inputs require paused owner, first index and count");
+        const auto first = integer(L, 1, Capture::MAX_RECORDS);
+        const auto count = integer(L, 2, Capture::MAX_BATCH);
+        auto* results = static_cast<Capture::EnvelopeInput*>(L.newuser(size_t(count) * sizeof(Capture::EnvelopeInput)));
+        if (!m_capture.envelopeInputs(first, count, results)) return L.error("audio envelope inputs require frozen capture and valid range");
+        L.newtable();
+        for (uint32_t n = 0; n < count; ++n) {
+            const auto& result = results[n];
+            L.newtable(); number(L, "index", first + n);
+            wide(L, "voice_offset", result.voiceOffset); number(L, "voice", result.voice);
+            number(L, "phase", result.phase); number(L, "rate", result.rate);
+            number(L, "exponential", result.exponential); number(L, "increasing", result.increasing);
+            number(L, "sustain_level", result.sustainLevel);
             L.rawseti(n + 1);
         }
         return 1;

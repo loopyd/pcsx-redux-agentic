@@ -20,6 +20,7 @@ class Capture {
     enum Failure : uint32_t {
         Frames = 1, Blocks = 2, Events = 4, Thread = 8, Bounds = 16,
         Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256, Workers = 512, Gains = 1024,
+        EnvelopeInputs = 2048,
     };
     enum class Kind : uint32_t { Access = 1, Write = 2, Feed = 3, Read = 4, Result = 5, Return = 6, FeedWait = 7 };
     enum BlockFlag : uint32_t { Mono = 1, Muted = 2, Submitted = 4, ValidBlockFlags = 7 };
@@ -43,13 +44,19 @@ class Capture {
         uint32_t voice = 0;
         int32_t left = 0, right = 0;
     };
+    struct EnvelopeInput {
+        uint64_t voiceOffset = 0;
+        uint32_t voice = 0;
+        int32_t phase = 0, rate = 0, exponential = 0, increasing = 0, sustainLevel = -1;
+    };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 7, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = 8, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
         uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;
         uint32_t gains = 0, gainLimit = 0, droppedGains = 0;
+        uint32_t envelopeInputs = 0, envelopeInputLimit = 0, droppedEnvelopeInputs = 0;
     };
     struct Snapshot {
         Status status;
@@ -80,9 +87,11 @@ class Capture {
             std::vector<Event> writes(events);
             std::vector<Worker> workers(events);
             std::vector<Gain> gains(events);
+            std::vector<EnvelopeInput> envelopeInputs(events);
             m_pcm.swap(pcm); m_blocks.swap(records); m_events.swap(writes);
             m_workers.swap(workers);
             m_gains.swap(gains);
+            m_envelopeInputs.swap(envelopeInputs);
         } catch (...) { return false; }
         m_status = {};
         m_status.beginCycle = m_status.endCycle = cycle;
@@ -91,6 +100,7 @@ class Capture {
         m_lastCycle = cycle;
         m_workerCount = m_workerQueued = m_droppedWorkers = 0;
         m_gainCount = m_droppedGains = m_gainSeen = 0;
+        m_envelopeInputCount = m_droppedEnvelopeInputs = m_envelopeInputSeen = 0;
         m_workerThread = {};
         m_lifecycle.store((++m_epoch << EPOCH_SHIFT) | 1, std::memory_order_release);
         return true;
@@ -113,8 +123,10 @@ class Capture {
         std::vector<Event>().swap(m_events);
         std::vector<Worker>().swap(m_workers);
         std::vector<Gain>().swap(m_gains);
+        std::vector<EnvelopeInput>().swap(m_envelopeInputs);
         m_workerCount = m_workerQueued = m_droppedWorkers = 0;
         m_gainCount = m_droppedGains = m_gainSeen = 0;
+        m_envelopeInputCount = m_droppedEnvelopeInputs = m_envelopeInputSeen = 0;
         m_status = {};
         m_cycle.store(0); m_frame.store(0);
         m_lifecycle.store(m_epoch << EPOCH_SHIFT, std::memory_order_release);
@@ -130,6 +142,9 @@ class Capture {
         result.gains = m_gainCount;
         result.gainLimit = m_gains.size();
         result.droppedGains = m_droppedGains;
+        result.envelopeInputs = m_envelopeInputCount;
+        result.envelopeInputLimit = m_envelopeInputs.size();
+        result.droppedEnvelopeInputs = m_droppedEnvelopeInputs;
         const auto state = m_lifecycle.load(std::memory_order_acquire);
         result.state = state & STATE_MASK;
         result.failures = (state >> FAILURE_SHIFT) & FAILURE_MASK;
@@ -215,6 +230,37 @@ class Capture {
         }
         m_gains[m_gainCount++] = {offset, voice, left, right};
     }
+    void envelopeInput(uint64_t epoch, uint64_t voiceOffset, uint32_t sample, uint32_t voice,
+                       int32_t phase, int32_t rate, int32_t exponential, int32_t increasing, int32_t sustainLevel) {
+        if (!epoch) return;
+        std::lock_guard lock(m_workerMutex);
+        if (epoch != workerToken() || !workerThread()) return;
+        constexpr std::array<int32_t, 4> maxRate{127, 15, 127, 31};
+        if (voice >= VOICE_COUNT || sample >= MAX_CHUNK || voiceOffset > UINT64_MAX - sample ||
+            phase < 0 || phase > 3 || rate < 0 || rate > maxRate[phase] ||
+            exponential < 0 || exponential > 1 || increasing < 0 || increasing > 1 ||
+            (phase == 0 && increasing != 1) || (phase == 1 && (exponential != 1 || increasing != 0)) ||
+            (phase == 3 && increasing != 0) ||
+            (phase == 1 ? sustainLevel < 0 || sustainLevel > 15 : sustainLevel != -1)) {
+            fail(Bounds); return;
+        }
+        const auto offset = voiceOffset + sample;
+        const auto bit = uint32_t(1) << voice;
+        if ((m_envelopeInputSeen & bit) && offset <= m_envelopeInputLastOffset[voice]) {
+            fail(Discontinuity); return;
+        }
+        m_envelopeInputLastOffset[voice] = offset;
+        const std::array<int32_t, 5> inputs{phase, rate, exponential, increasing, sustainLevel};
+        if ((m_envelopeInputSeen & bit) && m_envelopeInputLast[voice] == inputs) return;
+        m_envelopeInputSeen |= bit;
+        m_envelopeInputLast[voice] = inputs;
+        if (failures() || m_envelopeInputCount == m_envelopeInputs.size()) {
+            if (!failures()) fail(EnvelopeInputs);
+            if (m_droppedEnvelopeInputs != UINT32_MAX) ++m_droppedEnvelopeInputs;
+            return;
+        }
+        m_envelopeInputs[m_envelopeInputCount++] = {offset, voice, phase, rate, exponential, increasing, sustainLevel};
+    }
     void workerBatch(uint64_t epoch, uint64_t voiceOffset, uint32_t frames, uint32_t keyOnMask,
                      const std::array<int32_t, VOICE_COUNT>& preSampleSteps,
                      const std::array<int32_t, VOICE_COUNT>& stopSamples) {
@@ -294,6 +340,13 @@ class Capture {
         if (count) std::memcpy(out, m_gains.data() + first, size_t(count) * sizeof(Gain));
         return true;
     }
+    bool envelopeInputs(uint32_t first, uint32_t count, EnvelopeInput* out) {
+        std::lock_guard lock(m_workerMutex);
+        if (!frozen() || count > MAX_BATCH || first > m_envelopeInputCount || count > m_envelopeInputCount - first ||
+            (count && !out)) return false;
+        if (count) std::memcpy(out, m_envelopeInputs.data() + first, size_t(count) * sizeof(EnvelopeInput));
+        return true;
+    }
     bool snapshot(Snapshot& out) {
         if (!frozen() || m_status.events > MAX_RECORDS) return false;
         if (!status(out.status)) return false;
@@ -325,8 +378,8 @@ class Capture {
     void drop(uint32_t frames) {
         m_status.droppedFrames += std::min<uint64_t>(frames, UINT64_MAX - m_status.droppedFrames);
     }
-    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 2047;
-    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 13, EPOCH_SHIFT = 24;
+    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 4095;
+    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 14, EPOCH_SHIFT = 26;
     static constexpr uint64_t MAX_EPOCH = UINT64_MAX >> EPOCH_SHIFT;
     uint32_t failures() const { return (m_lifecycle.load(std::memory_order_acquire) >> FAILURE_SHIFT) & FAILURE_MASK; }
     const std::thread::id m_owner;
@@ -346,6 +399,10 @@ class Capture {
     std::array<uint64_t, VOICE_COUNT> m_gainLastOffset{};
     std::array<std::array<int32_t, 2>, VOICE_COUNT> m_gainLast{};
     std::vector<Gain> m_gains;
+    uint32_t m_envelopeInputCount = 0, m_droppedEnvelopeInputs = 0, m_envelopeInputSeen = 0;
+    std::array<uint64_t, VOICE_COUNT> m_envelopeInputLastOffset{};
+    std::array<std::array<int32_t, 5>, VOICE_COUNT> m_envelopeInputLast{};
+    std::vector<EnvelopeInput> m_envelopeInputs;
 };
 
 }

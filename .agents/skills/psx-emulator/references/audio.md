@@ -37,6 +37,7 @@ without a success marker. Inspect retained files and logs.
 | `blocks.ndjson` | Callback index, output offset/count, absolute voice source offset, dequeued voice/disc counts, flags and observed CPU publication |
 | `workers.ndjson` | Completed worker-batch source ranges, started-voice masks and acknowledged enqueue ranges |
 | `gains.ndjson` | First consumed dry stereo gain pair per voice and later changed pairs, at absolute voice-source frames |
+| `envelope_inputs.ndjson` | First consumed ADSR phase controls per voice and later changes, at absolute voice-source frames |
 | `spu.ndjson` | Native named access/feed records, exact cycles, observed frame cursor and parent identity |
 | `audio.json` | Native counts/limits/settings/queues, failure/drop data, export checks and retained PCM duration |
 | `sound.json` | Mission bounds, primary/tail observations, stop reason and outcome |
@@ -52,6 +53,7 @@ requires owner thread, not pause.
 | `stop()` | Freeze active recorder, retaining failures; defer outside device/Pause callbacks |
 | `status()` | Owner-thread snapshot; only frozen state has a terminal end cycle |
 | `blocks(first, count)`, `workers(first, count)`, `gains(first, count)`, `events(first, count)` | Frozen capture; zero-based range, at most 1024 rows; owning one-based named tables |
+| `envelopeInputs(first, count)` | Same frozen range contract; phase-specific consumed controls |
 | `samples(offset, frames)` | Frozen capture, at most 65536 stereo frames per call, copied binary string |
 | `exportPCM(raw, wav)` | Stream the frozen complete range to distinct simple capture filenames; return frame/raw/WAV byte counts |
 | `clear()` | Release inactive capture explicitly before another begin |
@@ -64,11 +66,11 @@ close before success or error; failed output prefixes remain on disk. Successful
 `pcm.export` registers both captures. `pcm.export(prefix)` selects a simple
 filename prefix for repeated captures. It allows at most 200 ASCII letters,
 digits, `_`, `.` or `-`, starting with a letter or digit. Its returned `files`
-names each raw, WAV,
-block, worker, event and report capture. [Replay](replay.md#native-sound-comparison) uses
+names each raw, WAV, block, worker, gain, envelope-input, event and report capture.
+[Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 7. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 8. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -84,8 +86,9 @@ by the CD recorder. These settings do not prove DSP or hardware fidelity.
 
 States: empty=0, active=1, frozen=2. Keep uint64 fields as canonical decimal strings,
 never doubles. Failure bits: frames=1, blocks=2, events=4, thread=8, bounds=16,
-clock=32, discontinuity=64, streaming-loss=128, output=256, workers=512, gains=1024. Failures are sticky,
-drop counters saturate, buffers never overwrite.
+clock=32, discontinuity=64, streaming-loss=128, output=256, workers=512,
+gains=1024, envelope-inputs=2048. Failures are sticky, drop counters saturate,
+and buffers never overwrite.
 
 ## Application
 
@@ -153,6 +156,33 @@ Gain storage has a separate capacity equal to the supplied event limit.
 copy at most 1024 records under the worker mutex before allocating Lua tables.
 The gain journal has a 16 MiB byte bound. Overflow sets the sticky `gains` failure,
 and a failed frozen prefix remains readable.
+
+`envelopeInputs` records `index`, `voice_offset`, `voice`, `phase`, `rate`,
+`exponential`, `increasing` and `sustain_level`. It copies controls from the
+envelope's existing reads without additional device reads. Modes are integers
+zero or one. The rate is the raw phase-specific value before exponential-knee
+adjustment. Only decay consumes `sustain_level`; other phases report `-1`.
+
+| Phase | Value | Rate range | Fixed controls |
+| --- | --- | --- | --- |
+| Attack | 0 | 0–127 | Increasing |
+| Decay | 1 | 0–15 | Exponential, decreasing; sustain level 0–15 |
+| Sustain | 2 | 0–127 | None |
+| Release | 3 | 0–31 | Decreasing |
+
+The journal retains each voice's first consumed controls in an epoch and later
+changes, including phase changes. It contains no envelope level or counter.
+Separate field reads are not an atomic register snapshot. Startup delay,
+inactive walking and terminated fetches do not step ADSR and emit no row.
+Modulation-source and debug-muted voices still step ADSR and can emit rows.
+Per-voice order, worker-range joins and unknown prefixes/tails follow the gain
+contract above. These inputs locate consumption, not CPU writes or hardware latency.
+
+Envelope-input storage independently uses the supplied event capacity.
+`envelope_inputs`, `envelope_input_limit` and `dropped_envelope_inputs` report
+its count, bound and loss. Frozen range reads copy at most 1024 rows under the
+worker mutex before Lua allocation. The journal has a 16 MiB export bound.
+Overflow sets sticky `envelope-inputs` failure; failed prefixes remain readable.
 
 Capture does not stop the worker. A batch already in progress at begin, or still
 in progress at freeze, has no retained row. Freeze can also precede the worker's

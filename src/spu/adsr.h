@@ -73,6 +73,10 @@ typedef Protobuf::Message<TYPESTRING("ADSRInfoEx"), exState, exAttackModeExp, ex
 // MainThread synthesis loop; the math and timing are unchanged.
 class AdsrEnvelope {
   public:
+    // Controls copied from one phase's existing reads; phase -1 means no step.
+    struct Inputs {
+        int32_t phase = -1, rate = 0, exponential = 0, increasing = 0, sustainLevel = -1;
+    };
     // Key-on: reset the live envelope to the start of the Attack phase.
     void keyOn();
 
@@ -81,7 +85,7 @@ class AdsrEnvelope {
     // (hardware-accurate). stopRequested mirrors the voice's key-off/Stop flag and
     // forces the Release phase; channelOn is cleared once Release runs the envelope
     // down to zero (i.e. the voice has finished playing).
-    int step(bool stopRequested, bool &channelOn);
+    int step(bool stopRequested, bool &channelOn, Inputs *consumed);
 
     // Current 0..0x400 volume factor (envelope_vol >> 5) mirror, as last produced
     // by step(). Reported by the voice register / debugger, not used by the mixer.
@@ -111,10 +115,10 @@ class AdsrEnvelope {
         };
     };
 
-    int Attack();
-    int Decay();
-    int Sustain();
-    int Release(bool &channelOn);
+    int Attack(Inputs *consumed);
+    int Decay(Inputs *consumed);
+    int Sustain(Inputs *consumed);
+    int Release(bool &channelOn, Inputs *consumed);
 
     // Store the freshly computed envelope state and return the 0..0x400 factor.
     int commit(int32_t envelopeVol, int32_t envelopeVolFraction);

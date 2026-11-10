@@ -116,7 +116,7 @@ uint16_t PCSX::SPU::impl::reconstructEnvelope(int ch, uint64_t cycle) {
             cp.cachedSample = steps;
             return 0;
         }
-        walk.step(s >= releaseAt, on);
+        walk.step(s >= releaseAt, on, nullptr);
         if (walkAdpcm) cp.pos += cp.pitchStep;
     }
 

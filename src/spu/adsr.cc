@@ -87,8 +87,9 @@ int PCSX::SPU::AdsrEnvelope::commit(int32_t envelopeVol, int32_t envelopeVolFrac
     return envelopeVol;
 }
 
-int PCSX::SPU::AdsrEnvelope::Attack() {
-    int rateIndex = m_adsrx.get<exAttackRate>().value;
+int PCSX::SPU::AdsrEnvelope::Attack(Inputs *consumed) {
+    const int rate = m_adsrx.get<exAttackRate>().value;
+    int rateIndex = rate;
     int32_t envelopeVol = m_adsrx.get<exEnvelopeVol>().value;
     int32_t envelopeVolFraction = m_adsrx.get<exEnvelopeVolF>().value;
     const bool exponential = m_adsrx.get<exAttackModeExp>().value != 0;
@@ -108,11 +109,13 @@ int PCSX::SPU::AdsrEnvelope::Attack() {
         m_adsrx.get<exState>().value = ADSRState::Decay;
     }
 
+    if (consumed) *consumed = {ADSRState::Attack, rate, exponential, 1, -1};
     return commit(envelopeVol, envelopeVolFraction);
 }
 
-int PCSX::SPU::AdsrEnvelope::Decay() {
-    const int rateIndex = m_adsrx.get<exDecayRate>().value * kCoarseRateScale;
+int PCSX::SPU::AdsrEnvelope::Decay(Inputs *consumed) {
+    const int rate = m_adsrx.get<exDecayRate>().value;
+    const int rateIndex = rate * kCoarseRateScale;
     int32_t envelopeVol = m_adsrx.get<exEnvelopeVol>().value;
     int32_t envelopeVolFraction = m_adsrx.get<exEnvelopeVolF>().value;
 
@@ -125,15 +128,18 @@ int PCSX::SPU::AdsrEnvelope::Decay() {
 
     envelopeVol = std::max(envelopeVol, 0);
 
-    if (((envelopeVol >> kSustainLevelShift) & kSustainLevelMask) <= m_adsrx.get<exSustainLevel>().value) {
+    const int sustainLevel = m_adsrx.get<exSustainLevel>().value;
+    if (((envelopeVol >> kSustainLevelShift) & kSustainLevelMask) <= sustainLevel) {
         m_adsrx.get<exState>().value = ADSRState::Sustain;
     }
 
+    if (consumed) *consumed = {ADSRState::Decay, rate, 1, 0, sustainLevel};
     return commit(envelopeVol, envelopeVolFraction);
 }
 
-int PCSX::SPU::AdsrEnvelope::Sustain() {
-    int rateIndex = m_adsrx.get<exSustainRate>().value;
+int PCSX::SPU::AdsrEnvelope::Sustain(Inputs *consumed) {
+    const int rate = m_adsrx.get<exSustainRate>().value;
+    int rateIndex = rate;
     int32_t envelopeVol = m_adsrx.get<exEnvelopeVol>().value;
     int32_t envelopeVolFraction = m_adsrx.get<exEnvelopeVolF>().value;
     const bool exponential = m_adsrx.get<exSustainModeExp>().value != 0;
@@ -162,11 +168,13 @@ int PCSX::SPU::AdsrEnvelope::Sustain() {
         envelopeVol = std::max(envelopeVol, 0);
     }
 
+    if (consumed) *consumed = {ADSRState::Sustain, rate, exponential, increase, -1};
     return commit(envelopeVol, envelopeVolFraction);
 }
 
-int PCSX::SPU::AdsrEnvelope::Release(bool &channelOn) {
-    const int rateIndex = m_adsrx.get<exReleaseRate>().value * kCoarseRateScale;
+int PCSX::SPU::AdsrEnvelope::Release(bool &channelOn, Inputs *consumed) {
+    const int rate = m_adsrx.get<exReleaseRate>().value;
+    const int rateIndex = rate * kCoarseRateScale;
     int32_t envelopeVol = m_adsrx.get<exEnvelopeVol>().value;
     int32_t envelopeVolFraction = m_adsrx.get<exEnvelopeVolF>().value;
     const bool exponential = m_adsrx.get<exReleaseModeExp>().value != 0;
@@ -184,6 +192,7 @@ int PCSX::SPU::AdsrEnvelope::Release(bool &channelOn) {
         channelOn = false;
     }
 
+    if (consumed) *consumed = {ADSRState::Release, rate, exponential, 0, -1};
     return commit(envelopeVol, envelopeVolFraction);
 }
 
@@ -196,21 +205,22 @@ void PCSX::SPU::AdsrEnvelope::keyOn() {
     m_adsrx.get<exEnvelopeVolF>().value = 0;
 }
 
-int PCSX::SPU::AdsrEnvelope::step(bool stopRequested, bool &channelOn) {
+int PCSX::SPU::AdsrEnvelope::step(bool stopRequested, bool &channelOn, Inputs *consumed) {
     if (stopRequested) {
         m_adsrx.get<exState>().value = ADSRState::Release;
     }
 
     switch (m_adsrx.get<exState>().value) {
         case ADSRState::Attack:
-            return Attack();
+            return Attack(consumed);
         case ADSRState::Decay:
-            return Decay();
+            return Decay(consumed);
         case ADSRState::Sustain:
-            return Sustain();
+            return Sustain(consumed);
         case ADSRState::Release:
-            return Release(channelOn);
+            return Release(channelOn, consumed);
     }
 
+    if (consumed) *consumed = {};
     return 0;
 }
