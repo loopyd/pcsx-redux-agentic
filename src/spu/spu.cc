@@ -536,8 +536,11 @@ void PCSX::SPU::impl::MainThread() {
         ///////////////////////////////////////////////////////
         // Mix all channels, including reverb, into one buffer.
 
+        int32_t firstReverbSample = -1;
         for (ns = 0; ns < NSSIZE; ns++) {
-            SSumL[ns] += m_reverb.mixLeft(ns, spuMem, spuCtrl);
+            bool activeReverbWork = false;
+            SSumL[ns] += m_reverb.mixLeft(ns, spuMem, spuCtrl, audioEpoch ? &activeReverbWork : nullptr);
+            if (activeReverbWork && firstReverbSample < 0) firstReverbSample = ns;
             *pS++ = std::clamp(SSumL[ns] / volumeDivisor, -kMixSampleClamp, kMixSampleClamp);
             SSumL[ns] = 0;
 
@@ -595,7 +598,7 @@ void PCSX::SPU::impl::MainThread() {
         irqLock.unlock();
         historyBatch.finish();
         m_audioOut.capture().workerBatch(audioEpoch, voiceOffset, NSSIZE, m_captureKeyOnMask,
-                                       m_capturePreSampleSteps, m_captureStopSamples);
+                                         m_capturePreSampleSteps, m_captureStopSamples, firstReverbSample);
 
         m_reverb.init(NSSIZE);
 

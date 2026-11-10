@@ -70,7 +70,7 @@ names each raw, WAV, block, worker, gain, envelope-input, event and report captu
 [Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 8. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 9. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -111,7 +111,8 @@ the source coordinate without adding PCM. Source coordinates are observations of
 the host queue, not restored PSX state or CPU sample deadlines.
 
 Worker rows contain `index`, `voice_offset`, `frames`, `key_on_mask`,
-`enqueue_offset`, `enqueue_frames`, `pre_sample_steps` and `stop_samples`. Each bit in the 24-bit mask marks a voice
+`enqueue_offset`, `enqueue_frames`, `pre_sample_steps`, `stop_samples` and
+`first_reverb_sample`. Each bit in the 24-bit mask marks a voice
 that actually entered `StartSound` in that batch. Enqueue fields identify the
 successful stream-0 submission containing the complete batch. Zero
 `enqueue_frames` means unconfirmed; exclude that row from signal comparisons.
@@ -135,6 +136,14 @@ records the first sample whose existing ADSR call consumes a true stop input;
 fetches do not call ADSR. A persistent stop can appear in successive batches,
 so this is neither a new key-off event nor proof of release completion. It adds
 no device read and does not locate the CPU write in sample time.
+
+`first_reverb_sample` is the first batch-relative sample whose existing reverb
+base check admits work; `-1` means none. It observes that branch without another
+base read or a filter/cursor snapshot. A valid base advances filters and reads
+RAM even with master write enable clear. This index is neither a new activation
+edge nor evidence that later samples remain active. Join it to an acknowledged
+worker range. A first-activation comparison also needs independently established
+fresh filters, an initially disabled base and exactly one guest activation.
 
 `gains` records `index`, `voice_offset`, `voice`, `left` and `right`. Voice indices
 are zero-based. Signed 32-bit gains are the effective levels consumed by the dry

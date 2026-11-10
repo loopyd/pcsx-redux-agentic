@@ -59,7 +59,7 @@ class ReverbUnit {
     // Mix one active reverb voice into the buffer (was impl::StoreREVERB).
     void store(SPUCHAN *voice, int ns);
     // Produce the left/right wet-out sample (was impl::MixREVERBLeft / MixREVERBRight).
-    int mixLeft(int ns, uint16_t *spuMem, uint16_t spuCtrl);
+    int mixLeft(int ns, uint16_t *spuMem, uint16_t spuCtrl, bool *activeWork);
     int mixRight();
 
   private:

@@ -140,13 +140,16 @@ void PCSX::SPU::ReverbUnit::reset() {
     resetFilterState();
 }
 
-int PCSX::SPU::ReverbUnit::mixLeft(int ns, uint16_t* spuMem, uint16_t spuCtrl) {
+int PCSX::SPU::ReverbUnit::mixLeft(int ns, uint16_t* spuMem, uint16_t spuCtrl, bool* activeWork) {
+    if (activeWork) *activeWork = false;
     // This function is called at 44.1 kHz.
     // Reverb is off.
     if (!rvb.StartAddr) {
         rvb.lastWetLeft = rvb.lastWetRight = rvb.wetLeft = rvb.wetRight = 0;
         return 0;
     }
+
+    if (activeWork) *activeWork = true;
 
     callCount++;
 

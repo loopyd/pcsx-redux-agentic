@@ -59,7 +59,7 @@ function M.export(prefix)
         envelope_inputs = prefix .. 'envelope_inputs.ndjson', events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v8', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v9', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
@@ -68,13 +68,14 @@ function M.export(prefix)
             workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
             stop_samples = 'first sample in each channel loop consuming a true ADSR stop input; -1 means none observed',
             pre_sample_steps = 'per-channel installed 16.16 steps before sample loops, not simultaneous or per-sample modulation observations',
+            first_reverb_sample = 'first sample whose existing reverb base check admits active work; -1 means none observed, not master write enable or an activation edge',
             gains = 'first consumed dry stereo gain pair per voice and later changes at source frames; separate left/right reads, not an atomic snapshot or CPU-write positions; unconfirmed worker ranges remain unknown',
             envelope_inputs = 'first consumed phase controls per voice and later changes at source frames; existing phase-specific reads, not an atomic register snapshot, envelope state import or CPU-write positions; unconfirmed worker ranges remain unknown',
             voice_offsets = 'persistent stream-0 frame coordinates; underflow consumes none, fast-forward discards advance them',
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 8 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 9 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -166,6 +167,7 @@ function M.export(prefix)
             for _, step in ipairs(w.pre_sample_steps) do integer(step, -2147483648, 2147483647, 'worker installed step') end
             assert(type(w.stop_samples) == 'table' and #w.stop_samples == 24, 'worker requires 24 stop sample indices')
             for _, sample in ipairs(w.stop_samples) do integer(sample, -1, w.frames - 1, 'worker stop sample') end
+            integer(w.first_reverb_sample, -1, w.frames - 1, 'worker first active reverb sample')
             integer(w.enqueue_frames, 0, 2048, 'worker enqueue frames')
             assert(worker_end == nil or worker_end == voice, 'noncontiguous native worker source ranges')
             worker_end = plus(voice, w.frames)

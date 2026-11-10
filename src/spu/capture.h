@@ -38,6 +38,7 @@ class Capture {
         uint32_t frames = 0, keyOnMask = 0, enqueueFrames = 0;
         std::array<int32_t, VOICE_COUNT> preSampleSteps{};
         std::array<int32_t, VOICE_COUNT> stopSamples{};
+        int32_t firstReverbSample = -1;
     };
     struct Gain {
         uint64_t voiceOffset = 0;
@@ -51,7 +52,7 @@ class Capture {
     };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 8, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = 9, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
         uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;
@@ -263,11 +264,12 @@ class Capture {
     }
     void workerBatch(uint64_t epoch, uint64_t voiceOffset, uint32_t frames, uint32_t keyOnMask,
                      const std::array<int32_t, VOICE_COUNT>& preSampleSteps,
-                     const std::array<int32_t, VOICE_COUNT>& stopSamples) {
+                     const std::array<int32_t, VOICE_COUNT>& stopSamples, int32_t firstReverbSample) {
         if (!epoch) return;
         std::lock_guard lock(m_workerMutex);
         if (epoch != workerToken() || !workerThread()) return;
-        if (!frames || frames > MAX_CHUNK || keyOnMask > 0xffffff || voiceOffset > UINT64_MAX - frames) {
+        if (!frames || frames > MAX_CHUNK || keyOnMask > 0xffffff || voiceOffset > UINT64_MAX - frames ||
+            firstReverbSample < -1 || firstReverbSample >= int32_t(frames)) {
             fail(Bounds); return;
         }
         for (const auto sample : stopSamples) {
@@ -282,7 +284,7 @@ class Capture {
                                               m_workers[m_workerCount - 1].frames) {
             fail(Discontinuity); return;
         }
-        m_workers[m_workerCount++] = {voiceOffset, 0, frames, keyOnMask, 0, preSampleSteps, stopSamples};
+        m_workers[m_workerCount++] = {voiceOffset, 0, frames, keyOnMask, 0, preSampleSteps, stopSamples, firstReverbSample};
     }
     void workerQueued(uint64_t epoch, uint64_t offset, uint32_t frames) {
         if (!epoch) return;
