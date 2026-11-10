@@ -133,7 +133,18 @@ class SDLAudio {
     // Stream 0 has one SPU worker producer; the callback alone drains it.
     uint64_t voiceFramesEnqueued() const { return m_voiceEnqueued; }
     bool feedVoiceData(const Frame* data, size_t frames, uint64_t workerEpoch) {
-        if (!m_voicesStream.enqueue(data, frames).accepted) return false;
+        const auto epoch = m_capture.workerToken();
+        const auto result = m_voicesStream.enqueue(data, frames, std::chrono::milliseconds{200},
+            [&](bool complete, const auto& admission) {
+                Capture::Schedule row;
+                row.kind = complete ? Capture::ScheduleKind::EnqueueEnd : Capture::ScheduleKind::EnqueueBegin;
+                row.voiceOffset = m_voiceEnqueued; row.frames = frames;
+                row.before = admission.queuedBefore; row.after = admission.queuedAfter;
+                row.waitNanoseconds = admission.waitNanoseconds;
+                row.flags = complete ? admission.accepted : admission.blocked;
+                m_capture.schedule(epoch, row);
+            });
+        if (!result.accepted) return false;
         m_capture.workerQueued(workerEpoch, m_voiceEnqueued, frames);
         m_voiceEnqueued += frames;
         return true;
@@ -155,19 +166,35 @@ class SDLAudio {
         }
     }
     uint32_t getCurrentFrames() { return m_frames.load(); }
-    void waitForGoal(uint32_t goal) {
+    void captureAudioDecision(uint64_t cycle, uint64_t previous, uint32_t audioFrames,
+                              uint32_t target, uint32_t current, uint32_t action) {
+        Capture::Schedule row;
+        row.kind = Capture::ScheduleKind::Cpu; row.cycle = cycle; row.previousCycle = previous;
+        row.before = audioFrames; row.frames = target; row.after = current; row.flags = action;
+        m_capture.schedule(m_capture.workerToken(), row);
+    }
+    void waitForGoal(uint32_t goal, uint64_t cycle) {
+        const auto epoch = m_capture.workerToken();
+        Capture::Schedule row;
+        row.kind = Capture::ScheduleKind::WaitBegin; row.cycle = cycle; row.frames = goal;
 #if HAS_ATOMIC_WAIT
         // Use atomic wait/notify when the standard library supports it.
         auto triggered = m_triggered.load();
         m_goalpost.store(goal);
+        row.before = triggered;
+        m_capture.schedule(epoch, row);
         m_triggered.wait(triggered);
 #else
         // Otherwise, wait on the condition variable.
         std::unique_lock<std::mutex> l(m_mu);
         auto triggered = m_triggered;
         m_goalpost = goal;
+        row.before = triggered;
+        m_capture.schedule(epoch, row);
         m_cv.wait(l, [this, triggered]() { return m_triggered != triggered; });
 #endif
+        row.kind = Capture::ScheduleKind::WaitEnd;
+        m_capture.schedule(epoch, row);
     }
 
   private:
@@ -186,7 +213,8 @@ class SDLAudio {
     SettingsType& m_settings;
 
     void streamCallback(SDL_AudioStream* stream, int additionalBytes);
-    void advanceFrames(uint32_t frameCount);
+    void advanceFrames(uint32_t frameCount, bool nullClock);
+    size_t dequeueVoice(Frame* data, size_t frames, bool discard);
     void init(bool safe = false);
     void uninit();
     void maybeRestart();

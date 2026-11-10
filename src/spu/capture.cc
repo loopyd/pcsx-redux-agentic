@@ -223,6 +223,8 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
         number(L, "envelope_inputs", result.envelopeInputs);
         number(L, "envelope_input_limit", result.envelopeInputLimit);
         number(L, "dropped_envelope_inputs", result.droppedEnvelopeInputs);
+        number(L, "scheduling", result.scheduling); number(L, "scheduling_limit", result.schedulingLimit);
+        number(L, "dropped_scheduling", result.droppedScheduling);
         number(L, "first_failure", result.firstFailure); number(L, "dropped_events", result.droppedEvents);
         wide(L, "begin_cycle", result.beginCycle); wide(L, "end_cycle", result.endCycle);
         wide(L, "dropped_frames", result.droppedFrames); wide(L, "streaming_dropped", result.streamingDropped);
@@ -321,6 +323,56 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
             number(L, "phase", result.phase); number(L, "rate", result.rate);
             number(L, "exponential", result.exponential); number(L, "increasing", result.increasing);
             number(L, "sustain_level", result.sustainLevel);
+            L.rawseti(n + 1);
+        }
+        return 1;
+    }, -1);
+    L.declareFunc("scheduling", [this](Lua L) -> int {
+        if (L.gettop() != 2 || !paused(m_capture)) return L.error("audio scheduling requires paused owner, first index and count");
+        const auto first = integer(L, 1, Capture::MAX_RECORDS);
+        const auto count = integer(L, 2, Capture::MAX_BATCH);
+        auto* results = static_cast<Capture::Schedule*>(L.newuser(size_t(count) * sizeof(Capture::Schedule)));
+        if (!m_capture.scheduling(first, count, results)) return L.error("audio scheduling requires frozen capture and valid range");
+        L.newtable();
+        for (uint32_t n = 0; n < count; ++n) {
+            const auto& row = results[n];
+            L.newtable(); number(L, "index", first + n); number(L, "kind", uint32_t(row.kind));
+            switch (row.kind) {
+                case Capture::ScheduleKind::Producer:
+                    wide(L, "voice_offset", row.voiceOffset); wide(L, "enqueue_offset", row.voiceOffset - row.before);
+                    number(L, "staged_frames", row.before); number(L, "batch_phase", row.after);
+                    number(L, "frames", row.frames);
+                    break;
+                case Capture::ScheduleKind::EnqueueBegin:
+                    wide(L, "voice_offset", row.voiceOffset); number(L, "frames", row.frames);
+                    number(L, "queued_before", row.before); number(L, "blocked", row.flags);
+                    break;
+                case Capture::ScheduleKind::EnqueueEnd:
+                    wide(L, "voice_offset", row.voiceOffset); number(L, "frames", row.frames);
+                    number(L, "queued_after", row.after); number(L, "accepted", row.flags);
+                    wide(L, "wait_nanoseconds", row.waitNanoseconds);
+                    break;
+                case Capture::ScheduleKind::Dequeue:
+                    wide(L, "voice_offset", row.voiceOffset); number(L, "requested_frames", row.target);
+                    number(L, "frames", row.frames); number(L, "queued_before", row.before);
+                    number(L, "queued_after", row.after); number(L, "discard", row.flags);
+                    break;
+                case Capture::ScheduleKind::Master:
+                    number(L, "frames", row.frames); number(L, "speed", row.detail);
+                    number(L, "old_frames", row.before); number(L, "new_frames", row.after);
+                    number(L, "goal", row.target); number(L, "action", row.flags); number(L, "source", row.source);
+                    break;
+                case Capture::ScheduleKind::Cpu:
+                    wide(L, "cycle", row.cycle); wide(L, "previous_cycle", row.previousCycle);
+                    number(L, "previous_audio_frames", row.before); number(L, "target", row.frames);
+                    number(L, "master_frames", row.after); number(L, "action", row.flags);
+                    break;
+                case Capture::ScheduleKind::WaitBegin:
+                case Capture::ScheduleKind::WaitEnd:
+                    wide(L, "cycle", row.cycle); number(L, "goal", row.frames);
+                    number(L, "initial_trigger", row.before);
+                    break;
+            }
             L.rawseti(n + 1);
         }
         return 1;

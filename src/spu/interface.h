@@ -142,7 +142,11 @@ class impl final : public SPUInterface {
         }
     }
     uint32_t getCurrentFrames() override { return m_audioOut.getCurrentFrames(); }
-    void waitForGoal(uint32_t goal) override { m_audioOut.waitForGoal(goal); }
+    void waitForGoal(uint32_t goal, uint64_t cycle) override { m_audioOut.waitForGoal(goal, cycle); }
+    void captureAudioDecision(uint64_t cycle, uint64_t previous, uint32_t audioFrames,
+                              uint32_t target, uint32_t current, uint32_t action) override {
+        m_audioOut.captureAudioDecision(cycle, previous, audioFrames, target, current, action);
+    }
 
   private:
     bool m_stateAccess = false;

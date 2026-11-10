@@ -254,7 +254,7 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
         const auto voiceOffset = m_voiceDequeued;
 
         for (unsigned i = 0; i < STREAMS; i++) {
-            size_t a = (i == 0) ? m_voicesStream.dequeue(m_mixBuffers[i].data(), chunk)
+            size_t a = (i == 0) ? dequeueVoice(m_mixBuffers[i].data(), chunk, false)
                                 : m_audioStream.dequeue(m_mixBuffers[i].data(), chunk);
             available[i] = a;
             if (i == 0) m_voiceDequeued += a;
@@ -296,21 +296,33 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
         // any speed.
         const int speed = effectiveSpeed(m_settings.get<Speed>().value);
         for (int rep = 1; rep < speed; rep++) {
-            m_voiceDequeued += m_voicesStream.dequeue(m_mixBuffers[0].data(), chunk);
+            m_voiceDequeued += dequeueVoice(m_mixBuffers[0].data(), chunk, true);
             m_audioStream.dequeue(m_mixBuffers[1].data(), chunk);
         }
 
         // When NullSync is off, the real audio callback is the timing source. When it's
         // on, the dedicated null thread drives timing instead.
         if (!m_settings.get<NullSync>()) {
-            advanceFrames(chunk);
+            advanceFrames(chunk, false);
         }
 
         requested -= chunk;
     }
 }
 
-void PCSX::SPU::SDLAudio::advanceFrames(uint32_t frameCount) {
+size_t PCSX::SPU::SDLAudio::dequeueVoice(Frame* data, size_t frames, bool discard) {
+    const auto epoch = m_capture.workerToken();
+    return m_voicesStream.dequeue(data, frames, [&](size_t before, size_t taken) {
+        Capture::Schedule row;
+        row.kind = Capture::ScheduleKind::Dequeue; row.voiceOffset = m_voiceDequeued;
+        row.frames = taken; row.target = frames; row.before = before; row.after = before - taken;
+        row.flags = discard;
+        m_capture.schedule(epoch, row);
+    });
+}
+
+void PCSX::SPU::SDLAudio::advanceFrames(uint32_t frameCount, bool nullClock) {
+    const auto epoch = m_capture.workerToken();
     m_frameCount.store(frameCount);
 
     // Advance the master clock `speed` times faster than realtime. m_frames is the frame counter the
@@ -322,20 +334,26 @@ void PCSX::SPU::SDLAudio::advanceFrames(uint32_t frameCount) {
 
 #if HAS_ATOMIC_WAIT
     auto goalpost = m_goalpost.load();
-    if (goalpost == m_previousGoalpost) return;
-
-    if (((int32_t)(goalpost - total)) > 0) return;
-    m_previousGoalpost = goalpost;
-    m_triggered++;
-    m_triggered.notify_one();
 #else
     std::unique_lock<std::mutex> l(m_mu);
     auto goalpost = m_goalpost;
-    if (goalpost == m_previousGoalpost) return;
+#endif
+    auto record = [&](uint32_t action) {
+        Capture::Schedule row;
+        row.kind = Capture::ScheduleKind::Master; row.frames = frameCount;
+        row.before = total; row.after = total + frameCount * static_cast<uint32_t>(speed);
+        row.target = goalpost; row.detail = speed; row.flags = action; row.source = nullClock;
+        m_capture.schedule(epoch, row);
+    };
+    if (goalpost == m_previousGoalpost) { record(0); return; }
 
-    if (((int32_t)(goalpost - total)) > 0) return;
+    if (((int32_t)(goalpost - total)) > 0) { record(1); return; }
     m_previousGoalpost = goalpost;
     m_triggered++;
+    record(2);
+#if HAS_ATOMIC_WAIT
+    m_triggered.notify_one();
+#else
     m_cv.notify_one();
 #endif
 }
@@ -365,7 +383,7 @@ void PCSX::SPU::SDLAudio::nullThreadLoop() {
     while (!m_nullThreadStop.load()) {
         next += periodNs;
         std::this_thread::sleep_until(next);
-        advanceFrames(kPeriodFrames);
+        advanceFrames(kPeriodFrames, true);
     }
 }
 

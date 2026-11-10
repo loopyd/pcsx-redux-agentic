@@ -486,8 +486,14 @@ void PCSX::SPU::impl::MainThread() {
 
         History::CD::WorkerBatch historyBatch;
         const auto audioEpoch = m_audioOut.capture().workerToken();
-        const uint64_t voiceOffset = m_audioOut.voiceFramesEnqueued() +
+        const auto enqueueOffset = m_audioOut.voiceFramesEnqueued();
+        const auto stagedFrames =
             (reinterpret_cast<uint8_t*>(pS) - reinterpret_cast<uint8_t*>(spuBuffer)) / sizeof(SDLAudio::Frame);
+        const uint64_t voiceOffset = enqueueOffset + stagedFrames;
+        Capture::Schedule schedule;
+        schedule.kind = Capture::ScheduleKind::Producer; schedule.voiceOffset = voiceOffset;
+        schedule.frames = NSSIZE; schedule.before = stagedFrames; schedule.after = stagedFrames / NSSIZE;
+        m_audioOut.capture().schedule(audioEpoch, schedule);
         m_captureAudioEpoch = audioEpoch;
         m_captureVoiceOffset = voiceOffset;
         m_captureKeyOnMask = 0;

@@ -4,7 +4,7 @@ local m, bit = require 'support', require 'bit'
 local M = {}
 local block_flags = {mono=1, muted=2, submitted=4}
 local faults = {'frames', 'blocks', 'events', 'thread', 'bounds', 'clock',
-    'discontinuity', 'streaming-loss', 'output', 'workers', 'gains', 'envelope-inputs'}
+    'discontinuity', 'streaming-loss', 'output', 'workers', 'gains', 'envelope-inputs', 'scheduling'}
 
 local function integer(value, low, high, label)
     assert(type(value) == 'number' and value % 1 == 0 and value >= low and value <= high,
@@ -56,10 +56,11 @@ function M.export(prefix)
         (#prefix <= 200 and prefix:match('^[%a%d][%w_.-]*$'))), 'invalid PCM capture prefix')
     local files = {pcm = prefix .. 'audio.f32', wav = prefix .. 'audio.wav',
         blocks = prefix .. 'blocks.ndjson', workers = prefix .. 'workers.ndjson', gains = prefix .. 'gains.ndjson',
-        envelope_inputs = prefix .. 'envelope_inputs.ndjson', events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
+        envelope_inputs = prefix .. 'envelope_inputs.ndjson', scheduling = prefix .. 'scheduling.ndjson',
+        events = prefix .. 'spu.ndjson', report = prefix .. 'audio.json'}
     local h = assert(PCSX.Audio, 'native audio capture binding required')
     local status = h.status()
-    local result = {schema = 'psx.native-audio/v9', native = status, complete = false, files = files,
+    local result = {schema = 'psx.native-audio/v10', native = status, complete = false, files = files,
         failures = m.array(), timing = {
             pcm = 'stereo frame offsets at the SDL input boundary, including underflow zero-fill',
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
@@ -71,11 +72,12 @@ function M.export(prefix)
             first_reverb_sample = 'first sample whose existing reverb base check admits active work; -1 means none observed, not master write enable or an activation edge',
             gains = 'first consumed dry stereo gain pair per voice and later changes at source frames; separate left/right reads, not an atomic snapshot or CPU-write positions; unconfirmed worker ranges remain unknown',
             envelope_inputs = 'first consumed phase controls per voice and later changes at source frames; existing phase-specific reads, not an atomic register snapshot, envelope state import or CPU-write positions; unconfirmed worker ranges remain unknown',
+            scheduling = 'recorder observation order across CPU, producer, callback and null clock; enqueue/dequeue hooks hold the existing queue mutex, other anchors are not atomic effect positions; initial producer staging is observed at its next batch boundary',
             voice_offsets = 'persistent stream-0 frame coordinates; underflow consumes none, fast-forward discards advance them',
             queues = 'begin/end snapshots; existing queued and partial mixer work is not flushed',
             stop = 'freezes output observations; does not drain queues or finish a DSP tail'}}
     local ok, err = pcall(function()
-        assert(status.version == 9 and status.state == 2 and status.rate == 44100 and
+        assert(status.version == 10 and status.state == 2 and status.rate == 44100 and
             status.channels == 2 and status.format == 'f32le' and
             status.stage == 'post-mixer-mute-mono/pre-SDL-conversion', 'unsupported frozen audio ABI')
         integer(status.frame_limit, 1, 2646000, 'frame limit')
@@ -90,12 +92,15 @@ function M.export(prefix)
         integer(status.gains, 0, status.gain_limit, 'gain count')
         assert(status.envelope_input_limit == status.event_limit, 'native envelope input capacity differs from event limit')
         integer(status.envelope_inputs, 0, status.envelope_input_limit, 'envelope input count')
-        integer(status.failures, 0, 4095, 'failure bits')
-        integer(status.first_failure, 0, 2048, 'first failure')
+        assert(status.scheduling_limit == status.event_limit, 'native scheduling capacity differs from event limit')
+        integer(status.scheduling, 0, status.scheduling_limit, 'scheduling count')
+        integer(status.failures, 0, 8191, 'failure bits')
+        integer(status.first_failure, 0, 4096, 'first failure')
         integer(status.dropped_events, 0, 4294967295, 'dropped events')
         integer(status.dropped_workers, 0, 4294967295, 'dropped workers')
         integer(status.dropped_gains, 0, 4294967295, 'dropped gains')
         integer(status.dropped_envelope_inputs, 0, 4294967295, 'dropped envelope inputs')
+        integer(status.dropped_scheduling, 0, 4294967295, 'dropped scheduling observations')
         for _, key in ipairs({'begin_cycle', 'end_cycle', 'dropped_frames', 'streaming_dropped'}) do
             decimal(status[key])
         end
@@ -121,7 +126,8 @@ function M.export(prefix)
         assert((status.failures == 0 and status.first_failure == 0) or
             (status.first_failure > 0 and bit.band(status.first_failure, status.first_failure - 1) == 0 and
             bit.band(status.failures, status.first_failure) ~= 0), 'inconsistent native first failure')
-        assert(status.failures ~= 0 or (status.dropped_events == 0 and status.dropped_workers == 0 and status.dropped_gains == 0 and status.dropped_envelope_inputs == 0 and status.dropped_frames == '0' and
+        assert(status.failures ~= 0 or (status.dropped_events == 0 and status.dropped_workers == 0 and
+            status.dropped_gains == 0 and status.dropped_envelope_inputs == 0 and status.dropped_scheduling == 0 and status.dropped_frames == '0' and
             status.streaming_dropped == '0'), 'native loss without failure')
 
         for _, capture in ipairs(m.captures) do
@@ -215,6 +221,93 @@ function M.export(prefix)
                     'native envelope input source regression or unchanged controls')
                 envelope_previous[voice] = e
             end)
+        local enqueue, waiting
+        result.scheduling = writeJournalBeforeValidation(files.scheduling, status.scheduling, h.scheduling,
+            33554432, function(s, index)
+                assert(s.index == index, 'noncontiguous native scheduling index')
+                local kind = integer(s.kind, 1, 8, 'scheduling kind')
+                if kind == 1 then
+                    local staged = integer(s.staged_frames, 0, 765, 'producer staged frames')
+                    integer(s.batch_phase, 0, 17, 'producer batch phase')
+                    assert(s.frames == 45 and staged == s.batch_phase * 45,
+                        'native producer batch position mismatch')
+                    assert(plus(decimal(s.enqueue_offset), staged) == decimal(s.voice_offset),
+                        'native producer source position mismatch')
+                elseif kind == 2 then
+                    decimal(s.voice_offset)
+                    integer(s.frames, 1, 2048, 'voice enqueue frames')
+                    integer(s.queued_before, 0, 2048, 'voice enqueue queue before')
+                    integer(s.blocked, 0, 1, 'voice enqueue blocked')
+                    assert(not enqueue and (s.blocked == 1) == (s.queued_before + s.frames >= 2048),
+                        'native voice enqueue initial predicate mismatch')
+                    enqueue = {voice = s.voice_offset, frames = s.frames, queued = s.queued_before,
+                        blocked = s.blocked}
+                elseif kind == 3 then
+                    decimal(s.voice_offset)
+                    integer(s.frames, 1, 2048, 'voice enqueue frames')
+                    integer(s.queued_after, 0, 2048, 'voice enqueue queue after')
+                    integer(s.accepted, 0, 1, 'voice enqueue accepted')
+                    local elapsed = decimal(s.wait_nanoseconds)
+                    assert(enqueue and enqueue.voice == s.voice_offset and enqueue.frames == s.frames,
+                        'native voice enqueue result lacks matching entry')
+                    assert(s.queued_after == enqueue.queued + s.accepted * s.frames and
+                        ((s.accepted == 1 and s.queued_after < 2048) or
+                        (s.accepted == 0 and enqueue.queued + s.frames >= 2048)),
+                        'native voice enqueue result mismatch')
+                    assert((enqueue.blocked == 1 and elapsed ~= '0') or
+                        (enqueue.blocked == 0 and elapsed == '0'), 'native voice enqueue duration mismatch')
+                    enqueue = nil
+                elseif kind == 4 then
+                    decimal(s.voice_offset)
+                    integer(s.requested_frames, 1, 2048, 'voice dequeue request')
+                    integer(s.frames, 0, s.requested_frames, 'voice dequeue frames')
+                    integer(s.queued_before, 0, 2048, 'voice dequeue queue before')
+                    integer(s.queued_after, 0, 2048, 'voice dequeue queue after')
+                    integer(s.discard, 0, 1, 'voice dequeue discard')
+                    assert(s.frames == math.min(s.requested_frames, s.queued_before) and
+                        s.queued_after == s.queued_before - s.frames, 'native voice dequeue count mismatch')
+                    if enqueue then
+                        assert(enqueue.queued == s.queued_before, 'native voice wait queue changed without observation')
+                        enqueue.queued = s.queued_after
+                    end
+                elseif kind == 5 then
+                    integer(s.frames, 1, 4294967295, 'master advance frames')
+                    integer(s.speed, 1, 1024, 'master effective speed')
+                    integer(s.old_frames, 0, 4294967295, 'master previous frames')
+                    integer(s.new_frames, 0, 4294967295, 'master resulting frames')
+                    integer(s.goal, 0, 4294967295, 'master goal')
+                    integer(s.action, 0, 2, 'master action')
+                    integer(s.source, 0, 1, 'master source')
+                    assert(s.new_frames == (s.old_frames + s.frames * s.speed) % 4294967296,
+                        'native master advancement mismatch')
+                    local diff = bit.tobit(s.goal - s.old_frames)
+                    assert(s.action == 0 or (s.action == 1 and diff > 0) or
+                        (s.action == 2 and diff <= 0), 'native master wake predicate mismatch')
+                elseif kind == 6 then
+                    local cycle, previous_cycle = decimal(s.cycle), decimal(s.previous_cycle)
+                    assert(not less(cycle, previous_cycle), 'native CPU scheduling cycle regression')
+                    for _, key in ipairs({'previous_audio_frames', 'target', 'master_frames'}) do
+                        integer(s[key], 0, 4294967295, 'CPU scheduling ' .. key)
+                    end
+                    integer(s.action, 0, 2, 'CPU scheduling action')
+                    local diff = bit.tobit(s.target - s.master_frames)
+                    local action = diff > 0 and 1 or (diff < -11025 and 2 or 0)
+                    assert(s.action == action, 'native CPU throttle predicate mismatch')
+                else
+                    decimal(s.cycle)
+                    integer(s.goal, 0, 4294967295, 'CPU wait goal')
+                    integer(s.initial_trigger, 0, 4294967295, 'CPU initial wait trigger')
+                    if kind == 7 then
+                        assert(not waiting, 'nested native CPU audio wait')
+                        waiting = s
+                    else
+                        assert(waiting and waiting.cycle == s.cycle and waiting.goal == s.goal and
+                            waiting.initial_trigger == s.initial_trigger, 'native CPU wait return lacks matching entry')
+                        waiting = nil
+                    end
+                end
+            end)
+        result.pending_scheduling = {enqueue = enqueue ~= nil, cpu_wait = waiting ~= nil}
         previous = status.begin_cycle
         local observed = '0'
         local pending_feed
@@ -259,7 +352,9 @@ function M.export(prefix)
             end
         end)
         assert(not pending_feed or status.failures ~= 0, 'unfinished native feed wait pair')
-        assert(result.blocks.complete and result.workers.complete and result.gains.complete and result.envelope_inputs.complete and result.events.complete, 'incomplete native journal export')
+        assert(result.blocks.complete and result.workers.complete and result.gains.complete and
+            result.envelope_inputs.complete and result.scheduling.complete and result.events.complete,
+            'incomplete native journal export')
         assert(offset == status.frames, 'native PCM not covered by blocks')
         assert(bit.band(status.failures, 32) ~= 0 or not less(status.end_cycle, status.begin_cycle),
             'native end clock regression without failure')

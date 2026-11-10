@@ -20,7 +20,7 @@ class Capture {
     enum Failure : uint32_t {
         Frames = 1, Blocks = 2, Events = 4, Thread = 8, Bounds = 16,
         Clock = 32, Discontinuity = 64, StreamingLoss = 128, Output = 256, Workers = 512, Gains = 1024,
-        EnvelopeInputs = 2048,
+        EnvelopeInputs = 2048, Scheduling = 4096,
     };
     enum class Kind : uint32_t { Access = 1, Write = 2, Feed = 3, Read = 4, Result = 5, Return = 6, FeedWait = 7 };
     enum BlockFlag : uint32_t { Mono = 1, Muted = 2, Submitted = 4, ValidBlockFlags = 7 };
@@ -50,14 +50,24 @@ class Capture {
         uint32_t voice = 0;
         int32_t phase = 0, rate = 0, exponential = 0, increasing = 0, sustainLevel = -1;
     };
+    enum class ScheduleKind : uint32_t {
+        Producer = 1, EnqueueBegin = 2, EnqueueEnd = 3, Dequeue = 4,
+        Master = 5, Cpu = 6, WaitBegin = 7, WaitEnd = 8,
+    };
+    struct Schedule {
+        ScheduleKind kind{};
+        uint64_t cycle = 0, previousCycle = 0, voiceOffset = 0, waitNanoseconds = 0;
+        uint32_t frames = 0, before = 0, after = 0, target = 0, detail = 0, flags = 0, source = 0;
+    };
     struct Status {
         uint64_t beginCycle = 0, endCycle = 0, droppedFrames = 0, streamingDropped = 0;
-        uint32_t version = 9, state = 0, frames = 0, blocks = 0, events = 0;
+        uint32_t version = 10, state = 0, frames = 0, blocks = 0, events = 0;
         uint32_t frameLimit = 0, blockLimit = 0, eventLimit = 0;
         uint32_t failures = 0, firstFailure = 0, droppedEvents = 0;
         uint32_t workers = 0, workerLimit = 0, droppedWorkers = 0;
         uint32_t gains = 0, gainLimit = 0, droppedGains = 0;
         uint32_t envelopeInputs = 0, envelopeInputLimit = 0, droppedEnvelopeInputs = 0;
+        uint32_t scheduling = 0, schedulingLimit = 0, droppedScheduling = 0;
     };
     struct Snapshot {
         Status status;
@@ -82,6 +92,7 @@ class Capture {
         if (!owner() || (m_lifecycle.load() & STATE_MASK) != 0 || !frames || frames > MAX_FRAMES ||
             !blocks || blocks > MAX_RECORDS || !events || events > MAX_RECORDS || m_epoch == MAX_EPOCH) return false;
         std::lock_guard lock(m_workerMutex);
+        std::lock_guard scheduleLock(m_scheduleMutex);
         try {
             std::vector<float> pcm(size_t(frames) * 2);
             std::vector<Block> records(blocks);
@@ -89,10 +100,12 @@ class Capture {
             std::vector<Worker> workers(events);
             std::vector<Gain> gains(events);
             std::vector<EnvelopeInput> envelopeInputs(events);
+            std::vector<Schedule> scheduling(events);
             m_pcm.swap(pcm); m_blocks.swap(records); m_events.swap(writes);
             m_workers.swap(workers);
             m_gains.swap(gains);
             m_envelopeInputs.swap(envelopeInputs);
+            m_scheduling.swap(scheduling);
         } catch (...) { return false; }
         m_status = {};
         m_status.beginCycle = m_status.endCycle = cycle;
@@ -103,6 +116,8 @@ class Capture {
         m_gainCount = m_droppedGains = m_gainSeen = 0;
         m_envelopeInputCount = m_droppedEnvelopeInputs = m_envelopeInputSeen = 0;
         m_workerThread = {};
+        m_scheduleCount = m_droppedScheduling = 0;
+        m_scheduleThreads = {};
         m_lifecycle.store((++m_epoch << EPOCH_SHIFT) | 1, std::memory_order_release);
         return true;
     }
@@ -111,6 +126,7 @@ class Capture {
         if (!owner() || !active()) return false;
         publish(cycle);
         std::lock_guard lock(m_workerMutex);
+        std::lock_guard scheduleLock(m_scheduleMutex);
         m_status.endCycle = cycle;
         auto state = m_lifecycle.load();
         while (!m_lifecycle.compare_exchange_weak(state, (state & ~STATE_MASK) | 2)) {}
@@ -119,12 +135,15 @@ class Capture {
     bool clear() {
         if (!owner() || active()) return false;
         std::lock_guard lock(m_workerMutex);
+        std::lock_guard scheduleLock(m_scheduleMutex);
         std::vector<float>().swap(m_pcm);
         std::vector<Block>().swap(m_blocks);
         std::vector<Event>().swap(m_events);
         std::vector<Worker>().swap(m_workers);
         std::vector<Gain>().swap(m_gains);
         std::vector<EnvelopeInput>().swap(m_envelopeInputs);
+        std::vector<Schedule>().swap(m_scheduling);
+        m_scheduleCount = m_droppedScheduling = 0;
         m_workerCount = m_workerQueued = m_droppedWorkers = 0;
         m_gainCount = m_droppedGains = m_gainSeen = 0;
         m_envelopeInputCount = m_droppedEnvelopeInputs = m_envelopeInputSeen = 0;
@@ -136,6 +155,7 @@ class Capture {
     bool status(Status& result) {
         if (!owner()) return false;
         std::lock_guard lock(m_workerMutex);
+        std::lock_guard scheduleLock(m_scheduleMutex);
         result = m_status;
         result.workers = m_workerCount;
         result.workerLimit = m_workers.size();
@@ -146,6 +166,9 @@ class Capture {
         result.envelopeInputs = m_envelopeInputCount;
         result.envelopeInputLimit = m_envelopeInputs.size();
         result.droppedEnvelopeInputs = m_droppedEnvelopeInputs;
+        result.scheduling = m_scheduleCount;
+        result.schedulingLimit = m_scheduling.size();
+        result.droppedScheduling = m_droppedScheduling;
         const auto state = m_lifecycle.load(std::memory_order_acquire);
         result.state = state & STATE_MASK;
         result.failures = (state >> FAILURE_SHIFT) & FAILURE_MASK;
@@ -207,6 +230,28 @@ class Capture {
     uint64_t workerToken() const {
         const auto state = m_lifecycle.load(std::memory_order_acquire);
         return (state & STATE_MASK) == 1 ? state >> EPOCH_SHIFT : 0;
+    }
+    // The append lock orders observations. Only queue hooks also hold the queue's
+    // existing mutex. No recorder lock spans a device operation or a wait.
+    void schedule(uint64_t epoch, const Schedule& value) {
+        if (!epoch) return;
+        std::lock_guard lock(m_scheduleMutex);
+        if (epoch != workerToken()) return;
+        const auto kind = uint32_t(value.kind);
+        if (kind < 1 || kind > 8 || value.source > 1) { fail(Bounds); return; }
+        const unsigned actor = kind >= 6 ? 0 : kind <= 3 ? 1 : kind == 4 ? 2 : 2 + value.source;
+        const auto thread = std::this_thread::get_id();
+        if ((actor == 0) != (thread == m_owner) ||
+            (m_scheduleThreads[actor] != std::thread::id{} && m_scheduleThreads[actor] != thread)) {
+            fail(Thread); return;
+        }
+        m_scheduleThreads[actor] = thread;
+        if (failures() || m_scheduleCount == m_scheduling.size()) {
+            if (!failures()) fail(Scheduling);
+            if (m_droppedScheduling != UINT32_MAX) ++m_droppedScheduling;
+            return;
+        }
+        m_scheduling[m_scheduleCount++] = value;
     }
     void gain(uint64_t epoch, uint64_t voiceOffset, uint32_t sample, uint32_t voice, int32_t left, int32_t right) {
         if (!epoch) return;
@@ -349,6 +394,13 @@ class Capture {
         if (count) std::memcpy(out, m_envelopeInputs.data() + first, size_t(count) * sizeof(EnvelopeInput));
         return true;
     }
+    bool scheduling(uint32_t first, uint32_t count, Schedule* out) {
+        std::lock_guard lock(m_scheduleMutex);
+        if (!frozen() || count > MAX_BATCH || first > m_scheduleCount || count > m_scheduleCount - first ||
+            (count && !out)) return false;
+        if (count) std::memcpy(out, m_scheduling.data() + first, size_t(count) * sizeof(Schedule));
+        return true;
+    }
     bool snapshot(Snapshot& out) {
         if (!frozen() || m_status.events > MAX_RECORDS) return false;
         if (!status(out.status)) return false;
@@ -380,8 +432,8 @@ class Capture {
     void drop(uint32_t frames) {
         m_status.droppedFrames += std::min<uint64_t>(frames, UINT64_MAX - m_status.droppedFrames);
     }
-    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 4095;
-    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 14, EPOCH_SHIFT = 26;
+    static constexpr uint64_t STATE_MASK = 3, FAILURE_MASK = 8191;
+    static constexpr unsigned FAILURE_SHIFT = 2, FIRST_SHIFT = 15, EPOCH_SHIFT = 28;
     static constexpr uint64_t MAX_EPOCH = UINT64_MAX >> EPOCH_SHIFT;
     uint32_t failures() const { return (m_lifecycle.load(std::memory_order_acquire) >> FAILURE_SHIFT) & FAILURE_MASK; }
     const std::thread::id m_owner;
@@ -405,6 +457,10 @@ class Capture {
     std::array<uint64_t, VOICE_COUNT> m_envelopeInputLastOffset{};
     std::array<std::array<int32_t, 5>, VOICE_COUNT> m_envelopeInputLast{};
     std::vector<EnvelopeInput> m_envelopeInputs;
+    std::mutex m_scheduleMutex;
+    std::array<std::thread::id, 4> m_scheduleThreads{};
+    uint32_t m_scheduleCount = 0, m_droppedScheduling = 0;
+    std::vector<Schedule> m_scheduling;
 };
 
 }

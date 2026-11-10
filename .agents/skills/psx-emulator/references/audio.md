@@ -15,7 +15,7 @@ Supply state and matching origin receipt, or executable/target. Required
 | `tail` | Additional guest Vsyncs after primary stop; 0–3600 / 0 |
 | `samples` | Storage capacity in stereo PCM frames; 1–2646000 / 441000 |
 | `blocks` | Callback record capacity; 1–65536 / 16384 |
-| `events` | Separate SPU event and worker-batch capacities; each 1–65536 / 16384 |
+| `events` | Independent SPU, worker, gain, envelope-input and scheduling capacities; each 1–65536 / 16384 |
 
 Other SPU action arguments reject. Capacity overflow fails; it is not a duration
 stop. Set callback capacities and GPU Vsync limits according to their different
@@ -38,6 +38,7 @@ without a success marker. Inspect retained files and logs.
 | `workers.ndjson` | Completed worker-batch source ranges, started-voice masks and acknowledged enqueue ranges |
 | `gains.ndjson` | First consumed dry stereo gain pair per voice and later changed pairs, at absolute voice-source frames |
 | `envelope_inputs.ndjson` | First consumed ADSR phase controls per voice and later changes, at absolute voice-source frames |
+| `scheduling.ndjson` | Ordered CPU, producer, queue and master-clock observations |
 | `spu.ndjson` | Native named access/feed records, exact cycles, observed frame cursor and parent identity |
 | `audio.json` | Native counts/limits/settings/queues, failure/drop data, export checks and retained PCM duration |
 | `sound.json` | Mission bounds, primary/tail observations, stop reason and outcome |
@@ -54,6 +55,7 @@ requires owner thread, not pause.
 | `status()` | Owner-thread snapshot; only frozen state has a terminal end cycle |
 | `blocks(first, count)`, `workers(first, count)`, `gains(first, count)`, `events(first, count)` | Frozen capture; zero-based range, at most 1024 rows; owning one-based named tables |
 | `envelopeInputs(first, count)` | Same frozen range contract; phase-specific consumed controls |
+| `scheduling(first, count)` | Same frozen range contract; shared scheduling observation order |
 | `samples(offset, frames)` | Frozen capture, at most 65536 stereo frames per call, copied binary string |
 | `exportPCM(raw, wav)` | Stream the frozen complete range to distinct simple capture filenames; return frame/raw/WAV byte counts |
 | `clear()` | Release inactive capture explicitly before another begin |
@@ -66,11 +68,11 @@ close before success or error; failed output prefixes remain on disk. Successful
 `pcm.export` registers both captures. `pcm.export(prefix)` selects a simple
 filename prefix for repeated captures. It allows at most 200 ASCII letters,
 digits, `_`, `.` or `-`, starting with a letter or digit. Its returned `files`
-names each raw, WAV, block, worker, gain, envelope-input, event and report capture.
+names each raw, WAV, block, worker, gain, envelope-input, scheduling, event and report capture.
 [Replay](replay.md#native-sound-comparison) uses
 this form for bounded segments and freezes before checked state operations. Failed frozen recorder prefixes remain readable.
 
-Native Audio ABI and `psx.native-audio` report version: 9. The 14 signed 64-bit
+Native Audio ABI and `psx.native-audio` report version: 10. The 14 signed 64-bit
 CD environment slots remain at the same offsets: `volume`, `interpolation`,
 `key_on_delay`, `mute`, `mono`, `streaming`, `null_sync`, `schema_version=2`,
 `reserved=0`, `speed`, `forced_irq`, `voice_mute`, `voice_solo`, `xa`.
@@ -87,7 +89,7 @@ by the CD recorder. These settings do not prove DSP or hardware fidelity.
 States: empty=0, active=1, frozen=2. Keep uint64 fields as canonical decimal strings,
 never doubles. Failure bits: frames=1, blocks=2, events=4, thread=8, bounds=16,
 clock=32, discontinuity=64, streaming-loss=128, output=256, workers=512,
-gains=1024, envelope-inputs=2048. Failures are sticky, drop counters saturate,
+gains=1024, envelope-inputs=2048, scheduling=4096. Failures are sticky, drop counters saturate,
 and buffers never overwrite.
 
 ## Application
@@ -193,11 +195,54 @@ its count, bound and loss. Frozen range reads copy at most 1024 rows under the
 worker mutex before Lua allocation. The journal has a 16 MiB export bound.
 Overflow sets sticky `envelope-inputs` failure; failed prefixes remain readable.
 
+`scheduling` records zero-based `index` and `kind` in one append order across CPU,
+producer, callback and null-clock threads. The recorder copies existing operands
+without extra device reads. Its mutex protects append, freeze and frozen copying,
+including the null-clock writer. No recorder lock spans a wait or DSP operation.
+
+| Kind | Retained operands |
+| --- | --- |
+| 1, producer boundary | `voice_offset`, `enqueue_offset`, `staged_frames`, derived `batch_phase`, `frames` |
+| 2, enqueue entry | `voice_offset`, `frames`, `queued_before`, `blocked` |
+| 3, enqueue result | `voice_offset`, `frames`, `queued_after`, `wait_nanoseconds`, `accepted` |
+| 4, dequeue | `voice_offset`, `requested_frames`, `frames`, `queued_before`, `queued_after`, `discard` |
+| 5, master advancement | `frames`, effective `speed`, `old_frames`, `new_frames`, `goal`, `action`, `source` |
+| 6, CPU decision | `cycle`, `previous_cycle`, `previous_audio_frames`, `target`, sampled `master_frames`, `action` |
+| 7, wait entry | `cycle`, published `goal`, `initial_trigger` |
+| 8, wait return | The same retained entry operands, without another trigger or master read |
+
+Producer boundaries identify the next 45-frame batch. `staged_frames` counts
+completed frames still awaiting submission, and `batch_phase` is that count divided
+by 45. The first boundary is observed on the producer thread after begin. It is
+not an atomic begin snapshot, and an already-running batch remains an unknown prefix.
+Join source ranges to completed, acknowledged worker rows before comparing signals.
+
+Enqueue and dequeue observations hold the voice queue's existing mutex. The strict
+admission predicate requires queued plus incoming frames below 2048. Entries and
+results can surround dequeues while the existing 200 ms wait releases that mutex.
+Wait duration has the same host-time meaning as feed waits. `discard=1` marks
+fast-forward consumption that produces no retained PCM.
+
+Master counters wrap as uint32. `source=0` is the callback; `source=1` is the null
+clock. Actions are unchanged goal=0, pending goal=1 and trigger increment before
+notification=2. The wake predicate compares `goal` with the old `fetch_add` total,
+not `new_frames`. CPU actions are no wait=0, wait=1 and debt adjustment=2.
+Wait entry follows goal publication; return records completion of the existing wait.
+
+The append order orders observations outside the queue mutex. It does not make
+master atomics, CPU loads or goal publication atomic with recording, and it does
+not locate CPU writes in sample time. Unfinished enqueue and wait pairs at freeze
+remain visible in `pending_scheduling`. Scheduling storage independently uses the
+event capacity. `scheduling`, `scheduling_limit` and `dropped_scheduling` report its
+count, capacity and loss. Frozen ranges copy at most 1024 rows before Lua allocation.
+Export has a 32 MiB bound; overflow sets sticky `scheduling` failure. Failed prefixes
+remain readable, and the harness capture and replay aggregate limits still apply.
+
 Capture does not stop the worker. A batch already in progress at begin, or still
 in progress at freeze, has no retained row. Freeze can also precede the worker's
 acknowledgement of an already consumed enqueue. Such prefixes and unconfirmed
-tails remain unknown. Separate producer, consumer and queue snapshots have no
-atomic admission boundary. For a bounded key-on comparison, establish an initial
+tails remain unknown. Begin/end producer, consumer and queue snapshots have no
+common atomic boundary. For a bounded key-on comparison, establish an initial
 clear pending-start flag and exactly one accepted KON for the selected voice,
 with no competing host writes. The observed start mask then identifies its batch.
 Retriggers and overlapping CPU writes require additional evidence.

@@ -181,12 +181,15 @@ void PCSX::Counters::update() {
         // the old Emulator::SettingScaler defaulted to 100, so this is byte-identical to the prior default.
         diff *= 44100;
         diff /= g_emulator->m_psxClockSpeed;
-        uint32_t target = m_audioFrames + diff;
+        const uint32_t audioFrames = m_audioFrames;
+        uint32_t target = audioFrames + diff;
         uint32_t newFrames = g_emulator->m_spu->getCurrentFrames();
         int32_t framesDiff = target - newFrames;
+        g_emulator->m_spu->captureAudioDecision(cycle, prev, audioFrames, target, newFrames,
+                                               framesDiff > 0 ? 1 : framesDiff < -kMaxAudioLagFrames ? 2 : 0);
         if (framesDiff > 0) {
             g_emulator->m_cpu->m_regs.previousCycles = cycle;
-            g_emulator->m_spu->waitForGoal(target);
+            g_emulator->m_spu->waitForGoal(target, cycle);
             m_audioFrames = target;
         } else if (framesDiff < -kMaxAudioLagFrames) {
             // The host couldn't sustain the requested speed. Cap the debt, otherwise returning to 1x runs

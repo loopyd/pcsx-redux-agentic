@@ -40,6 +40,9 @@ namespace PCSX {
 template <typename T, size_t BS = 1024>
 class Circular {
     using ms = std::chrono::milliseconds;
+    struct Unobserved {
+        template <typename... Args> void operator()(Args&&...) const {}
+    };
 
   public:
     static constexpr size_t BUFFER_SIZE = BS;
@@ -56,25 +59,32 @@ class Circular {
         std::unique_lock<std::mutex> l(m_mu);
         return bufferedLocked();
     }
-    Admission enqueue(const T* data, size_t N, ms maxWait = ms{200}) {
+    template <typename Observe = Unobserved>
+    Admission enqueue(const T* data, size_t N, ms maxWait = ms{200}, Observe observe = {}) {
         if (N > BUFFER_SIZE) {
             throw std::runtime_error("Trying to enqueue too much data");
         }
         std::unique_lock<std::mutex> l(m_mu);
         const auto before = bufferedLocked();
         const bool blocked = N >= availableLocked();
+        observe(false, Admission{before, before, 0, blocked, false});
         using Clock = std::chrono::steady_clock;
         const auto begin = blocked ? Clock::now() : Clock::time_point{};
         bool safe = m_cv.wait_for(l, maxWait, [this, N]() -> bool { return N < availableLocked(); });
         const uint64_t elapsed = blocked
             ? std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count() : 0;
         if (safe) enqueueSafe(data, N);
-        return {before, bufferedLocked(), elapsed, blocked, safe};
+        const Admission result{before, bufferedLocked(), elapsed, blocked, safe};
+        observe(true, result);
+        return result;
     }
-    size_t dequeue(T* data, size_t N) {
+    template <typename Observe = Unobserved>
+    size_t dequeue(T* data, size_t N, Observe observe = {}) {
         std::unique_lock<std::mutex> l(m_mu);
-        N = std::min(N, bufferedLocked());
+        const auto before = bufferedLocked();
+        N = std::min(N, before);
         dequeueSafe(data, N);
+        observe(before, N);
 
         return N;
     }

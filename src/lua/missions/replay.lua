@@ -163,7 +163,8 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             comparison.counts_equal = segment.native.frames == baseline.native.frames and
                 segment.native.blocks == baseline.native.blocks and segment.native.events == baseline.native.events and
                 segment.native.workers == baseline.native.workers and segment.native.gains == baseline.native.gains and
-                segment.native.envelope_inputs == baseline.native.envelope_inputs
+                segment.native.envelope_inputs == baseline.native.envelope_inputs and
+                segment.native.scheduling == baseline.native.scheduling
             local function comparable(metadata)
                 local value = {}
                 for key, item in pairs(metadata) do
@@ -178,11 +179,12 @@ m.begin('runs,depth,limit,audio,samples,blocks,events', function()
             comparison.workers = compareFile(baseline.files.workers, segment.files.workers)
             comparison.gains = compareFile(baseline.files.gains, segment.files.gains)
             comparison.envelope_inputs = compareFile(baseline.files.envelope_inputs, segment.files.envelope_inputs)
+            comparison.scheduling = compareFile(baseline.files.scheduling, segment.files.scheduling)
             comparison.events = compareFile(baseline.files.events, segment.files.events)
             comparison.equal = comparison.boundary_equal and comparison.cycles_equal and comparison.settings_equal and
                 comparison.counts_equal and comparison.metadata_equal and comparison.pcm.equal and
                 comparison.blocks.equal and comparison.workers.equal and comparison.gains.equal and
-                comparison.envelope_inputs.equal and comparison.events.equal
+                comparison.envelope_inputs.equal and comparison.scheduling.equal and comparison.events.equal
         end
         if not comparison.equal then
             result.audio_equal = false

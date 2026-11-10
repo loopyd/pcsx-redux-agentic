@@ -68,7 +68,9 @@ class SPUInterface {
     virtual void saveStopped(SaveStates::SPU&) = 0;
     virtual void loadStopped(const SaveStates::SPU&) = 0;
     virtual uint32_t getCurrentFrames() = 0;
-    virtual void waitForGoal(uint32_t goal) = 0;
+    virtual void waitForGoal(uint32_t goal, uint64_t cycle) = 0;
+    virtual void captureAudioDecision(uint64_t cycle, uint64_t previous, uint32_t audioFrames,
+                                      uint32_t target, uint32_t current, uint32_t action) = 0;
     virtual uint32_t getFrameCount() = 0;
     virtual void setLua(Lua L) = 0;
     virtual uint64_t captureAccess(uint32_t, uint32_t, uint32_t, bool) = 0;
