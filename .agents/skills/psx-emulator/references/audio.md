@@ -21,15 +21,34 @@ Other SPU action arguments reject. Capacity overflow fails; it is not a duration
 stop. Set callback capacities and GPU Vsync limits according to their different
 timing.
 
-Save initial state before begin, final state after freeze. Never save, restore,
-reset or edit during capture. Maintained helpers reject active history/audio;
-arbitrary Lua writes are not intercepted. Audit scripts and avoid GUI/settings
+Regular capture saves initial state before begin and final state after freeze.
+Never save, restore, reset or edit during capture. Maintained helpers reject
+active history/audio; arbitrary Lua writes are not intercepted. Audit scripts and avoid GUI/settings
 changes. Existing queues and partial mixer work are retained, not flushed.
 
 CPU pause precedes deferred freeze; audio may append between them. `tail`
 continues guest execution without key-off, DSP synchronization or guaranteed
 release completion. Unexpected pause, loss, overflow or export errors fail
 without a success marker. Inspect retained files and logs.
+
+### Cold producer capture
+
+Select `--audio-cold-capture SAMPLES,BLOCKS,EVENTS` with `--mission spu
+--argument action=cold-capture`. The positive launch limits are at most
+2646000, 65536 and 65536. Supply `identity`, `frames`, optional `stop` and `tail`;
+`target`, state restoration and mission-level capacity arguments reject.
+
+This mode defers the first SPU worker until initial core reset finishes, begins
+the recorder, then launches that worker. It requires a fresh process, empty
+queues and zero source, staging, master and goal state. It changes the worker's
+startup boundary explicitly; it does not establish default startup timing or
+choose the later host schedule. Ordinary reset and state-edit refusals remain.
+
+`cold-start.json` contains the separate `psx.audio-cold-start/v1` qualification
+from `PCSX.Audio.coldStart()`. The first producer row must confirm source 0,
+staging 0 and batch phase 0. There is no initial saved state. Freeze/export and
+final state capture follow the regular procedure. An EXE shell handoff still
+writes RAM and assigns registers on the host; qualify that handoff separately.
 
 | Capture | Content |
 | --- | --- |
@@ -42,7 +61,7 @@ without a success marker. Inspect retained files and logs.
 | `spu.ndjson` | Native named access/feed records, exact cycles, observed frame cursor and parent identity |
 | `audio.json` | Native counts/limits/settings/queues, failure/drop data, export checks and retained PCM duration |
 | `sound.json` | Mission bounds, primary/tail observations, stop reason and outcome |
-| `initial.pbuf`, `final.pbuf` | Machine contexts surrounding capture; neither contains the complete host audio queues |
+| `initial.pbuf`, `final.pbuf` | Machine contexts without complete host audio queues; cold capture has only the final state |
 
 For custom missions, begin on a paused owner-thread interpreter. Paused-owner
 stop/export/clear can recover failed evidence after backend changes; `status`
@@ -59,6 +78,7 @@ requires owner thread, not pause.
 | `samples(offset, frames)` | Frozen capture, at most 65536 stereo frames per call, copied binary string |
 | `exportPCM(raw, wav)` | Stream the frozen complete range to distinct simple capture filenames; return frame/raw/WAV byte counts |
 | `clear()` | Release inactive capture explicitly before another begin |
+| `coldStart()` | Paused owner; retained fresh-worker origin for the current capture epoch, or refusal for an ordinary capture |
 
 Record ranges validate before copying; zero rows at the retained end are valid.
 PCM export accepts ASCII filenames of 1–255 bytes, starting with a letter or digit,
@@ -214,7 +234,9 @@ including the null-clock writer. No recorder lock spans a wait or DSP operation.
 Producer boundaries identify the next 45-frame batch. `staged_frames` counts
 completed frames still awaiting submission, and `batch_phase` is that count divided
 by 45. The first boundary is observed on the producer thread after begin. It is
-not an atomic begin snapshot, and an already-running batch remains an unknown prefix.
+not an atomic begin snapshot for ordinary `Audio.begin`, and an already-running
+batch remains an unknown prefix. Cold capture qualifies its initial zero state
+before the first worker starts.
 Join source ranges to completed, acknowledged worker rows before comparing signals.
 
 Enqueue and dequeue observations hold the voice queue's existing mutex. The strict
@@ -238,8 +260,9 @@ count, capacity and loss. Frozen ranges copy at most 1024 rows before Lua alloca
 Export has a 32 MiB bound; overflow sets sticky `scheduling` failure. Failed prefixes
 remain readable, and the harness capture and replay aggregate limits still apply.
 
-Capture does not stop the worker. A batch already in progress at begin, or still
-in progress at freeze, has no retained row. Freeze can also precede the worker's
+Capture does not stop the worker. With ordinary `Audio.begin`, a batch already
+in progress at begin has no retained row. A batch still in progress at freeze
+has no row in either mode. Freeze can also precede the worker's
 acknowledgement of an already consumed enqueue. Such prefixes and unconfirmed
 tails remain unknown. Begin/end producer, consumer and queue snapshots have no
 common atomic boundary. For a bounded key-on comparison, establish an initial

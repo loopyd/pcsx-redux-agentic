@@ -708,7 +708,7 @@ void PCSX::SPU::impl::wipeChannels() {
 }
 
 // Initialization of certain buffers and of the mixing thread.
-void PCSX::SPU::impl::SetupThread() {
+void PCSX::SPU::impl::SetupThread(bool coldCapture) {
     invalidateCapture();
     // Initialize the mixing buffers.
     memset(SSumR, 0, NSSIZE * sizeof(int));
@@ -721,8 +721,18 @@ void PCSX::SPU::impl::SetupThread() {
     // Initialize the thread variables.
     endThread = 0;
     threadEnded = 0;
+    if (coldCapture && !m_audioOut.beginColdCapture(uint32_t(pS - reinterpret_cast<int16_t*>(spuBuffer)) / 2,
+                                                  uint32_t(iCycle))) {
+        throw std::runtime_error("Cold audio capture requires a fresh paused interpreter, queues and clocks");
+    }
     // Flag that initialization is complete.
-    hMainThread = std::thread([this]() { MainThread(); });
+    m_workerStarted = true;
+    try {
+        hMainThread = std::thread([this]() { MainThread(); });
+    } catch (...) {
+        invalidateCapture();
+        throw;
+    }
     bSpuInit = 1;
     m_stateRestartFailed = false;
 }
@@ -811,10 +821,29 @@ void PCSX::SPU::impl::RemoveStreams(void) {
 }
 
 // Called by the main emulator after init.
+bool PCSX::SPU::impl::armColdCapture(const Capture::Limits& limits) {
+    if (!m_audioOut.capture().ownerThread() || m_opened || m_workerStarted || spuIsOpen ||
+        hMainThread.joinable() || bSpuInit || m_coldCaptureDeferred || !m_audioOut.armColdCapture(limits)) return false;
+    m_coldCaptureDeferred = true;
+    return true;
+}
+
+void PCSX::SPU::impl::startColdCapture() {
+    if (!m_audioOut.capture().ownerThread() || !m_coldCaptureDeferred || !spuIsOpen ||
+        m_workerStarted || hMainThread.joinable() || bSpuInit || m_stateAccess || m_stateRestartFailed ||
+        !spuBuffer || !m_reverb.mixStart || pS || iCycle || endThread || threadEnded) {
+        throw std::runtime_error("Cold audio capture requires the deferred first SPU worker");
+    }
+    m_coldCaptureDeferred = false;
+    SetupThread(true);
+}
+
 bool PCSX::SPU::impl::open() {
     invalidateCapture();
     // Guard against a redundant open.
     if (spuIsOpen) return true;
+    if (m_coldCaptureDeferred && m_opened) throw std::runtime_error("Cold audio capture requires the first SPU open");
+    m_opened = true;
 
     spuIrq = 0;
     spuAddr = 0xffffffff;
@@ -830,7 +859,7 @@ bool PCSX::SPU::impl::open() {
     SetupStreams();
 
     // Start the thread that feeds data.
-    SetupThread();
+    if (!m_coldCaptureDeferred) SetupThread();
 
     spuIsOpen = 1;
 

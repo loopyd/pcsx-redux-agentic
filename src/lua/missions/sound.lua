@@ -3,11 +3,17 @@
 local m, pcm = require 'support', require 'pcm'
 local M = {}
 
-function M.run()
+function M.run(cold)
     m.begin('action,target,identity,frames,stop,samples,blocks,events,tail', function()
         local h = assert(PCSX.Audio, 'native audio capture binding required')
         local identity = assert(m.argument('identity'), 'identity is required')
         assert(#identity > 0 and #identity <= 160, 'identity must be 1..160 bytes')
+        if cold then
+            assert(not m.input('state', false), 'cold capture cannot restore a state')
+            for _, name in ipairs({'target', 'samples', 'blocks', 'events'}) do
+                assert(not m.argument(name), name .. ' is supplied by cold startup or its launch limits')
+            end
+        end
         if m.input('state', false) then
             assert(os.getenv('PSX_RUNTIME_ORIGIN_VALIDATED') == '1',
                 'audio state capture requires a matching origin receipt')
@@ -42,6 +48,7 @@ function M.run()
                     tail_frames = tail_count, tail_limit = tail, stop = stop,
                     sample_limit = samples, block_limit = blocks, event_limit = events,
                     native_complete = result and result.complete or false, capture_error = capture_error,
+                    origin = cold and 'deferred first worker after initial reset' or 'Audio.begin after initial state capture',
                     boundary = 'pause then deferred native freeze; host callback may append PCM between them',
                     tail = 'additional guest Vsync interval; no injected key-off, queue drain or DSP-end claim'})
                 if success then m.finish() else error('incomplete audio capture: ' .. reason) end
@@ -70,14 +77,23 @@ function M.run()
             if started and not closing then reached('stop reached'); return false end
             return true
         end) end
-        m.atTarget(function()
+        local function begin()
             PCSX.pauseEmulator()
             PCSX.nextPause(m.guard(function()
                 if closing then return end
-                m.requireIdleCapture()
-                assert(h.status().state == 0, 'audio recorder must be empty before initial state capture')
-                m.captureState('initial.pbuf')
-                h.begin(samples, blocks, events)
+                if cold then
+                    local origin = h.coldStart()
+                    assert(origin.schema == 'psx.audio-cold-start/v1', 'cold startup capture was not selected')
+                    local status = h.status()
+                    assert(status.state == 1, 'cold startup recorder must be active')
+                    samples, blocks, events = status.frame_limit, status.block_limit, status.event_limit
+                    m.report('cold-start.json', origin)
+                else
+                    m.requireIdleCapture()
+                    assert(h.status().state == 0, 'audio recorder must be empty before initial state capture')
+                    m.captureState('initial.pbuf')
+                    h.begin(samples, blocks, events)
+                end
                 started = true
                 if h.status().failures ~= 0 then finish('initial recorder failure', false)
                 else
@@ -85,7 +101,8 @@ function M.run()
                     if not closing then PCSX.resumeEmulator() end
                 end
             end))
-        end)
+        end
+        if cold then begin() else m.atTarget(begin) end
     end)
 end
 

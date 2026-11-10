@@ -41,6 +41,8 @@ class SPUInterface {
 
     void interrupt();
     virtual bool open() = 0;
+    virtual bool armColdCapture(const SPU::Capture::Limits&) = 0;
+    virtual void startColdCapture() = 0;
     virtual long init(void) = 0;
     virtual long shutdown(void) = 0;
     virtual long close(void) = 0;

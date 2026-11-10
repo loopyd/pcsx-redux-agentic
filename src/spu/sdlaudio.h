@@ -121,6 +121,8 @@ class SDLAudio {
     bool captureEnvironment(Environment&);
     bool captureSnapshot(Capture::Snapshot&);
     bool checkEnvironment(const Environment&);
+    bool armColdCapture(const Capture::Limits&);
+    bool beginColdCapture(uint32_t stagedFrames, uint32_t batchPhase);
     ~SDLAudio() { uninit(); }
     uint32_t getFrameCount() { return m_frameCount.load(); }
     void reinit() {
@@ -199,6 +201,15 @@ class SDLAudio {
 
   private:
     Capture m_capture;
+    struct ColdStart {
+        uint64_t epoch = 0, cycle = 0, previousCycle = 0, voiceEnqueued = 0, voiceDequeued = 0;
+        uint32_t pc = 0, voiceQueue = 0, discQueue = 0, masterFrames = 0;
+        uint32_t goal = 0, previousGoal = 0, trigger = 0, callbackFrames = 0;
+        uint32_t stagedFrames = 0, batchPhase = 0;
+        Capture::Limits limits;
+    } m_coldStart;
+    Capture::Limits m_coldCaptureLimits;
+    bool beginCapture(const Capture::Limits&, bool coldStart = false);
     uint64_t m_voiceEnqueued = 0, m_voiceDequeued = 0;
     std::function<std::array<uint32_t, 2>()> m_influences;
     std::array<int64_t, 14> captureSettings() const;

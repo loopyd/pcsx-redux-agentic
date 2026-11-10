@@ -73,6 +73,8 @@ class impl final : public SPUInterface {
   public:
     using json = nlohmann::json;
     bool open() final;
+    bool armColdCapture(const Capture::Limits&) final;
+    void startColdCapture() final;
     // SPU functions.
     long init(void) final;
     long shutdown(void) final;
@@ -152,6 +154,7 @@ class impl final : public SPUInterface {
     bool m_stateAccess = false;
     bool m_stateRestart = false;
     bool m_stateRestartFailed = false;
+    bool m_opened = false, m_workerStarted = false, m_coldCaptureDeferred = false;
     uint64_t m_captureParent = 0;
     uint32_t m_captureKeyOnMask = 0;
     std::array<int32_t, Capture::VOICE_COUNT> m_capturePreSampleSteps{};
@@ -233,7 +236,7 @@ class impl final : public SPUInterface {
     void writeCaptureBufferCD(int numbSamples);
     void SetupStreams();
     void RemoveStreams();
-    void SetupThread();
+    void SetupThread(bool coldCapture = false);
     void RemoveThread();
     void StartSound(SPUCHAN *voice);
     // Read-time reconstruction. A CPU read of ENVX or of SPUSTAT bit 11 asks what
@@ -264,7 +267,7 @@ class impl final : public SPUInterface {
     void observeCDFeed(uint32_t reason, const xa_decode_t* xap, uint32_t frames = 0,
                        bool cdda = false, uint64_t event = 0);
 
-    int spuIsOpen;
+    int spuIsOpen = 0;
 
     // PSX buffer and addresses.
     uint16_t regArea[10000];
@@ -274,7 +277,7 @@ class impl final : public SPUInterface {
     // for the offset math that stores/restores those pointers (e.g. savestates).
     uint8_t *spuRamBase;
     uint8_t *irqAddress = 0;
-    uint8_t *spuBuffer;
+    uint8_t *spuBuffer = nullptr;
     uint8_t *mixIrqAddress = 0;
 
     struct CaptureBuffer {
@@ -379,7 +382,7 @@ class impl final : public SPUInterface {
     // steps it NSSIZE times up front and noise voices read their sample's level here.
     int noiseLevel[NSSIZE];
     int iCycle = 0;
-    int16_t *pS;
+    int16_t *pS = nullptr;
 
     // Secure start counter.
     int secureStart = 0;

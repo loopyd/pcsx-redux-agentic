@@ -19,11 +19,14 @@
 
 #include <uv.h>
 
+#include <array>
+#include <charconv>
 #include <csignal>
 #include <filesystem>
 #include <iostream>
 #include <map>
 #include <string>
+#include <string_view>
 
 #include "core/arguments.h"
 #include "core/cdrom.h"
@@ -50,6 +53,28 @@
 #include "tracy/Tracy.hpp"
 
 static PCSX::UI *s_ui;
+
+static PCSX::SPU::Capture::Limits coldAudioLimits(const CommandLine::args& args) {
+    if (!args.options().count("audio-cold-capture")) return {};
+    const auto values = args.values("audio-cold-capture");
+    const char* error = "-audio-cold-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS triple within 2646000,65536,65536";
+    if (args.options().count("audio-cold-capture") != 1 || values.size() != 1 ||
+        args.options().count("version") || args.options().count("dumpproto")) throw std::invalid_argument(error);
+    std::string_view remaining = values.front();
+    std::array<uint32_t, 3> limits{};
+    for (unsigned n = 0; n < limits.size(); ++n) {
+        const auto comma = remaining.find(',');
+        if ((comma == std::string_view::npos) != (n == limits.size() - 1)) throw std::invalid_argument(error);
+        const auto part = remaining.substr(0, comma);
+        if (part.empty() || part.front() < '1' || part.front() > '9') throw std::invalid_argument(error);
+        const auto parsed = std::from_chars(part.data(), part.data() + part.size(), limits[n]);
+        if (parsed.ec != std::errc{} || parsed.ptr != part.data() + part.size()) throw std::invalid_argument(error);
+        if (comma != std::string_view::npos) remaining.remove_prefix(comma + 1);
+    }
+    const PCSX::SPU::Capture::Limits result{limits[0], limits[1], limits[2]};
+    if (!result.valid()) throw std::invalid_argument(error);
+    return result;
+}
 
 class SystemImpl final : public PCSX::System {
     virtual void biosPutc(int c) final override {
@@ -235,7 +260,9 @@ int pcsxMain(int argc, char **argv) {
 
 
     const PCSX::Missions::Resource* mission = nullptr;
+    PCSX::SPU::Capture::Limits coldCapture;
     try {
+        coldCapture = coldAudioLimits(args);
         const auto missionCount = args.options().count("mission");
         const auto catalogCount = args.options().count("mission-catalog");
         const bool externalCode = args.options().count("dofile") || args.options().count("archive") || args.options().count("exec");
@@ -243,7 +270,7 @@ int pcsxMain(int argc, char **argv) {
             if (catalogCount != 1 || missionCount || externalCode || !args.values("mission-catalog").empty()) {
                 throw std::invalid_argument("Mission catalogue cannot be combined with execution");
             }
-            for (auto flag : {"bios", "exe", "loadexe", "iso", "loadiso", "disk", "run", "dumpproto", "version"}) {
+            for (auto flag : {"bios", "exe", "loadexe", "iso", "loadiso", "disk", "run", "dumpproto", "version", "audio-cold-capture"}) {
                 if (args.options().count(flag)) throw std::invalid_argument("Mission catalogue cannot be combined with run options");
             }
             PCSX::Missions::catalogue(std::cout);
@@ -301,6 +328,9 @@ int pcsxMain(int argc, char **argv) {
     // At this point, we're committed to run the emulator, so we first create it, and the UI next.
     PCSX::Emulator *emulator = new PCSX::Emulator();
     PCSX::g_emulator = emulator;
+    if (coldCapture.frames && !emulator->m_spu->armColdCapture(coldCapture)) {
+        throw std::runtime_error("Cold audio capture must be armed before audio initialization and the first SPU open");
+    }
     auto &favorites = emulator->settings.get<PCSX::Emulator::SettingOpenDialogFavorites>().value;
 
     s_ui = createUI(args, favorites);
@@ -468,6 +498,7 @@ runner.init({
     emulator->m_gpu->setCachedDithering(emuSettings.get<PCSX::Emulator::SettingCachedDithering>());
     emulator->m_gpu->setLinearFiltering();
     emulator->reset();
+    if (coldCapture.frames) emulator->m_spu->startColdCapture();
 
     // Looking at setting up what to run exactly within the emulator, if requested.
     if (args.get<bool>("run")) system->resume();

@@ -3,7 +3,9 @@
 local m, s = require 'support', require 'snapshot'
 m.begin('action,target,voice,offset,length,address,value,frames,savestate,scratch,identity,stop,samples,blocks,events,tail', function()
     local action = m.argument('action', 'inspect')
-    if action == 'capture' then require('sound').run(); return end
+    if action == 'capture' or action == 'cold-capture' then
+        require('sound').run(action == 'cold-capture'); return
+    end
     for _, name in ipairs({'identity', 'stop', 'samples', 'blocks', 'events', 'tail'}) do
         assert(not m.argument(name), name .. ' applies only to capture')
     end

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "spu/sdlaudio.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -138,6 +139,71 @@ void PCSX::SPU::SDLAudio::checkCaptureSettings() {
         m_settings.get<Device>().value != m_captureDevice) m_capture.fail(Capture::Discontinuity);
 }
 
+bool PCSX::SPU::SDLAudio::armColdCapture(const Capture::Limits& limits) {
+    if (!limits.valid() || !paused(m_capture) || m_coldCaptureLimits.frames || m_audioInitialized ||
+        m_stream || m_device || m_nullThreadActive || m_nullThread.joinable() ||
+        m_capture.identity() != std::array<uint64_t, 2>{0, 0}) return false;
+    m_coldCaptureLimits = limits;
+    return true;
+}
+
+bool PCSX::SPU::SDLAudio::beginColdCapture(uint32_t stagedFrames, uint32_t batchPhase) {
+    if (stagedFrames || batchPhase || !beginCapture(m_coldCaptureLimits, true)) return false;
+    m_coldStart.stagedFrames = stagedFrames;
+    m_coldStart.batchPhase = batchPhase;
+    return true;
+}
+
+bool PCSX::SPU::SDLAudio::beginCapture(const Capture::Limits& limits, bool coldStart) {
+    if (!limits.valid() || !paused(m_capture) || !m_stream || !m_audioInitialized || !g_emulator->m_cpu ||
+        g_emulator->m_cpu->isDynarec() || g_emulator->m_mem->msanInitialized()) return false;
+    const auto settings = captureSettings();
+    if (settings[Environment::Volume] < 0 || settings[Environment::Volume] > 3 ||
+        settings[Environment::Interpolation] < 0 || settings[Environment::Interpolation] > 3) return false;
+    StreamGuard lock(m_stream);
+    Capture::Status before;
+    if (!lock.valid || !m_capture.status(before) || before.state != 0) return false;
+    const std::array<uint32_t, 2> queues = {uint32_t(m_voicesStream.buffered()), uint32_t(m_audioStream.buffered())};
+    ColdStart origin;
+    if (coldStart) {
+        const auto& cpu = *g_emulator->m_cpu;
+        const auto& regs = cpu.m_regs;
+        origin.cycle = regs.cycle; origin.previousCycle = regs.previousCycles; origin.pc = regs.pc;
+        origin.voiceQueue = queues[0]; origin.discQueue = queues[1];
+        origin.voiceEnqueued = m_voiceEnqueued; origin.voiceDequeued = m_voiceDequeued;
+        origin.masterFrames = m_frames.load(); origin.callbackFrames = m_frameCount.load();
+        origin.goal = m_goalpost; origin.trigger = m_triggered;
+        origin.previousGoal = m_previousGoalpost;
+        origin.limits = limits;
+        if (m_capture.identity()[1] || origin.voiceQueue || origin.discQueue || origin.voiceEnqueued ||
+            origin.voiceDequeued || origin.masterFrames || origin.callbackFrames || origin.goal ||
+            origin.trigger || origin.previousGoal || m_nullThreadActive || m_nullThread.joinable() ||
+            g_system->inExecute() || g_system->hasPendingSaveStateLoad() || origin.pc != 0xbfc00000 ||
+            origin.cycle || origin.previousCycle || regs.code || regs.muldivReady || regs.gteReady ||
+            regs.scheduleMask || regs.spuInterrupt.load() ||
+            cpu.m_shellStarted || cpu.m_inISR || cpu.m_nextIsDelaySlot || cpu.m_inDelaySlot ||
+            cpu.m_currentDelayedLoad || cpu.m_delayedLoadInfo[0].active || cpu.m_delayedLoadInfo[0].pcActive ||
+            cpu.m_delayedLoadInfo[1].active || cpu.m_delayedLoadInfo[1].pcActive ||
+            std::any_of(std::begin(regs.GPR.r), std::end(regs.GPR.r), [](auto value) { return value != 0; })) return false;
+        for (unsigned n = 0; n < 32; ++n) {
+            const uint32_t expected = n == 12 ? 0x10900000 : n == 15 ? 2 : 0;
+            if (regs.CP0.r[n] != expected || regs.CP2D.r[n] || regs.CP2C.r[n]) return false;
+        }
+    }
+    m_captureSettings = settings;
+    m_captureBackend = m_settings.get<Backend>().value;
+    m_captureDevice = m_settings.get<Device>().value;
+    const auto driver = SDL_GetCurrentAudioDriver();
+    m_captureDriver = driver ? driver : "unavailable";
+    m_captureInitial = queues;
+    m_captureFinal = {};
+    if (!m_capture.begin(limits.frames, limits.blocks, limits.events, g_emulator->m_cpu->m_regs.cycle)) return false;
+    origin.epoch = coldStart ? m_capture.identity()[1] : 0;
+    m_coldStart = origin;
+    if (coldStart) m_coldCaptureLimits = {};
+    return true;
+}
+
 void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t, 2>()> influences) {
     static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
     static_assert(VoiceStream::BUFFER_SIZE == Capture::MAX_CHUNK);
@@ -146,33 +212,36 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
     L.getfieldtable("Audio");
     L.declareFunc("begin", [this](Lua L) -> int {
         if (L.gettop() != 3) return L.error("Audio.begin requires frame, block and event limits");
-        const auto frames = integer(L, 1, Capture::MAX_FRAMES);
-        const auto blocks = integer(L, 2, Capture::MAX_RECORDS);
-        const auto events = integer(L, 3, Capture::MAX_RECORDS);
-        if (!frames || !blocks || !events || !paused(m_capture) || !m_stream || !m_audioInitialized ||
-            g_emulator->m_cpu->isDynarec() || g_emulator->m_mem->msanInitialized()) return L.error("audio begin requires paused interpreter, initialized stream and positive limits without MSAN");
-        const auto settings = captureSettings();
-        if (settings[Environment::Volume] < 0 || settings[Environment::Volume] > 3 ||
-            settings[Environment::Interpolation] < 0 || settings[Environment::Interpolation] > 3) return L.error("unsupported mixer settings");
+        const Capture::Limits limits{integer(L, 1, Capture::MAX_FRAMES), integer(L, 2, Capture::MAX_RECORDS),
+                                     integer(L, 3, Capture::MAX_RECORDS)};
+        if (!beginCapture(limits)) return L.error("audio begin requires positive limits, paused interpreter without MSAN, initialized stream, empty recorder and supported settings");
+        return 0;
+    }, -1);
+    L.declareFunc("coldStart", [this](Lua L) -> int {
+        if (L.gettop() || !paused(m_capture)) return L.error("audio coldStart requires paused owner and no arguments");
+        checkCaptureSettings();
+        ColdStart result;
         bool okay = false;
         {
             StreamGuard lock(m_stream);
-            if (lock.valid) {
-                Capture::Status before;
-                if (m_capture.status(before) && before.state == 0) {
-                    m_captureSettings = settings;
-                    m_captureBackend = m_settings.get<Backend>().value;
-                    m_captureDevice = m_settings.get<Device>().value;
-                    const auto driver = SDL_GetCurrentAudioDriver();
-                    m_captureDriver = driver ? driver : "unavailable";
-                    m_captureInitial = {uint32_t(m_voicesStream.buffered()), uint32_t(m_audioStream.buffered())};
-                    m_captureFinal = {};
-                    okay = m_capture.begin(frames, blocks, events, g_emulator->m_cpu->m_regs.cycle);
-                }
+            const auto identity = m_capture.identity();
+            if (lock.valid && identity[0] && m_coldStart.epoch && identity[1] == m_coldStart.epoch) {
+                result = m_coldStart;
+                okay = true;
             }
         }
-        if (!okay) return L.error("audio begin rejected: recorder not empty, stream lock or allocation failed");
-        return 0;
+        if (!okay) return L.error("audio coldStart requires the retained cold-start capture epoch");
+        L.newtable(); string(L, "schema", "psx.audio-cold-start/v1"); number(L, "version", 1);
+        string(L, "context", "deferred-first-worker"); wide(L, "epoch", result.epoch);
+        number(L, "pc", result.pc); wide(L, "cycle", result.cycle); wide(L, "previous_cycle", result.previousCycle);
+        number(L, "voice_queue", result.voiceQueue); number(L, "disc_queue", result.discQueue);
+        wide(L, "voice_enqueued", result.voiceEnqueued); wide(L, "voice_dequeued", result.voiceDequeued);
+        number(L, "staged_frames", result.stagedFrames); number(L, "batch_phase", result.batchPhase);
+        number(L, "master_frames", result.masterFrames); number(L, "callback_frames", result.callbackFrames);
+        number(L, "goal", result.goal); number(L, "previous_goal", result.previousGoal); number(L, "trigger", result.trigger);
+        number(L, "frame_limit", result.limits.frames); number(L, "block_limit", result.limits.blocks);
+        number(L, "event_limit", result.limits.events);
+        return 1;
     }, -1);
     L.declareFunc("stop", [this](Lua L) -> int {
         if (L.gettop() || !paused(m_capture)) return L.error("audio stop requires paused owner and no arguments");
@@ -193,7 +262,10 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
         bool okay = false;
         {
             StreamGuard lock(m_stream);
-            if (lock.valid) okay = m_capture.clear();
+            if (lock.valid) {
+                okay = m_capture.clear();
+                if (okay) m_coldStart = {};
+            }
         }
         if (!okay) return L.error("audio clear requires an inactive recorder and stream exclusion");
         return 0;

@@ -103,6 +103,13 @@ Lua changes, host audio, physical input and scheduling remain uncontrolled.
 Distinguish pre-instruction observations, retired steps, host edits and cycles;
 qualify executable/overlay and `psx-rizin` RAM alias.
 Transport success establishes neither hardware accuracy nor semantic acceptance.
+
+`--audio-cold-capture SAMPLES,BLOCKS,EVENTS` selects the explicit fresh-worker
+context in [Audio](audio.md#cold-producer-capture). It defers the first SPU worker
+until initial reset and recorder begin. Limits are positive, at most
+2646000, 65536 and 65536. The receipt retains the native flag and selected context.
+Use `spu` action `cold-capture` or a custom mission that consumes the active
+recorder. Ordinary `Audio.begin` requires an empty recorder and will refuse.
 Keep proprietary inputs/captures outside skill assets.
 
 ## Discovery

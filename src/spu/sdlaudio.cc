@@ -155,6 +155,10 @@ void PCSX::SPU::SDLAudio::init(bool safe) {
         return;
     }
 
+    if (m_coldCaptureLimits.frames && !SDL_PauseAudioDevice(m_device)) {
+        throw std::runtime_error("Unable to pause cold-capture audio device: " + std::string(SDL_GetError()));
+    }
+
     m_stream = SDL_CreateAudioStream(&spec, &spec);
     if (!m_stream) {
         const std::string err = SDL_GetError();

@@ -78,6 +78,13 @@ class Capture {
     static constexpr uint32_t MAX_RECORDS = 65536;
     static constexpr uint32_t MAX_BATCH = 1024;
     static constexpr uint32_t MAX_CHUNK = 2048;
+    struct Limits {
+        uint32_t frames = 0, blocks = 0, events = 0;
+        bool valid() const {
+            return frames && frames <= MAX_FRAMES && blocks && blocks <= MAX_RECORDS &&
+                   events && events <= MAX_RECORDS;
+        }
+    };
 
     Capture() : m_owner(std::this_thread::get_id()) {}
     bool ownerThread() const { return std::this_thread::get_id() == m_owner; }
