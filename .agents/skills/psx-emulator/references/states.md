@@ -72,6 +72,12 @@ embedded ROM. Inputs stay unchanged; `savestate=1` writes a new `state.pbuf`.
 Equality proves neither cycle accuracy, hidden-device restoration nor host
 scheduling/audio replay.
 
+SPU loading restores saved voice flags and envelope fields and derives pending
+keys from each voice's saved `new` flag. KON/KOFF register mirrors do not issue
+new commands. Reverb filter histories reset on load; host audio queues and CPU
+envelope-read checkpoints are not restored. A checked load therefore does not
+establish continuous audio or repeatable PCM.
+
 Midstream XA restore requires saved decoder readiness, frequency, bit depth,
 channel mode and sample count. Checked load rejects states missing that format
 when a pending sector needs it. Capture a new state with the current build.

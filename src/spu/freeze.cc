@@ -132,10 +132,12 @@ void PCSX::SPU::impl::loadStopped(const SaveStates::SPU &spu) {
     const auto &pSpuIrqIn = spu.get<SaveStates::SPUIrqPtr>().value;
     irqAddress = pSpuIrqIn ? pSpuIrqIn - 1 + spuRamBase : nullptr;
 
+    newChannelMask = 0;
     for (unsigned i = 0; i < MAXCHAN; i++) {
         const auto &channel = spu.get<SaveStates::Channels>().value[i];
         const auto &data = channel.get<SaveStates::Data>();
         s_chan[i].data = data;
+        if (data.get<Chan::New>().value) newChannelMask |= 1u << i;
         s_chan[i].adsr.legacy() = channel.get<SaveStates::ADSRInfo>();
         s_chan[i].adsr.ex() = channel.get<SaveStates::ADSRInfoEx>();
         s_chan[i].adpcm.loadFrom(data.get<Chan::s_1>(), data.get<Chan::s_2>(), data.get<Chan::StartPtr>(),
@@ -172,16 +174,6 @@ void PCSX::SPU::impl::loadStopped(const SaveStates::SPU &spu) {
 
     // Fix to prevent new interpolations from crashing.
     for (unsigned i = 0; i < MAXCHAN; i++) s_chan[i].interp.resetAfterLoad();
-
-    // Repair LDChen's ADSR changes.
-    if (spuAddr < 0x7ffff) {
-        for (unsigned i = 0; i < 24; i++) {
-            writeRegister(0x1f801c00 + (i << 4) + 0xc8, regArea[(i << 3) + 0x64]);
-            writeRegister(0x1f801c00 + (i << 4) + 0xca, regArea[(i << 3) + 0x65]);
-        }
-    }
-
-
 }
 
 bool PCSX::SPU::impl::acceptsPreparedState(const SaveStates::SPU& spu) const noexcept {
