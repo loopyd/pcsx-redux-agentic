@@ -54,17 +54,28 @@
 
 static PCSX::UI *s_ui;
 
-static PCSX::SPU::Capture::Limits coldAudioLimits(const CommandLine::args& args) {
-    if (!args.options().count("audio-cold-capture")) return {};
-    const auto values = args.values("audio-cold-capture");
-    const char* error = "-audio-cold-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS triple within 2646000,65536,65536";
-    if (args.options().count("audio-cold-capture") != 1 || values.size() != 1 ||
+struct AudioCaptureArguments {
+    PCSX::SPU::Capture::Limits limits;
+    uint32_t quantum = 0, chunk = 0;
+};
+
+static AudioCaptureArguments parseAudioCapture(const CommandLine::args& args) {
+    const bool cooperative = args.options().count("audio-cooperative-capture");
+    const bool cold = args.options().count("audio-cold-capture");
+    if (!cold && !cooperative) return {};
+    const char* flag = cooperative ? "audio-cooperative-capture" : "audio-cold-capture";
+    const auto values = args.values(flag);
+    const char* error = cooperative
+        ? "-audio-cooperative-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS,QUANTUM,CHUNK tuple within 2646000,65536,65536,1000000,2048; it excludes -audio-cold-capture"
+        : "-audio-cold-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS triple within 2646000,65536,65536";
+    if ((cold && cooperative) || args.options().count(flag) != 1 || values.size() != 1 ||
         args.options().count("version") || args.options().count("dumpproto")) throw std::invalid_argument(error);
     std::string_view remaining = values.front();
-    std::array<uint32_t, 3> limits{};
-    for (unsigned n = 0; n < limits.size(); ++n) {
+    std::array<uint32_t, 5> limits{};
+    const unsigned fields = cooperative ? 5 : 3;
+    for (unsigned n = 0; n < fields; ++n) {
         const auto comma = remaining.find(',');
-        if ((comma == std::string_view::npos) != (n == limits.size() - 1)) throw std::invalid_argument(error);
+        if ((comma == std::string_view::npos) != (n == fields - 1)) throw std::invalid_argument(error);
         const auto part = remaining.substr(0, comma);
         if (part.empty() || part.front() < '1' || part.front() > '9') throw std::invalid_argument(error);
         const auto parsed = std::from_chars(part.data(), part.data() + part.size(), limits[n]);
@@ -72,8 +83,10 @@ static PCSX::SPU::Capture::Limits coldAudioLimits(const CommandLine::args& args)
         if (comma != std::string_view::npos) remaining.remove_prefix(comma + 1);
     }
     const PCSX::SPU::Capture::Limits result{limits[0], limits[1], limits[2]};
-    if (!result.valid()) throw std::invalid_argument(error);
-    return result;
+    if (!result.valid() || (cooperative && (limits[3] > 1000000 || limits[4] > 2048))) {
+        throw std::invalid_argument(error);
+    }
+    return {result, limits[3], limits[4]};
 }
 
 class SystemImpl final : public PCSX::System {
@@ -260,9 +273,9 @@ int pcsxMain(int argc, char **argv) {
 
 
     const PCSX::Missions::Resource* mission = nullptr;
-    PCSX::SPU::Capture::Limits coldCapture;
+    AudioCaptureArguments audioCapture;
     try {
-        coldCapture = coldAudioLimits(args);
+        audioCapture = parseAudioCapture(args);
         const auto missionCount = args.options().count("mission");
         const auto catalogCount = args.options().count("mission-catalog");
         const bool externalCode = args.options().count("dofile") || args.options().count("archive") || args.options().count("exec");
@@ -270,7 +283,7 @@ int pcsxMain(int argc, char **argv) {
             if (catalogCount != 1 || missionCount || externalCode || !args.values("mission-catalog").empty()) {
                 throw std::invalid_argument("Mission catalogue cannot be combined with execution");
             }
-            for (auto flag : {"bios", "exe", "loadexe", "iso", "loadiso", "disk", "run", "dumpproto", "version", "audio-cold-capture"}) {
+            for (auto flag : {"bios", "exe", "loadexe", "iso", "loadiso", "disk", "run", "dumpproto", "version", "audio-cold-capture", "audio-cooperative-capture"}) {
                 if (args.options().count(flag)) throw std::invalid_argument("Mission catalogue cannot be combined with run options");
             }
             PCSX::Missions::catalogue(std::cout);
@@ -328,8 +341,13 @@ int pcsxMain(int argc, char **argv) {
     // At this point, we're committed to run the emulator, so we first create it, and the UI next.
     PCSX::Emulator *emulator = new PCSX::Emulator();
     PCSX::g_emulator = emulator;
-    if (coldCapture.frames && !emulator->m_spu->armColdCapture(coldCapture)) {
-        throw std::runtime_error("Cold audio capture must be armed before audio initialization and the first SPU open");
+    if (audioCapture.limits.frames) {
+        const bool armed = audioCapture.quantum
+            ? emulator->m_spu->armCooperativeCapture(audioCapture.limits, audioCapture.quantum, audioCapture.chunk)
+            : emulator->m_spu->armColdCapture(audioCapture.limits);
+        if (!armed) {
+            throw std::runtime_error("Cold audio capture must be armed before audio initialization and the first SPU open");
+        }
     }
     auto &favorites = emulator->settings.get<PCSX::Emulator::SettingOpenDialogFavorites>().value;
 
@@ -498,7 +516,7 @@ runner.init({
     emulator->m_gpu->setCachedDithering(emuSettings.get<PCSX::Emulator::SettingCachedDithering>());
     emulator->m_gpu->setLinearFiltering();
     emulator->reset();
-    if (coldCapture.frames) emulator->m_spu->startColdCapture();
+    if (audioCapture.limits.frames) emulator->m_spu->startColdCapture();
 
     // Looking at setting up what to run exactly within the emulator, if requested.
     if (args.get<bool>("run")) system->resume();

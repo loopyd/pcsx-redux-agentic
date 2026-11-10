@@ -134,9 +134,10 @@ class SDLAudio {
     const std::vector<std::string>& getDevices() { return m_devices; }
     // Stream 0 has one SPU worker producer; the callback alone drains it.
     uint64_t voiceFramesEnqueued() const { return m_voiceEnqueued; }
-    bool feedVoiceData(const Frame* data, size_t frames, uint64_t workerEpoch) {
+    bool feedVoiceData(const Frame* data, size_t frames, uint64_t workerEpoch,
+                       std::chrono::milliseconds timeout = std::chrono::milliseconds{200}) {
         const auto epoch = m_capture.workerToken();
-        const auto result = m_voicesStream.enqueue(data, frames, std::chrono::milliseconds{200},
+        const auto result = m_voicesStream.enqueue(data, frames, timeout,
             [&](bool complete, const auto& admission) {
                 Capture::Schedule row;
                 row.kind = complete ? Capture::ScheduleKind::EnqueueEnd : Capture::ScheduleKind::EnqueueBegin;
@@ -152,6 +153,7 @@ class SDLAudio {
         return true;
     }
     Circular<Frame, AudioStreamCapacity>::Admission feedCDData(const Frame* data, size_t frames) {
+        if (cooperativeEnabled()) failCooperative("Cooperative audio does not support CD audio feeds");
         return m_audioStream.enqueue(data, frames);
     }
     size_t getBytesBuffered(unsigned streamId = 0) {
@@ -175,31 +177,22 @@ class SDLAudio {
         row.before = audioFrames; row.frames = target; row.after = current; row.flags = action;
         m_capture.schedule(m_capture.workerToken(), row);
     }
-    void waitForGoal(uint32_t goal, uint64_t cycle) {
-        const auto epoch = m_capture.workerToken();
-        Capture::Schedule row;
-        row.kind = Capture::ScheduleKind::WaitBegin; row.cycle = cycle; row.frames = goal;
-#if HAS_ATOMIC_WAIT
-        // Use atomic wait/notify when the standard library supports it.
-        auto triggered = m_triggered.load();
-        m_goalpost.store(goal);
-        row.before = triggered;
-        m_capture.schedule(epoch, row);
-        m_triggered.wait(triggered);
-#else
-        // Otherwise, wait on the condition variable.
-        std::unique_lock<std::mutex> l(m_mu);
-        auto triggered = m_triggered;
-        m_goalpost = goal;
-        row.before = triggered;
-        m_capture.schedule(epoch, row);
-        m_cv.wait(l, [this, triggered]() { return m_triggered != triggered; });
-#endif
-        row.kind = Capture::ScheduleKind::WaitEnd;
-        m_capture.schedule(epoch, row);
-    }
+    void waitForGoal(uint32_t goal, uint64_t cycle);
+    bool cooperativeEnabled() const { return m_cooperative.quantum != 0; }
 
   private:
+    friend class impl;
+    struct Cooperative {
+        uint64_t epoch = 0, retired = 0, producerCommands = 0, batches = 0, enqueueAttempts = 0, enqueues = 0;
+        uint64_t consumerCommands = 0, consumerFrames = 0, quantumServices = 0, waitServices = 0;
+        uint32_t quantum = 0, chunk = 0, remainder = 0;
+    } m_cooperative;
+    std::atomic<bool> m_cooperativeFailed{false};
+    std::function<void()> m_cooperativeService;
+    [[noreturn]] void failCooperative(const char*);
+    void requireCooperative();
+    void cooperativeWait(uint32_t initialTrigger);
+    void consumeCooperativeChunk();
     Capture m_capture;
     struct ColdStart {
         uint64_t epoch = 0, cycle = 0, previousCycle = 0, voiceEnqueued = 0, voiceDequeued = 0;
@@ -224,6 +217,7 @@ class SDLAudio {
     SettingsType& m_settings;
 
     void streamCallback(SDL_AudioStream* stream, int additionalBytes);
+    void consumeChunk(SDL_AudioStream* stream, uint32_t chunk, bool mono, bool muted);
     void advanceFrames(uint32_t frameCount, bool nullClock);
     size_t dequeueVoice(Frame* data, size_t frames, bool discard);
     void init(bool safe = false);

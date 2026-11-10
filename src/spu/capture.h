@@ -89,6 +89,7 @@ class Capture {
     Capture() : m_owner(std::this_thread::get_id()) {}
     bool ownerThread() const { return std::this_thread::get_id() == m_owner; }
     bool active() const { return (m_lifecycle.load(std::memory_order_acquire) & STATE_MASK) == 1; }
+    bool healthy() const { return active() && !failures(); }
     std::array<uint64_t, 2> identity() {
         if (!owner()) return {};
         const auto value = m_lifecycle.load(std::memory_order_acquire);

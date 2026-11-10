@@ -22,6 +22,8 @@
 #include <stdint.h>
 
 #include <atomic>
+#include <condition_variable>
+#include <exception>
 #include <thread>
 
 #include "core/decode_xa.h"
@@ -74,6 +76,8 @@ class impl final : public SPUInterface {
     using json = nlohmann::json;
     bool open() final;
     bool armColdCapture(const Capture::Limits&) final;
+    bool armCooperativeCapture(const Capture::Limits&, uint32_t cpuQuantum, uint32_t callbackFrames) final;
+    void cooperativeRetired() final;
     void startColdCapture() final;
     // SPU functions.
     long init(void) final;
@@ -155,6 +159,19 @@ class impl final : public SPUInterface {
     bool m_stateRestart = false;
     bool m_stateRestartFailed = false;
     bool m_opened = false, m_workerStarted = false, m_coldCaptureDeferred = false;
+    enum class AudioCommand { None, Produce, Consume };
+    AudioCommand m_audioCommand = AudioCommand::None;
+    std::mutex m_audioCommandMutex;
+    std::condition_variable m_audioCommandCV;
+    std::exception_ptr m_audioCommandError;
+    bool m_audioCommandDone = true, m_audioCommandBlocked = false, m_audioDispatching = false;
+    bool m_enqueuePending = false;
+    uint64_t m_enqueueEpoch = 0;
+    void cooperativeThread();
+    bool cooperativeCommand(AudioCommand);
+    bool cooperativeProduce();
+    void cooperativeFill();
+    void cooperativeService();
     uint64_t m_captureParent = 0;
     uint32_t m_captureKeyOnMask = 0;
     std::array<int32_t, Capture::VOICE_COUNT> m_capturePreSampleSteps{};
@@ -219,6 +236,7 @@ class impl final : public SPUInterface {
 
     // SPU.
     void MainThread();
+    uint64_t synthesizeBatch(int volumeDivisor);
     // Reads the voice's two mode flags once and calls the matching
     // synthesizeVoice instantiation. This is the only place the runtime flags
     // are turned into compile-time axes.

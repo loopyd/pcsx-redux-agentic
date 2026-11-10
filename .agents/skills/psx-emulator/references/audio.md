@@ -34,7 +34,7 @@ without a success marker. Inspect retained files and logs.
 ### Cold producer capture
 
 Select `--audio-cold-capture SAMPLES,BLOCKS,EVENTS` with `--mission spu
---argument action=cold-capture`. The positive launch limits are at most
+--argument action=cold-capture`. The positive canonical decimal limits are at most
 2646000, 65536 and 65536. Supply `identity`, `frames`, optional `stop` and `tail`;
 `target`, state restoration and mission-level capacity arguments reject.
 
@@ -50,6 +50,55 @@ staging 0 and batch phase 0. There is no initial saved state. Freeze/export and
 final state capture follow the regular procedure. An EXE shell handoff still
 writes RAM and assigns registers on the host; qualify that handoff separately.
 
+### Cooperative producer capture
+
+Select `--audio-cooperative-capture SAMPLES,BLOCKS,EVENTS,QUANTUM,CHUNK` with
+`--mission spu --argument action=cooperative-capture`. It excludes
+`--audio-cold-capture`. All five fields are positive canonical decimals, bounded
+by 2646000, 65536, 65536, 1000000 and 2048 respectively. Mission arguments and
+fresh origin requirements match cold producer capture above.
+
+The worker first fills to queue backpressure. Every `QUANTUM` completed interpreter
+opcode executions, it consumes `CHUNK` callback frames, then fills again.
+The count includes `SYSCALL` and opcodes that raise exceptions. IRQ acceptance
+alone and host service transitions add no count. The `retired` and `remainder`
+metadata fields use this count. The hook runs after opcode execution, delayed-load
+resolution and completion of counter waits, before debugger processing of the next PC.
+A CPU audio-goal wait publishes its goal normally, then repeatedly consumes a
+chunk and fills until the original trigger changes. Wait services do not reset
+`remainder`.
+
+The native SPU worker executes serialized whole 45-frame DSP batches through the
+ordinary synthesis path. Eighteen batches form an 810-frame submission. Admission
+requires queued plus incoming frames below 2048; a blocked submission retains its
+samples for the next fill. Each fill allows at most 64 producer commands, and each
+CPU goal wait allows at most 65536 services. Exceeding either bound fails capture.
+Consumer commands use the shared native callback path. SDL stays paused, the null
+clock is absent and speed is 1. The mode rejects CD audio feeds. Ordinary modes
+are unchanged.
+
+The mission consumes the active cold recorder and exports `cold-start.json`,
+`cooperative-initial.json`, `cooperative-final.json`, `sound.json` and the normal
+PCM journals. It writes no saved states. Checked save/load refuses throughout
+the selected context, including after freeze. Cooperative command state has no
+saved-state representation.
+
+Call `Audio.stop()` from a deferred `PCSX.nextPause` callback after the CPU has
+paused and left execution. Freeze ends this execution context. Metadata queries
+remain valid. Use a fresh process for further guest execution.
+
+`PCSX.Audio.cooperative()` returns separate `psx.audio-cooperative/v1` metadata
+bound to the capture epoch. It retains `quantum`, `chunk`, actor `order`, the
+`retirement_boundary`, opcode and command counts, and failure status.
+Audio ABI 10 and `coldStart()` remain unchanged.
+
+Shared declared actor inputs can qualify independent comparisons between native
+and Rust execution only after checking bounded original music and SFX guest
+intervals, acknowledged synthesis starts, queue lead and continuous PCM.
+They do not establish production timing or PCM acceptance.
+
+### Capture files and API
+
 | Capture | Content |
 | --- | --- |
 | `audio.f32`, `audio.wav` | Identical interleaved stereo float32 little-endian payload; WAV uses IEEE-float format and a sample-count `fact` chunk |
@@ -61,7 +110,9 @@ writes RAM and assigns registers on the host; qualify that handoff separately.
 | `spu.ndjson` | Native named access/feed records, exact cycles, observed frame cursor and parent identity |
 | `audio.json` | Native counts/limits/settings/queues, failure/drop data, export checks and retained PCM duration |
 | `sound.json` | Mission bounds, primary/tail observations, stop reason and outcome |
-| `initial.pbuf`, `final.pbuf` | Machine contexts without complete host audio queues; cold capture has only the final state |
+| `cold-start.json` | Fresh-worker origin for either selected cold context |
+| `cooperative-initial.json`, `cooperative-final.json` | Cooperative actor metadata at mission begin and after freeze |
+| `initial.pbuf`, `final.pbuf` | Machine contexts without complete host audio queues; ordinary cold capture has only the final state, cooperative capture has neither |
 
 For custom missions, begin on a paused owner-thread interpreter. Paused-owner
 stop/export/clear can recover failed evidence after backend changes; `status`
@@ -79,6 +130,7 @@ requires owner thread, not pause.
 | `exportPCM(raw, wav)` | Stream the frozen complete range to distinct simple capture filenames; return frame/raw/WAV byte counts |
 | `clear()` | Release inactive capture explicitly before another begin |
 | `coldStart()` | Paused owner; retained fresh-worker origin for the current capture epoch, or refusal for an ordinary capture |
+| `cooperative()` | Paused owner, no arguments; actor metadata for the retained cooperative capture epoch, including frozen captures |
 
 Record ranges validate before copying; zero rows at the retained end are valid.
 PCM export accepts ASCII filenames of 1–255 bytes, starting with a letter or digit,
@@ -240,8 +292,9 @@ before the first worker starts.
 Join source ranges to completed, acknowledged worker rows before comparing signals.
 
 Enqueue and dequeue observations hold the voice queue's existing mutex. The strict
-admission predicate requires queued plus incoming frames below 2048. Entries and
-results can surround dequeues while the existing 200 ms wait releases that mutex.
+admission predicate requires queued plus incoming frames below 2048. In ordinary
+capture, entries and results can surround dequeues while the existing 200 ms wait
+releases that mutex. Cooperative commands attempt admission without waiting.
 Wait duration has the same host-time meaning as feed waits. `discard=1` marks
 fast-forward consumption that produces no retained PCM.
 
@@ -260,11 +313,11 @@ count, capacity and loss. Frozen ranges copy at most 1024 rows before Lua alloca
 Export has a 32 MiB bound; overflow sets sticky `scheduling` failure. Failed prefixes
 remain readable, and the harness capture and replay aggregate limits still apply.
 
-Capture does not stop the worker. With ordinary `Audio.begin`, a batch already
-in progress at begin has no retained row. A batch still in progress at freeze
-has no row in either mode. Freeze can also precede the worker's
-acknowledgement of an already consumed enqueue. Such prefixes and unconfirmed
-tails remain unknown. Begin/end producer, consumer and queue snapshots have no
+Ordinary and noncooperative cold capture do not stop the worker at freeze. With
+ordinary `Audio.begin`, a batch already in progress at begin has no retained row.
+A batch still in progress at freeze has no row in these modes. Freeze can also
+precede the worker's acknowledgement of an already consumed enqueue. Such prefixes
+and unconfirmed tails remain unknown. Begin/end producer, consumer and queue snapshots have no
 common atomic boundary. For a bounded key-on comparison, establish an initial
 clear pending-start flag and exactly one accepted KON for the selected voice,
 with no competing host writes. The observed start mask then identifies its batch.
@@ -300,7 +353,8 @@ halfword children. Preserve aliases, widths and returns; labels imply no extra a
 Block cycles use potentially stale CPU publications; event frame cursors mark
 output observed by CPU. Neither locates audible effects or per-sample CPU cycles.
 Confirmed worker source ranges can join callback source ranges. Missing worker
-rows and queue snapshots leave prehistory and remaining work unresolved; partial
-batches and host scheduling remain uncontrolled. Freeze proves neither queue drain,
-sound end, complete CD lifecycle nor determinism. Independently validate signals,
-register sequences and failures before semantic acceptance.
+rows and queue snapshots leave prehistory and remaining work unresolved. Ordinary
+and noncooperative cold capture leave partial batches and host scheduling
+uncontrolled. Freeze proves neither queue drain, sound end, complete CD lifecycle
+nor determinism. Independently validate signals, register sequences and failures
+before semantic acceptance.

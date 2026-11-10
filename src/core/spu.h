@@ -42,6 +42,11 @@ class SPUInterface {
     void interrupt();
     virtual bool open() = 0;
     virtual bool armColdCapture(const SPU::Capture::Limits&) = 0;
+    virtual bool armCooperativeCapture(const SPU::Capture::Limits&, uint32_t cpuQuantum,
+                                       uint32_t callbackFrames) = 0;
+    // One completed interpreter opcode, including exceptions, after counter waits and before debugger work.
+    // IRQ acceptance and host service transitions do not count.
+    virtual void cooperativeRetired() = 0;
     virtual void startColdCapture() = 0;
     virtual long init(void) = 0;
     virtual long shutdown(void) = 0;

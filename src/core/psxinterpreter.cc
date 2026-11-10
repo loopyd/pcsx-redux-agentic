@@ -1684,6 +1684,7 @@ inline void InterpretedCPU::execBlock() {
             InterceptBIOS<true>(m_regs.pc);
             branchTest();
         }
+        PCSX::g_emulator->m_spu->cooperativeRetired();
         if constexpr (debug) {
             uint32_t newPC = m_regs.pc;
             uint32_t newCode = readICache(newPC);

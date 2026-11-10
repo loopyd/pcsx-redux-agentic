@@ -3,7 +3,8 @@
 local m, pcm = require 'support', require 'pcm'
 local M = {}
 
-function M.run(cold)
+function M.run(mode)
+    local cold, cooperative = mode ~= 'capture', mode == 'cooperative-capture'
     m.begin('action,target,identity,frames,stop,samples,blocks,events,tail', function()
         local h = assert(PCSX.Audio, 'native audio capture binding required')
         local identity = assert(m.argument('identity'), 'identity is required')
@@ -36,7 +37,9 @@ function M.run(cold)
                     if started then
                         h.stop()
                         result = pcm.export()
-                        m.captureState('final.pbuf')
+                        if cooperative then
+                            m.report('cooperative-final.json', h.cooperative())
+                        else m.captureState('final.pbuf') end
                     end
                 end)
                 if not ok then capture_error = tostring(err) end
@@ -48,8 +51,10 @@ function M.run(cold)
                     tail_frames = tail_count, tail_limit = tail, stop = stop,
                     sample_limit = samples, block_limit = blocks, event_limit = events,
                     native_complete = result and result.complete or false, capture_error = capture_error,
-                    origin = cold and 'deferred first worker after initial reset' or 'Audio.begin after initial state capture',
-                    boundary = 'pause then deferred native freeze; host callback may append PCM between them',
+                    origin = cooperative and 'cold serialized native audio actors' or
+                        (cold and 'deferred first worker after initial reset' or 'Audio.begin after initial state capture'),
+                    boundary = cooperative and 'pause then deferred native freeze; audio turns follow guest retirement and waits' or
+                        'pause then deferred native freeze; host callback may append PCM between them',
                     tail = 'additional guest Vsync interval; no injected key-off, queue drain or DSP-end claim'})
                 if success then m.finish() else error('incomplete audio capture: ' .. reason) end
             end))
@@ -88,6 +93,11 @@ function M.run(cold)
                     assert(status.state == 1, 'cold startup recorder must be active')
                     samples, blocks, events = status.frame_limit, status.block_limit, status.event_limit
                     m.report('cold-start.json', origin)
+                    if cooperative then
+                        local context = h.cooperative()
+                        assert(context.schema == 'psx.audio-cooperative/v1', 'cooperative startup capture was not selected')
+                        m.report('cooperative-initial.json', context)
+                    end
                 else
                     m.requireIdleCapture()
                     assert(h.status().state == 0, 'audio recorder must be empty before initial state capture')

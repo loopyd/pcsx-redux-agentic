@@ -52,6 +52,7 @@ PCSX::SPU::SDLAudio::SDLAudio(PCSX::SPU::SettingsType& settings)
     }
 
     m_listener.listen<Events::ExecutionFlow::Run>([this](const auto& event) {
+        if (cooperativeEnabled()) { requireCooperative(); return; }
         if (!m_audioInitialized) return;
         if (!SDL_ResumeAudioDevice(m_device)) {
             uninit();
@@ -68,6 +69,7 @@ PCSX::SPU::SDLAudio::SDLAudio(PCSX::SPU::SettingsType& settings)
 }
 
 void PCSX::SPU::SDLAudio::init(bool safe) {
+    if (m_cooperative.epoch) m_cooperativeFailed = true;
     m_capture.fail(Capture::Discontinuity);
     History::CD::invalidate();
     // Pick the audio driver. SDL_HINT_AUDIO_DRIVER must be set before SDL_InitSubSystem.
@@ -155,7 +157,7 @@ void PCSX::SPU::SDLAudio::init(bool safe) {
         return;
     }
 
-    if (m_coldCaptureLimits.frames && !SDL_PauseAudioDevice(m_device)) {
+    if ((m_coldCaptureLimits.frames || cooperativeEnabled()) && !SDL_PauseAudioDevice(m_device)) {
         throw std::runtime_error("Unable to pause cold-capture audio device: " + std::string(SDL_GetError()));
     }
 
@@ -211,6 +213,7 @@ void PCSX::SPU::SDLAudio::init(bool safe) {
 }
 
 void PCSX::SPU::SDLAudio::uninit() {
+    if (m_cooperative.epoch) m_cooperativeFailed = true;
     m_capture.fail(Capture::Discontinuity);
     History::CD::invalidate();
     stopNullThread();
@@ -230,6 +233,7 @@ void PCSX::SPU::SDLAudio::uninit() {
 }
 
 void PCSX::SPU::SDLAudio::maybeRestart() {
+    if (cooperativeEnabled()) return;
     if (!g_system->running()) return;
     if (!m_audioInitialized) return;
     if (!SDL_ResumeAudioDevice(m_device)) {
@@ -240,7 +244,80 @@ void PCSX::SPU::SDLAudio::maybeRestart() {
     if (m_settings.get<NullSync>()) startNullThread();
 }
 
+void PCSX::SPU::SDLAudio::failCooperative(const char* message) {
+    m_cooperativeFailed = true;
+    m_capture.fail(Capture::Discontinuity);
+    throw std::runtime_error(message);
+}
+
+void PCSX::SPU::SDLAudio::requireCooperative() {
+    if (!cooperativeEnabled() || m_cooperativeFailed || !m_cooperative.epoch || !m_capture.healthy() ||
+        m_capture.workerToken() != m_cooperative.epoch || !m_audioInitialized || !m_stream ||
+        m_settings.get<Speed>().value != 1 || m_settings.get<NullSync>() ||
+        m_nullThreadActive || m_nullThread.joinable()) {
+        failCooperative("Cooperative audio requires its healthy active capture, speed 1 and no null clock");
+    }
+}
+
+void PCSX::SPU::SDLAudio::consumeCooperativeChunk() {
+    requireCooperative();
+    ++m_cooperative.consumerCommands;
+    consumeChunk(m_stream, m_cooperative.chunk, m_settings.get<Mono>(), m_settings.get<Mute>());
+    m_cooperative.consumerFrames += m_cooperative.chunk;
+    requireCooperative();
+}
+
+void PCSX::SPU::SDLAudio::cooperativeWait(uint32_t initialTrigger) {
+    if (!m_capture.ownerThread()) {
+        m_capture.fail(Capture::Thread);
+        failCooperative("Cooperative audio wait requires its owner thread");
+    }
+    const auto released = [&] {
+#if HAS_ATOMIC_WAIT
+        return m_triggered.load() != initialTrigger;
+#else
+        std::lock_guard lock(m_mu);
+        return m_triggered != initialTrigger;
+#endif
+    };
+    uint32_t services = 0;
+    while (!released()) {
+        requireCooperative();
+        if (!m_cooperativeService || services++ == Capture::MAX_RECORDS) {
+            failCooperative("Cooperative audio goal wait exceeded its service bound");
+        }
+        ++m_cooperative.waitServices;
+        try { m_cooperativeService(); }
+        catch (...) { m_cooperativeFailed = true; m_capture.fail(Capture::Discontinuity); throw; }
+    }
+}
+
+void PCSX::SPU::SDLAudio::waitForGoal(uint32_t goal, uint64_t cycle) {
+    const auto epoch = m_capture.workerToken();
+    Capture::Schedule row;
+    row.kind = Capture::ScheduleKind::WaitBegin; row.cycle = cycle; row.frames = goal;
+#if HAS_ATOMIC_WAIT
+    auto triggered = m_triggered.load();
+    m_goalpost.store(goal);
+    row.before = triggered;
+    m_capture.schedule(epoch, row);
+    if (cooperativeEnabled()) cooperativeWait(triggered);
+    else m_triggered.wait(triggered);
+#else
+    std::unique_lock<std::mutex> lock(m_mu);
+    auto triggered = m_triggered;
+    m_goalpost = goal;
+    row.before = triggered;
+    m_capture.schedule(epoch, row);
+    if (cooperativeEnabled()) { lock.unlock(); cooperativeWait(triggered); }
+    else m_cv.wait(lock, [this, triggered]() { return m_triggered != triggered; });
+#endif
+    row.kind = Capture::ScheduleKind::WaitEnd;
+    m_capture.schedule(epoch, row);
+}
+
 void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additionalBytes) {
+    if (cooperativeEnabled()) { m_capture.fail(Capture::Discontinuity); return; }
     constexpr int kFrameSizeBytes = sizeof(float) * kChannels;
     int requested = additionalBytes / kFrameSizeBytes;
     if (requested <= 0) return;
@@ -254,63 +331,67 @@ void PCSX::SPU::SDLAudio::streamCallback(SDL_AudioStream* stream, int additional
     // mixing scratch buffer.
     while (requested > 0) {
         const uint32_t chunk = std::min<uint32_t>(requested, VoiceStream::BUFFER_SIZE);
-        std::array<uint32_t, STREAMS> available{};
-        const auto voiceOffset = m_voiceDequeued;
-
-        for (unsigned i = 0; i < STREAMS; i++) {
-            size_t a = (i == 0) ? dequeueVoice(m_mixBuffers[i].data(), chunk, false)
-                                : m_audioStream.dequeue(m_mixBuffers[i].data(), chunk);
-            available[i] = a;
-            if (i == 0) m_voiceDequeued += a;
-            for (size_t f = (muted ? 0 : a); f < chunk; f++) {
-                // Same as the previous backend: silently zero-fill on underflow.
-                // CDDA underflow on stream 1 is expected and fine.
-                m_mixBuffers[i][f] = {};
-            }
-        }
-
-        for (uint32_t f = 0; f < chunk; f++) {
-            float l = 0.0f, r = 0.0f;
-            for (unsigned i = 0; i < STREAMS; i++) {
-                l += static_cast<float>(m_mixBuffers[i][f].L) / static_cast<float>(std::numeric_limits<int16_t>::max());
-                r += static_cast<float>(m_mixBuffers[i][f].R) / static_cast<float>(std::numeric_limits<int16_t>::max());
-            }
-
-            if (mono) {
-                const float lr = (l + r) * 0.5f;
-                m_outputBuffer[f * 2 + 0] = lr;
-                m_outputBuffer[f * 2 + 1] = lr;
-            } else {
-                m_outputBuffer[f * 2 + 0] = l;
-                m_outputBuffer[f * 2 + 1] = r;
-            }
-        }
-
-        const bool submitted = SDL_PutAudioStreamData(stream, m_outputBuffer.data(), chunk * kFrameSizeBytes);
-        m_capture.pcm(m_outputBuffer.data(), chunk, available[0], available[1],
-                      (mono ? Capture::Mono : 0u) | (muted ? Capture::Muted : 0u) | (submitted ? Capture::Submitted : 0u),
-                      voiceOffset);
-
-        // Fast-forward lives at the sink (the master clock). We have already kept the first `chunk`
-        // frames of each stream for playback at native 44.1kHz -- pitch is preserved. To run the whole
-        // emulator `speed` times faster we drain the producer rings `speed` times faster: discard the
-        // additional (speed - 1) frame-runs from BOTH streams (SPU voices and CD-ROM XA). Draining the
-        // rings faster paces the SPU thread faster, which through waitForGoal paces the CPU thread
-        // faster. dequeue() naturally caps at what is available, so this is safe (and self-limits) at
-        // any speed.
-        const int speed = effectiveSpeed(m_settings.get<Speed>().value);
-        for (int rep = 1; rep < speed; rep++) {
-            m_voiceDequeued += dequeueVoice(m_mixBuffers[0].data(), chunk, true);
-            m_audioStream.dequeue(m_mixBuffers[1].data(), chunk);
-        }
-
-        // When NullSync is off, the real audio callback is the timing source. When it's
-        // on, the dedicated null thread drives timing instead.
-        if (!m_settings.get<NullSync>()) {
-            advanceFrames(chunk, false);
-        }
-
+        consumeChunk(stream, chunk, mono, muted);
         requested -= chunk;
+    }
+}
+
+void PCSX::SPU::SDLAudio::consumeChunk(SDL_AudioStream* stream, uint32_t chunk, bool mono, bool muted) {
+    constexpr int kFrameSizeBytes = sizeof(float) * kChannels;
+    std::array<uint32_t, STREAMS> available{};
+    const auto voiceOffset = m_voiceDequeued;
+
+    for (unsigned i = 0; i < STREAMS; i++) {
+        size_t a = (i == 0) ? dequeueVoice(m_mixBuffers[i].data(), chunk, false)
+                            : m_audioStream.dequeue(m_mixBuffers[i].data(), chunk);
+        available[i] = a;
+        if (i == 0) m_voiceDequeued += a;
+        for (size_t f = (muted ? 0 : a); f < chunk; f++) {
+            // Same as the previous backend: silently zero-fill on underflow.
+            // CDDA underflow on stream 1 is expected and fine.
+            m_mixBuffers[i][f] = {};
+        }
+    }
+
+    for (uint32_t f = 0; f < chunk; f++) {
+        float l = 0.0f, r = 0.0f;
+        for (unsigned i = 0; i < STREAMS; i++) {
+            l += static_cast<float>(m_mixBuffers[i][f].L) / static_cast<float>(std::numeric_limits<int16_t>::max());
+            r += static_cast<float>(m_mixBuffers[i][f].R) / static_cast<float>(std::numeric_limits<int16_t>::max());
+        }
+
+        if (mono) {
+            const float lr = (l + r) * 0.5f;
+            m_outputBuffer[f * 2 + 0] = lr;
+            m_outputBuffer[f * 2 + 1] = lr;
+        } else {
+            m_outputBuffer[f * 2 + 0] = l;
+            m_outputBuffer[f * 2 + 1] = r;
+        }
+    }
+
+    const bool submitted = SDL_PutAudioStreamData(stream, m_outputBuffer.data(), chunk * kFrameSizeBytes);
+    m_capture.pcm(m_outputBuffer.data(), chunk, available[0], available[1],
+                  (mono ? Capture::Mono : 0u) | (muted ? Capture::Muted : 0u) | (submitted ? Capture::Submitted : 0u),
+                  voiceOffset);
+
+    // Fast-forward lives at the sink (the master clock). We have already kept the first `chunk`
+    // frames of each stream for playback at native 44.1kHz -- pitch is preserved. To run the whole
+    // emulator `speed` times faster we drain the producer rings `speed` times faster: discard the
+    // additional (speed - 1) frame-runs from BOTH streams (SPU voices and CD-ROM XA). Draining the
+    // rings faster paces the SPU thread faster, which through waitForGoal paces the CPU thread
+    // faster. dequeue() naturally caps at what is available, so this is safe (and self-limits) at
+    // any speed.
+    const int speed = effectiveSpeed(m_settings.get<Speed>().value);
+    for (int rep = 1; rep < speed; rep++) {
+        m_voiceDequeued += dequeueVoice(m_mixBuffers[0].data(), chunk, true);
+        m_audioStream.dequeue(m_mixBuffers[1].data(), chunk);
+    }
+
+    // When NullSync is off, the real audio callback is the timing source. When it's
+    // on, the dedicated null thread drives timing instead.
+    if (!m_settings.get<NullSync>()) {
+        advanceFrames(chunk, false);
     }
 }
 
@@ -363,6 +444,7 @@ void PCSX::SPU::SDLAudio::advanceFrames(uint32_t frameCount, bool nullClock) {
 }
 
 void PCSX::SPU::SDLAudio::startNullThread() {
+    if (cooperativeEnabled()) failCooperative("Cooperative audio does not support a null clock");
     if (m_nullThreadActive) return;
     m_nullThreadStop.store(false);
     m_nullThreadActive = true;

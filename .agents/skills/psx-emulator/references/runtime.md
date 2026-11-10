@@ -99,18 +99,30 @@ outcome and timing, including failed receipts/logs. Endpoint hashes neither
 provide atomic snapshots nor prove intermediate immutability.
 
 `psx.runtime-settings/v1` records launch flags/defaults, not effective settings.
-Lua changes, host audio, physical input and scheduling remain uncontrolled.
+Lua changes and physical input remain uncontrolled. The cooperative audio context
+declares audio actor order. Other host scheduling remains uncontrolled.
 Distinguish pre-instruction observations, retired steps, host edits and cycles;
 qualify executable/overlay and `psx-rizin` RAM alias.
 Transport success establishes neither hardware accuracy nor semantic acceptance.
 
 `--audio-cold-capture SAMPLES,BLOCKS,EVENTS` selects the explicit fresh-worker
 context in [Audio](audio.md#cold-producer-capture). It defers the first SPU worker
-until initial reset and recorder begin. Limits are positive, at most
-2646000, 65536 and 65536. The receipt retains the native flag and selected context.
+until initial reset and recorder begin. Limits are positive canonical decimals,
+at most 2646000, 65536 and 65536. The receipt retains the native flag and selected context.
 Use `spu` action `cold-capture` or a custom mission that consumes the active
-recorder. Ordinary `Audio.begin` requires an empty recorder and will refuse.
-Keep proprietary inputs/captures outside skill assets.
+recorder.
+
+`--audio-cooperative-capture SAMPLES,BLOCKS,EVENTS,QUANTUM,CHUNK` selects the
+[cooperative audio context](audio.md#cooperative-producer-capture) and excludes
+`--audio-cold-capture`. Its positive canonical decimal limits are at most
+2646000, 65536, 65536, 1000000 and 2048 respectively. Use `spu` action
+`cooperative-capture` to export actor metadata and PCM without saved states.
+This fresh cold context orders native producer and consumer turns at declared
+quanta of completed interpreter opcode executions and CPU audio-goal waits.
+Shared actor inputs do not establish production timing or PCM acceptance.
+
+Both launch modes prearm an active recorder. Ordinary `Audio.begin` requires an
+empty recorder and will refuse. Keep proprietary inputs/captures outside skill assets.
 
 ## Discovery
 
@@ -136,3 +148,6 @@ mutation. Legacy GUI capture has a separate source-compatible running boundary
 and shares owning serialization; it carries no checked qualification. Capture
 bytes precede opening/truncating a GUI target. Postcommit failure pauses and emits
 no Loaded event; no filesystem transactional rollback is claimed.
+
+The selected cooperative audio context refuses checked save/load even after
+recorder freeze. Its actor command state has no saved-state representation.

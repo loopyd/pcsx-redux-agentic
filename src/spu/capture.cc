@@ -151,10 +151,13 @@ bool PCSX::SPU::SDLAudio::beginColdCapture(uint32_t stagedFrames, uint32_t batch
     if (stagedFrames || batchPhase || !beginCapture(m_coldCaptureLimits, true)) return false;
     m_coldStart.stagedFrames = stagedFrames;
     m_coldStart.batchPhase = batchPhase;
+    if (cooperativeEnabled()) m_cooperative.epoch = m_coldStart.epoch;
     return true;
 }
 
 bool PCSX::SPU::SDLAudio::beginCapture(const Capture::Limits& limits, bool coldStart) {
+    if (cooperativeEnabled() && (!coldStart || m_cooperativeFailed || m_settings.get<Speed>().value != 1 ||
+                                m_settings.get<NullSync>() || !m_cooperativeService)) return false;
     if (!limits.valid() || !paused(m_capture) || !m_stream || !m_audioInitialized || !g_emulator->m_cpu ||
         g_emulator->m_cpu->isDynarec() || g_emulator->m_mem->msanInitialized()) return false;
     const auto settings = captureSettings();
@@ -243,6 +246,37 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
         number(L, "event_limit", result.limits.events);
         return 1;
     }, -1);
+    L.declareFunc("cooperative", [this](Lua L) -> int {
+        if (L.gettop() || !paused(m_capture)) return L.error("audio cooperative requires paused owner and no arguments");
+        checkCaptureSettings();
+        Cooperative result;
+        Capture::Status status;
+        bool okay = false, failed = false;
+        {
+            StreamGuard lock(m_stream);
+            const auto identity = m_capture.identity();
+            if (lock.valid && identity[0] && m_cooperative.epoch && identity[1] == m_cooperative.epoch &&
+                m_capture.status(status)) {
+                result = m_cooperative;
+                failed = m_cooperativeFailed || status.failures;
+                okay = true;
+            }
+        }
+        if (!okay) return L.error("audio cooperative requires its retained capture epoch");
+        L.newtable(); string(L, "schema", "psx.audio-cooperative/v1"); number(L, "version", 1);
+        wide(L, "epoch", result.epoch); number(L, "quantum", result.quantum); number(L, "chunk", result.chunk);
+        string(L, "order", "prime-fill;post-quantum-consume-fill;wait-consume-fill");
+        string(L, "retirement_boundary", "after-delayed-load-and-counters/before-debugger");
+        string(L, "retired_unit", "completed-interpreter-opcode-including-exceptions");
+        wide(L, "retired", result.retired); number(L, "remainder", result.remainder);
+        wide(L, "producer_commands", result.producerCommands); wide(L, "batches", result.batches);
+        wide(L, "enqueue_attempts", result.enqueueAttempts); wide(L, "enqueues", result.enqueues);
+        wide(L, "consumer_commands", result.consumerCommands); wide(L, "consumer_frames", result.consumerFrames);
+        wide(L, "quantum_services", result.quantumServices); wide(L, "wait_services", result.waitServices);
+        number(L, "failure", failed ? 1 : 0);
+        number(L, "capture_failures", status.failures);
+        return 1;
+    }, -1);
     L.declareFunc("stop", [this](Lua L) -> int {
         if (L.gettop() || !paused(m_capture)) return L.error("audio stop requires paused owner and no arguments");
         checkCaptureSettings();
@@ -264,7 +298,7 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
             StreamGuard lock(m_stream);
             if (lock.valid) {
                 okay = m_capture.clear();
-                if (okay) m_coldStart = {};
+                if (okay) { m_coldStart = {}; m_cooperative.epoch = 0; }
             }
         }
         if (!okay) return L.error("audio clear requires an inactive recorder and stream exclusion");

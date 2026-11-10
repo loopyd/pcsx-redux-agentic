@@ -447,10 +447,6 @@ void PCSX::SPU::impl::synthesizeChannel(int ch, SPUCHAN *voice, int32_t &capVoic
 ////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::impl::MainThread() {
-    int ns, ch;
-    int32_t tmpCapVoice1Index = 0;
-    int32_t tmpCapVoice3Index = 0;
-
     // Run until we are shutting down.
     while (!endThread) {
         int volumeDivisor = 4 - settings.get<Volume>();
@@ -484,129 +480,7 @@ void PCSX::SPU::impl::MainThread() {
             if (newChannelMask) secureStart = 1;
         }
 
-        History::CD::WorkerBatch historyBatch;
-        const auto audioEpoch = m_audioOut.capture().workerToken();
-        const auto enqueueOffset = m_audioOut.voiceFramesEnqueued();
-        const auto stagedFrames =
-            (reinterpret_cast<uint8_t*>(pS) - reinterpret_cast<uint8_t*>(spuBuffer)) / sizeof(SDLAudio::Frame);
-        const uint64_t voiceOffset = enqueueOffset + stagedFrames;
-        Capture::Schedule schedule;
-        schedule.kind = Capture::ScheduleKind::Producer; schedule.voiceOffset = voiceOffset;
-        schedule.frames = NSSIZE; schedule.before = stagedFrames; schedule.after = stagedFrames / NSSIZE;
-        m_audioOut.capture().schedule(audioEpoch, schedule);
-        m_captureAudioEpoch = audioEpoch;
-        m_captureVoiceOffset = voiceOffset;
-        m_captureKeyOnMask = 0;
-        m_capturePreSampleSteps.fill(0);
-        m_captureStopSamples.fill(-1);
-
-        {
-            // capBufVoiceIndex is reset from the emulation thread (resetCaptureBuffer).
-            std::lock_guard<std::mutex> lock(cbMtx);
-            tmpCapVoice1Index = capBufVoiceIndex;
-            tmpCapVoice3Index = capBufVoiceIndex;
-        }
-
-        // Clock the shared noise generator once per output sample of the batch.
-        for (ns = 0; ns < NSSIZE; ns++) {
-            m_noise.step();
-            noiseLevel[ns] = m_noise.getVal();
-        }
-
-        // Collect 1 ms of sound from every channel into the mix accumulators.
-        for (ch = 0; ch < MAXCHAN; ch++) {
-            synthesizeChannel(ch, &s_chan[ch], tmpCapVoice1Index, tmpCapVoice3Index);
-        }
-
-        // Write from our temporary capture buffer to the actual SPU RAM.
-        writeCaptureBufferCD(NSSIZE);
-
-        // Advance the persistent capture write pointer by one batch and reflect
-        // which half of the 0x200-sample capture buffer it now points at in
-        // SPUSTAT bit 11 (0=first half 0x000-0x0ff, 1=second half 0x100-0x1ff).
-        // Hardware toggles this bit as the 44.1kHz capture pointer crosses the
-        // half boundary; guests sync capture reads on its edge.
-        {
-            std::lock_guard<std::mutex> lock(cbMtx);
-            capBufVoiceIndex = (capBufVoiceIndex + NSSIZE) % kCaptureRegionSamples;
-            if (capBufVoiceIndex & kCaptureHalfMarker)
-                spuStat |= StatusFlags::CBIndex;
-            else
-                spuStat &= ~StatusFlags::CBIndex;
-        }
-
-        //---------------------------------------------------//
-        // Another 1 ms of sound data is now available.
-        //---------------------------------------------------//
-
-        ///////////////////////////////////////////////////////
-        // Mix all channels, including reverb, into one buffer.
-
-        int32_t firstReverbSample = -1;
-        for (ns = 0; ns < NSSIZE; ns++) {
-            bool activeReverbWork = false;
-            SSumL[ns] += m_reverb.mixLeft(ns, spuMem, spuCtrl, audioEpoch ? &activeReverbWork : nullptr);
-            if (activeReverbWork && firstReverbSample < 0) firstReverbSample = ns;
-            *pS++ = std::clamp(SSumL[ns] / volumeDivisor, -kMixSampleClamp, kMixSampleClamp);
-            SSumL[ns] = 0;
-
-            SSumR[ns] += m_reverb.mixRight();
-            *pS++ = std::clamp(SSumR[ns] / volumeDivisor, -kMixSampleClamp, kMixSampleClamp);
-            SSumR[ns] = 0;
-        }
-
-        //////////////////////////////////////////////////////
-        // Special IRQ handling in the decode buffers (0x0000-0x1000).
-        //
-        // The decode buffers are located in SPU memory as follows, with decoded data being 16 bits
-        // per sample:
-        // 0x0000-0x03ff  CD audio left
-        // 0x0400-0x07ff  CD audio right
-        // 0x0800-0x0bff  Voice 1
-        // 0x0c00-0x0fff  Voice 3
-        //
-        // The assumption is that even if voices 1 and 3 are off, or no CD audio is playing, the
-        // internal play positions keep moving and wrap after 0x400 bytes. Therefore a single
-        // pointer from spuMem+0 to spuMem+0x3ff suffices, increased by 2 bytes on each sample. If
-        // that pointer, or one of the 0x400 offsets of it, hits the SPU IRQ address, an IRQ is
-        // generated. The "wait for CPU" option is hard to implement here in some of Peops' timer
-        // modes, so it is ignored in this path. Note also that the channel 0-3 IRQ debug display
-        // is reused for these IRQs, as that is the simplest way to display them in debug mode.
-
-        // mixIrqAddress is armed by resetCaptureBuffer on the emulation thread, so the walk
-        // runs under cbMtx. triggerIrq only sets flags (scheduleInterrupt stores an atomic),
-        // so nothing in here takes another lock. The hold is NSSIZE * 4 compares.
-        std::unique_lock<std::mutex> irqLock(cbMtx);
-        History::CD::workerObserve(2, {History::CD::spuAddress(spuRamBase, mixIrqAddress),
-            History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), uint32_t(bool(mixIrqAddress)), 0, 0});
-        if (mixIrqAddress) {
-            for (ns = 0; ns < NSSIZE; ns++) {
-                History::CD::workerSample(ns);
-                const bool irqCondition = (spuCtrl & ControlFlags::IRQEnable) && irqAddress && irqAddress < spuRamBase + 0x1000;
-                History::CD::workerObserve(2, {History::CD::spuAddress(spuRamBase, mixIrqAddress),
-                    History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), 1, uint32_t(irqCondition), 0}, true);
-                if (irqCondition) {
-                    for (ch = 0; ch < 4; ch++) {
-                        const bool regionReached = irqAddress >= mixIrqAddress + (ch * 0x400) &&
-                            irqAddress < mixIrqAddress + (ch * 0x400) + 2;
-                        History::CD::workerObserve(3, {uint32_t(ch), History::CD::spuAddress(spuRamBase, mixIrqAddress)+(ch*0x400),
-                            History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), uint32_t(regionReached), 0}, true);
-                        if (regionReached) {
-                            triggerIrq(2, ch);
-                            s_chan[ch].data.get<PCSX::SPU::Chan::IrqDone>().value = 1;
-                        }
-                    }
-                }
-                mixIrqAddress += 2;
-                if (mixIrqAddress > spuRamBase + 0x3ff) mixIrqAddress = spuRamBase;
-            }
-        }
-        irqLock.unlock();
-        historyBatch.finish();
-        m_audioOut.capture().workerBatch(audioEpoch, voiceOffset, NSSIZE, m_captureKeyOnMask,
-                                         m_capturePreSampleSteps, m_captureStopSamples, firstReverbSample);
-
-        m_reverb.init(NSSIZE);
+        const auto audioEpoch = synthesizeBatch(volumeDivisor);
 
         //////////////////////////////////////////////////////
         // Feed the sound. The target update rate is around 1/60 sec (16.666 ms).
@@ -628,6 +502,136 @@ void PCSX::SPU::impl::MainThread() {
     }
 
     threadEnded = 1;
+}
+
+uint64_t PCSX::SPU::impl::synthesizeBatch(int volumeDivisor) {
+    int ns, ch;
+    int32_t tmpCapVoice1Index = 0, tmpCapVoice3Index = 0;
+    History::CD::WorkerBatch historyBatch;
+    const auto audioEpoch = m_audioOut.capture().workerToken();
+    const auto enqueueOffset = m_audioOut.voiceFramesEnqueued();
+    const auto stagedFrames =
+        (reinterpret_cast<uint8_t*>(pS) - reinterpret_cast<uint8_t*>(spuBuffer)) / sizeof(SDLAudio::Frame);
+    const uint64_t voiceOffset = enqueueOffset + stagedFrames;
+    Capture::Schedule schedule;
+    schedule.kind = Capture::ScheduleKind::Producer; schedule.voiceOffset = voiceOffset;
+    schedule.frames = NSSIZE; schedule.before = stagedFrames; schedule.after = stagedFrames / NSSIZE;
+    m_audioOut.capture().schedule(audioEpoch, schedule);
+    m_captureAudioEpoch = audioEpoch;
+    m_captureVoiceOffset = voiceOffset;
+    m_captureKeyOnMask = 0;
+    m_capturePreSampleSteps.fill(0);
+    m_captureStopSamples.fill(-1);
+
+    {
+        // capBufVoiceIndex is reset from the emulation thread (resetCaptureBuffer).
+        std::lock_guard<std::mutex> lock(cbMtx);
+        tmpCapVoice1Index = capBufVoiceIndex;
+        tmpCapVoice3Index = capBufVoiceIndex;
+    }
+
+    // Clock the shared noise generator once per output sample of the batch.
+    for (ns = 0; ns < NSSIZE; ns++) {
+        m_noise.step();
+        noiseLevel[ns] = m_noise.getVal();
+    }
+
+    // Collect 1 ms of sound from every channel into the mix accumulators.
+    for (ch = 0; ch < MAXCHAN; ch++) {
+        synthesizeChannel(ch, &s_chan[ch], tmpCapVoice1Index, tmpCapVoice3Index);
+    }
+
+    // Write from our temporary capture buffer to the actual SPU RAM.
+    writeCaptureBufferCD(NSSIZE);
+
+    // Advance the persistent capture write pointer by one batch and reflect
+    // which half of the 0x200-sample capture buffer it now points at in
+    // SPUSTAT bit 11 (0=first half 0x000-0x0ff, 1=second half 0x100-0x1ff).
+    // Hardware toggles this bit as the 44.1kHz capture pointer crosses the
+    // half boundary; guests sync capture reads on its edge.
+    {
+        std::lock_guard<std::mutex> lock(cbMtx);
+        capBufVoiceIndex = (capBufVoiceIndex + NSSIZE) % kCaptureRegionSamples;
+        if (capBufVoiceIndex & kCaptureHalfMarker)
+            spuStat |= StatusFlags::CBIndex;
+        else
+            spuStat &= ~StatusFlags::CBIndex;
+    }
+
+    //---------------------------------------------------//
+    // Another 1 ms of sound data is now available.
+    //---------------------------------------------------//
+
+    ///////////////////////////////////////////////////////
+    // Mix all channels, including reverb, into one buffer.
+
+    int32_t firstReverbSample = -1;
+    for (ns = 0; ns < NSSIZE; ns++) {
+        bool activeReverbWork = false;
+        SSumL[ns] += m_reverb.mixLeft(ns, spuMem, spuCtrl, audioEpoch ? &activeReverbWork : nullptr);
+        if (activeReverbWork && firstReverbSample < 0) firstReverbSample = ns;
+        *pS++ = std::clamp(SSumL[ns] / volumeDivisor, -kMixSampleClamp, kMixSampleClamp);
+        SSumL[ns] = 0;
+
+        SSumR[ns] += m_reverb.mixRight();
+        *pS++ = std::clamp(SSumR[ns] / volumeDivisor, -kMixSampleClamp, kMixSampleClamp);
+        SSumR[ns] = 0;
+    }
+
+    //////////////////////////////////////////////////////
+    // Special IRQ handling in the decode buffers (0x0000-0x1000).
+    //
+    // The decode buffers are located in SPU memory as follows, with decoded data being 16 bits
+    // per sample:
+    // 0x0000-0x03ff  CD audio left
+    // 0x0400-0x07ff  CD audio right
+    // 0x0800-0x0bff  Voice 1
+    // 0x0c00-0x0fff  Voice 3
+    //
+    // The assumption is that even if voices 1 and 3 are off, or no CD audio is playing, the
+    // internal play positions keep moving and wrap after 0x400 bytes. Therefore a single
+    // pointer from spuMem+0 to spuMem+0x3ff suffices, increased by 2 bytes on each sample. If
+    // that pointer, or one of the 0x400 offsets of it, hits the SPU IRQ address, an IRQ is
+    // generated. The "wait for CPU" option is hard to implement here in some of Peops' timer
+    // modes, so it is ignored in this path. Note also that the channel 0-3 IRQ debug display
+    // is reused for these IRQs, as that is the simplest way to display them in debug mode.
+
+    // mixIrqAddress is armed by resetCaptureBuffer on the emulation thread, so the walk
+    // runs under cbMtx. triggerIrq only sets flags (scheduleInterrupt stores an atomic),
+    // so nothing in here takes another lock. The hold is NSSIZE * 4 compares.
+    std::unique_lock<std::mutex> irqLock(cbMtx);
+    History::CD::workerObserve(2, {History::CD::spuAddress(spuRamBase, mixIrqAddress),
+        History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), uint32_t(bool(mixIrqAddress)), 0, 0});
+    if (mixIrqAddress) {
+        for (ns = 0; ns < NSSIZE; ns++) {
+            History::CD::workerSample(ns);
+            const bool irqCondition = (spuCtrl & ControlFlags::IRQEnable) && irqAddress && irqAddress < spuRamBase + 0x1000;
+            History::CD::workerObserve(2, {History::CD::spuAddress(spuRamBase, mixIrqAddress),
+                History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), 1, uint32_t(irqCondition), 0}, true);
+            if (irqCondition) {
+                for (ch = 0; ch < 4; ch++) {
+                    const bool regionReached = irqAddress >= mixIrqAddress + (ch * 0x400) &&
+                        irqAddress < mixIrqAddress + (ch * 0x400) + 2;
+                    History::CD::workerObserve(3, {uint32_t(ch), History::CD::spuAddress(spuRamBase, mixIrqAddress)+(ch*0x400),
+                        History::CD::spuAddress(spuRamBase, irqAddress), uint32_t(spuCtrl), uint32_t(regionReached), 0}, true);
+                    if (regionReached) {
+                        triggerIrq(2, ch);
+                        s_chan[ch].data.get<PCSX::SPU::Chan::IrqDone>().value = 1;
+                    }
+                }
+            }
+            mixIrqAddress += 2;
+            if (mixIrqAddress > spuRamBase + 0x3ff) mixIrqAddress = spuRamBase;
+        }
+    }
+    irqLock.unlock();
+    historyBatch.finish();
+    m_audioOut.capture().workerBatch(audioEpoch, voiceOffset, NSSIZE, m_captureKeyOnMask,
+                                     m_capturePreSampleSteps, m_captureStopSamples, firstReverbSample);
+
+    m_reverb.init(NSSIZE);
+
+    return audioEpoch;
 }
 
 void PCSX::SPU::impl::writeCaptureBufferCD(int numbSamples) {
@@ -675,6 +679,7 @@ void PCSX::SPU::impl::writeCaptureBufferCD(int numbSamples) {
 ////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::impl::playADPCMchannel(xa_decode_t *xap) {
+    if (m_audioOut.cooperativeEnabled()) m_audioOut.failCooperative("Cooperative audio does not support XA feeds");
     // Nothing to do when XA streaming is disabled.
     if (!settings.get<Streaming>()) { observeCDFeed(1, nullptr); return; }
     if (!xap) { observeCDFeed(2, nullptr); return; }
@@ -728,7 +733,10 @@ void PCSX::SPU::impl::SetupThread(bool coldCapture) {
     // Flag that initialization is complete.
     m_workerStarted = true;
     try {
-        hMainThread = std::thread([this]() { MainThread(); });
+        hMainThread = std::thread([this]() {
+            if (m_audioOut.cooperativeEnabled()) cooperativeThread();
+            else MainThread();
+        });
     } catch (...) {
         invalidateCapture();
         throw;
@@ -740,7 +748,11 @@ void PCSX::SPU::impl::SetupThread(bool coldCapture) {
 // Kill the mixing thread.
 void PCSX::SPU::impl::RemoveThread() {
     if (!hMainThread.joinable()) return;
-    endThread = 1;
+    if (m_audioOut.cooperativeEnabled()) {
+        std::lock_guard lock(m_audioCommandMutex);
+        endThread = 1;
+    } else endThread = 1;
+    m_audioCommandCV.notify_all();
     hMainThread.join();
     threadEnded = 0;
     bSpuInit = 0;
@@ -748,7 +760,8 @@ void PCSX::SPU::impl::RemoveThread() {
 
 bool PCSX::SPU::impl::stateAccessAvailable() const noexcept {
     const int64_t divisor = 4 - int64_t(settings.get<Volume>());
-    return spuIsOpen && spuBuffer && m_reverb.mixStart && !m_stateAccess && !m_stateRestartFailed &&
+    return !m_audioOut.cooperativeEnabled() && spuIsOpen && spuBuffer && m_reverb.mixStart &&
+           !m_stateAccess && !m_stateRestartFailed &&
            divisor >= std::numeric_limits<int>::min() && divisor <= std::numeric_limits<int>::max() &&
            divisor != 0 && divisor != -1;
 }
@@ -820,7 +833,138 @@ void PCSX::SPU::impl::RemoveStreams(void) {
     m_reverb.mixStart = 0;
 }
 
-// Called by the main emulator after init.
+void PCSX::SPU::impl::cooperativeThread() {
+    while (!endThread) {
+        std::unique_lock lock(m_audioCommandMutex);
+        m_audioCommandCV.wait(lock, [this] { return endThread || m_audioCommand != AudioCommand::None; });
+        if (endThread) break;
+        const auto command = m_audioCommand;
+        lock.unlock();
+        std::exception_ptr error;
+        bool blocked = false;
+        try {
+            m_audioOut.requireCooperative();
+            if (command == AudioCommand::Produce) blocked = cooperativeProduce();
+            else m_audioOut.consumeCooperativeChunk();
+            m_audioOut.requireCooperative();
+        } catch (...) {
+            error = std::current_exception();
+            m_audioOut.m_cooperativeFailed = true;
+            m_audioOut.capture().fail(Capture::Discontinuity);
+        }
+        lock.lock();
+        m_audioCommandError = error;
+        m_audioCommandBlocked = blocked;
+        m_audioCommand = AudioCommand::None;
+        m_audioCommandDone = true;
+        lock.unlock();
+        m_audioCommandCV.notify_all();
+        if (error) break;
+    }
+    {
+        std::lock_guard lock(m_audioCommandMutex);
+        threadEnded = 1;
+    }
+    m_audioCommandCV.notify_all();
+}
+
+bool PCSX::SPU::impl::cooperativeCommand(AudioCommand command) {
+    if (!m_audioOut.capture().ownerThread()) {
+        m_audioOut.capture().fail(Capture::Thread);
+        m_audioOut.failCooperative("Cooperative audio commands require the owner thread");
+    }
+    m_audioOut.checkCaptureSettings();
+    m_audioOut.requireCooperative();
+    if (m_audioDispatching || !hMainThread.joinable() || endThread || threadEnded) {
+        m_audioOut.failCooperative("Cooperative audio command is recursive or its worker has stopped");
+    }
+    m_audioDispatching = true;
+    try {
+        std::unique_lock lock(m_audioCommandMutex);
+        if (!m_audioCommandDone || m_audioCommand != AudioCommand::None) {
+            m_audioOut.failCooperative("Cooperative audio permits only one outstanding command");
+        }
+        m_audioCommandDone = false;
+        m_audioCommandError = nullptr;
+        m_audioCommand = command;
+        m_audioCommandCV.notify_all();
+        m_audioCommandCV.wait(lock, [this] { return m_audioCommandDone || threadEnded || endThread; });
+        if (m_audioCommandError) std::rethrow_exception(m_audioCommandError);
+        if (!m_audioCommandDone) m_audioOut.failCooperative("Cooperative audio worker stopped during its command");
+        const bool blocked = m_audioCommandBlocked;
+        lock.unlock();
+        m_audioDispatching = false;
+        m_audioOut.requireCooperative();
+        return blocked;
+    } catch (...) {
+        m_audioDispatching = false;
+        m_audioOut.m_cooperativeFailed = true;
+        m_audioOut.capture().fail(Capture::Discontinuity);
+        throw;
+    }
+}
+
+bool PCSX::SPU::impl::cooperativeProduce() {
+    auto& context = m_audioOut.m_cooperative;
+    ++context.producerCommands;
+    if (!m_enqueuePending) {
+        const auto epoch = synthesizeBatch(4 - settings.get<Volume>());
+        ++context.batches;
+        if (iCycle++ > 16) { m_enqueuePending = true; m_enqueueEpoch = epoch; }
+    }
+    if (m_enqueuePending) {
+        ++context.enqueueAttempts;
+        if (m_audioOut.feedVoiceData(reinterpret_cast<SDLAudio::Frame*>(spuBuffer),
+                (reinterpret_cast<uint8_t*>(pS) - spuBuffer) / sizeof(SDLAudio::Frame),
+                m_enqueueEpoch, std::chrono::milliseconds{0})) {
+            ++context.enqueues;
+            pS = reinterpret_cast<int16_t*>(spuBuffer);
+            iCycle = 0;
+            m_enqueuePending = false;
+        }
+    }
+    return m_enqueuePending;
+}
+
+void PCSX::SPU::impl::cooperativeFill() {
+    for (unsigned commands = 0; commands < 64; ++commands) {
+        if (cooperativeCommand(AudioCommand::Produce)) return;
+    }
+    m_audioOut.failCooperative("Cooperative producer fill exceeded 64 commands");
+}
+
+void PCSX::SPU::impl::cooperativeService() {
+    cooperativeCommand(AudioCommand::Consume);
+    cooperativeFill();
+}
+
+bool PCSX::SPU::impl::armCooperativeCapture(const Capture::Limits& limits, uint32_t cpuQuantum,
+                                          uint32_t callbackFrames) {
+    if (!cpuQuantum || cpuQuantum > 1000000 || !callbackFrames || callbackFrames > Capture::MAX_CHUNK ||
+        !armColdCapture(limits)) return false;
+    m_audioOut.m_cooperative.quantum = cpuQuantum;
+    m_audioOut.m_cooperative.chunk = callbackFrames;
+    m_audioOut.m_cooperativeService = [this] { cooperativeService(); };
+    return true;
+}
+
+void PCSX::SPU::impl::cooperativeRetired() {
+    if (!m_audioOut.cooperativeEnabled()) return;
+    if (!m_audioOut.capture().ownerThread()) {
+        m_audioOut.capture().fail(Capture::Thread);
+        m_audioOut.failCooperative("Cooperative retirement requires the owner thread");
+    }
+    m_audioOut.checkCaptureSettings();
+    m_audioOut.requireCooperative();
+    auto& context = m_audioOut.m_cooperative;
+    ++context.retired;
+    if (++context.remainder == context.quantum) {
+        context.remainder = 0;
+        ++context.quantumServices;
+        cooperativeService();
+    }
+}
+
 bool PCSX::SPU::impl::armColdCapture(const Capture::Limits& limits) {
     if (!m_audioOut.capture().ownerThread() || m_opened || m_workerStarted || spuIsOpen ||
         hMainThread.joinable() || bSpuInit || m_coldCaptureDeferred || !m_audioOut.armColdCapture(limits)) return false;
@@ -836,6 +980,10 @@ void PCSX::SPU::impl::startColdCapture() {
     }
     m_coldCaptureDeferred = false;
     SetupThread(true);
+    if (m_audioOut.cooperativeEnabled()) {
+        try { cooperativeFill(); }
+        catch (...) { RemoveThread(); throw; }
+    }
 }
 
 bool PCSX::SPU::impl::open() {
@@ -899,6 +1047,7 @@ void PCSX::SPU::impl::registerCDDAVolume(void (*CDDAVcallback)(uint16_t, uint16_
 ////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::impl::playCDDAchannel(int16_t *data, int size) {
+    if (m_audioOut.cooperativeEnabled()) m_audioOut.failCooperative("Cooperative audio does not support CDDA feeds");
     m_cdda.freq = 44100;
     m_cdda.nsamples = size / 4;
     m_cdda.stereo = 1;
