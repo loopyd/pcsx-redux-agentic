@@ -24,6 +24,7 @@
 #include <utility>
 
 #include "main/main.h"
+#include "flags.h"
 
 
 static std::pair<int, std::string> loopMain(int argc, char **argv) {
@@ -80,7 +81,10 @@ int main(int argc, char **argv) {
     fprintf(stderr, "%s\n", errorMsg.c_str());
 
 #ifndef PCSX_CLI
-    Complain(errorMsg.c_str());
+    const CommandLine::args args(argc, argv);
+    if (!args.get<bool>("cli") && !args.get<bool>("no-ui") && !args.get<bool>("tui")) {
+        Complain(errorMsg.c_str());
+    }
 #endif
 
     return -1;

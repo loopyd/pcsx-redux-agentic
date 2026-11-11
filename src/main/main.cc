@@ -66,13 +66,13 @@ static AudioCaptureArguments parseAudioCapture(const CommandLine::args& args) {
     const char* flag = cooperative ? "audio-cooperative-capture" : "audio-cold-capture";
     const auto values = args.values(flag);
     const char* error = cooperative
-        ? "-audio-cooperative-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS,QUANTUM,CHUNK tuple within 2646000,65536,65536,1000000,2048; it excludes -audio-cold-capture"
-        : "-audio-cold-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS triple within 2646000,65536,65536";
+        ? "-audio-cooperative-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS,SCHEDULING,QUANTUM,CHUNK tuple within 2646000,65536,65536,1048576,1000000,2048; it excludes -audio-cold-capture"
+        : "-audio-cold-capture requires one positive decimal SAMPLES,BLOCKS,EVENTS,SCHEDULING tuple within 2646000,65536,65536,1048576";
     if ((cold && cooperative) || args.options().count(flag) != 1 || values.size() != 1 ||
         args.options().count("version") || args.options().count("dumpproto")) throw std::invalid_argument(error);
     std::string_view remaining = values.front();
-    std::array<uint32_t, 5> limits{};
-    const unsigned fields = cooperative ? 5 : 3;
+    std::array<uint32_t, 6> limits{};
+    const unsigned fields = cooperative ? 6 : 4;
     for (unsigned n = 0; n < fields; ++n) {
         const auto comma = remaining.find(',');
         if ((comma == std::string_view::npos) != (n == fields - 1)) throw std::invalid_argument(error);
@@ -82,11 +82,11 @@ static AudioCaptureArguments parseAudioCapture(const CommandLine::args& args) {
         if (parsed.ec != std::errc{} || parsed.ptr != part.data() + part.size()) throw std::invalid_argument(error);
         if (comma != std::string_view::npos) remaining.remove_prefix(comma + 1);
     }
-    const PCSX::SPU::Capture::Limits result{limits[0], limits[1], limits[2]};
-    if (!result.valid() || (cooperative && (limits[3] > 1000000 || limits[4] > 2048))) {
+    const PCSX::SPU::Capture::Limits result{limits[0], limits[1], limits[2], limits[3]};
+    if (!result.valid() || (cooperative && (limits[4] > 1000000 || limits[5] > 2048))) {
         throw std::invalid_argument(error);
     }
-    return {result, limits[3], limits[4]};
+    return {result, limits[4], limits[5]};
 }
 
 class SystemImpl final : public PCSX::System {

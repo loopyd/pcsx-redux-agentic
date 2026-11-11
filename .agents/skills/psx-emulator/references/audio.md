@@ -33,9 +33,10 @@ without a success marker. Inspect retained files and logs.
 
 ### Cold producer capture
 
-Select `--audio-cold-capture SAMPLES,BLOCKS,EVENTS` with `--mission spu
+Select `--audio-cold-capture SAMPLES,BLOCKS,EVENTS,SCHEDULING` with `--mission spu
 --argument action=cold-capture`. The positive canonical decimal limits are at most
-2646000, 65536 and 65536. Supply `identity`, `frames`, optional `stop` and `tail`;
+2646000, 65536, 65536 and 1048576. `SCHEDULING` bounds the full scheduling journal
+independently of event storage. Supply `identity`, `frames`, optional `stop` and `tail`;
 `target`, state restoration and mission-level capacity arguments reject.
 
 This mode defers the first SPU worker until initial core reset finishes, begins
@@ -52,10 +53,10 @@ writes RAM and assigns registers on the host; qualify that handoff separately.
 
 ### Cooperative producer capture
 
-Select `--audio-cooperative-capture SAMPLES,BLOCKS,EVENTS,QUANTUM,CHUNK` with
+Select `--audio-cooperative-capture SAMPLES,BLOCKS,EVENTS,SCHEDULING,QUANTUM,CHUNK` with
 `--mission spu --argument action=cooperative-capture`. It excludes
-`--audio-cold-capture`. All five fields are positive canonical decimals, bounded
-by 2646000, 65536, 65536, 1000000 and 2048 respectively. Mission arguments and
+`--audio-cold-capture`. All six fields are positive canonical decimals, bounded
+by 2646000, 65536, 65536, 1048576, 1000000 and 2048 respectively. Mission arguments and
 fresh origin requirements match cold producer capture above.
 
 The worker first fills to queue backpressure. Every `QUANTUM` completed interpreter

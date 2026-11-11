@@ -105,21 +105,26 @@ Distinguish pre-instruction observations, retired steps, host edits and cycles;
 qualify executable/overlay and `psx-rizin` RAM alias.
 Transport success establishes neither hardware accuracy nor semantic acceptance.
 
-`--audio-cold-capture SAMPLES,BLOCKS,EVENTS` selects the explicit fresh-worker
+`--audio-cold-capture SAMPLES,BLOCKS,EVENTS,SCHEDULING` selects the explicit fresh-worker
 context in [Audio](audio.md#cold-producer-capture). It defers the first SPU worker
 until initial reset and recorder begin. Limits are positive canonical decimals,
-at most 2646000, 65536 and 65536. The receipt retains the native flag and selected context.
+at most 2646000, 65536, 65536 and 1048576. The receipt retains all four capacities,
+the native flag and selected context.
 Use `spu` action `cold-capture` or a custom mission that consumes the active
 recorder.
 
-`--audio-cooperative-capture SAMPLES,BLOCKS,EVENTS,QUANTUM,CHUNK` selects the
+`--audio-cooperative-capture SAMPLES,BLOCKS,EVENTS,SCHEDULING,QUANTUM,CHUNK` selects the
 [cooperative audio context](audio.md#cooperative-producer-capture) and excludes
 `--audio-cold-capture`. Its positive canonical decimal limits are at most
-2646000, 65536, 65536, 1000000 and 2048 respectively. Use `spu` action
+2646000, 65536, 65536, 1048576, 1000000 and 2048 respectively. Use `spu` action
 `cooperative-capture` to export actor metadata and PCM without saved states.
 This fresh cold context orders native producer and consumer turns at declared
 quanta of completed interpreter opcode executions and CPU audio-goal waits.
 Shared actor inputs do not establish production timing or PCM acceptance.
+
+`SCHEDULING` independently bounds the full scheduling journal; it does not change
+event collection or actor order. Non-GUI launches report fatal errors on stderr
+and exit without opening an X11 error dialog.
 
 Both launch modes prearm an active recorder. Ordinary `Audio.begin` requires an
 empty recorder and will refuse. Keep proprietary inputs/captures outside skill assets.
