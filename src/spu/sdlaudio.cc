@@ -268,6 +268,44 @@ void PCSX::SPU::SDLAudio::consumeCooperativeChunk() {
     requireCooperative();
 }
 
+void PCSX::SPU::SDLAudio::serviceCooperative() {
+    requireCooperative();
+    if (!m_cooperativeService) failCooperative("Cooperative audio service is unavailable");
+    try { m_cooperativeService(); }
+    catch (...) { m_cooperativeFailed = true; m_capture.fail(Capture::Discontinuity); throw; }
+}
+
+auto PCSX::SPU::SDLAudio::feedCDData(const Frame* data, size_t frames)
+    -> Circular<Frame, AudioStreamCapacity>::Admission {
+    if (!cooperativeEnabled()) return m_audioStream.enqueue(data, frames);
+    if (!m_capture.ownerThread()) {
+        m_capture.fail(Capture::Thread);
+        failCooperative("Cooperative CD audio requires its owner thread");
+    }
+    requireCooperative();
+    if (frames >= AudioStreamCapacity) failCooperative("Cooperative CD submission cannot fit in its queue");
+
+    using Clock = std::chrono::steady_clock;
+    const size_t before = m_audioStream.buffered();
+    const bool blocked = frames >= AudioStreamCapacity - before;
+    const auto begin = blocked ? Clock::now() : Clock::time_point{};
+    size_t queued = before;
+    while (frames >= AudioStreamCapacity - queued) {
+        ++m_cooperative.cdWaitServices;
+        serviceCooperative();
+        const size_t remaining = m_audioStream.buffered();
+        if (remaining >= queued) failCooperative("Cooperative CD audio wait did not drain its queue");
+        queued = remaining;
+    }
+    const uint64_t elapsed = blocked
+        ? std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count() : 0;
+    auto admission = m_audioStream.enqueue(data, frames, std::chrono::milliseconds{0});
+    if (!admission.accepted || admission.queuedBefore != queued) {
+        failCooperative("Cooperative CD audio queue changed outside a consumer turn");
+    }
+    return {before, admission.queuedAfter, elapsed, blocked, true};
+}
+
 void PCSX::SPU::SDLAudio::cooperativeWait(uint32_t initialTrigger) {
     if (!m_capture.ownerThread()) {
         m_capture.fail(Capture::Thread);
@@ -283,13 +321,11 @@ void PCSX::SPU::SDLAudio::cooperativeWait(uint32_t initialTrigger) {
     };
     uint32_t services = 0;
     while (!released()) {
-        requireCooperative();
-        if (!m_cooperativeService || services++ == Capture::MAX_RECORDS) {
+        if (services++ == Capture::MAX_RECORDS) {
             failCooperative("Cooperative audio goal wait exceeded its service bound");
         }
         ++m_cooperative.waitServices;
-        try { m_cooperativeService(); }
-        catch (...) { m_cooperativeFailed = true; m_capture.fail(Capture::Discontinuity); throw; }
+        serviceCooperative();
     }
 }
 

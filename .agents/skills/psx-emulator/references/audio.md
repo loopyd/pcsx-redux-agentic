@@ -74,8 +74,10 @@ requires queued plus incoming frames below 2048; a blocked submission retains it
 samples for the next fill. Each fill allows at most 64 producer commands, and each
 CPU goal wait allows at most 65536 services. Exceeding either bound fails capture.
 Consumer commands use the shared native callback path. SDL stays paused, the null
-clock is absent and speed is 1. The mode rejects CD audio feeds. Ordinary modes
-are unchanged.
+clock is absent and speed is 1. An XA or CDDA submission that would fill the
+16,384-frame CD queue runs consumer and producer turns until the batch fits.
+Each turn must drain CD frames. These turns preserve the CPU cycle and opcode
+remainder.
 
 The mission consumes the active cold recorder and exports `cold-start.json`,
 `cooperative-initial.json`, `cooperative-final.json`, `sound.json` and the normal
@@ -90,6 +92,8 @@ remain valid. Use a fresh process for further guest execution.
 `PCSX.Audio.cooperative()` returns separate `psx.audio-cooperative/v1` metadata
 bound to the capture epoch. It retains `quantum`, `chunk`, actor `order`, the
 `retirement_boundary`, opcode and command counts, and failure status.
+`cd_wait_services` counts the turns needed for CD admission separately from CPU
+goal waits.
 
 Shared declared actor inputs can qualify independent comparisons between native
 and Rust execution only after checking bounded original music and SFX guest
@@ -347,13 +351,13 @@ same CPU cycle. `queued_before` and `queued_after` are sampled under the queue
 mutex, before waiting and after admission or rejection. The latter includes an
 accepted batch. `blocked=1` means the initial queued plus incoming count was at
 least 16,384; it does not prove an OS sleep. `accepted` matches the parent feed.
-`wait_nanoseconds` is a decimal uint64 duration around `wait_for`, including
-mutex reacquisition and excluding initial lock acquisition, copying and export.
-It is zero for immediate admission. The existing strict capacity predicate and
-200 ms deadline are unchanged. Host duration is not emulated time, and these
-observations do not establish a CPU-to-output sample mapping. A rejected feed
-and its wait record precede the sticky streaming-loss failure; later rows can be
-missing. Preserve failed captures and their loss counters.
+`wait_nanoseconds` is zero for immediate admission. For a blocked feed, it is
+the decimal uint64 host duration of the cooperative service turns or the
+ordinary `wait_for`. The ordinary wait includes mutex reacquisition and has a
+200 ms deadline. The duration excludes initial lock acquisition, copying and
+export. Use CPU cycles and callback records for guest and output ordering. A
+rejected feed and its wait record precede the sticky streaming-loss failure.
+Later rows can be missing. Preserve failed captures and their loss counters.
 
 Bus kinds include address/value/width. Parent IDs connect dispatcher/handler;
 zero means no recorded parent, not necessarily guest root. Words may contain

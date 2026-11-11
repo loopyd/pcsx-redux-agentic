@@ -679,7 +679,6 @@ void PCSX::SPU::impl::writeCaptureBufferCD(int numbSamples) {
 ////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::impl::playADPCMchannel(xa_decode_t *xap) {
-    if (m_audioOut.cooperativeEnabled()) m_audioOut.failCooperative("Cooperative audio does not support XA feeds");
     // Nothing to do when XA streaming is disabled.
     if (!settings.get<Streaming>()) { observeCDFeed(1, nullptr); return; }
     if (!xap) { observeCDFeed(2, nullptr); return; }
@@ -1047,7 +1046,6 @@ void PCSX::SPU::impl::registerCDDAVolume(void (*CDDAVcallback)(uint16_t, uint16_
 ////////////////////////////////////////////////////////////////////////
 
 void PCSX::SPU::impl::playCDDAchannel(int16_t *data, int size) {
-    if (m_audioOut.cooperativeEnabled()) m_audioOut.failCooperative("Cooperative audio does not support CDDA feeds");
     m_cdda.freq = 44100;
     m_cdda.nsamples = size / 4;
     m_cdda.stereo = 1;

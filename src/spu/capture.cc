@@ -276,6 +276,7 @@ void PCSX::SPU::SDLAudio::setCaptureLua(Lua L, std::function<std::array<uint32_t
         wide(L, "enqueue_attempts", result.enqueueAttempts); wide(L, "enqueues", result.enqueues);
         wide(L, "consumer_commands", result.consumerCommands); wide(L, "consumer_frames", result.consumerFrames);
         wide(L, "quantum_services", result.quantumServices); wide(L, "wait_services", result.waitServices);
+        wide(L, "cd_wait_services", result.cdWaitServices);
         number(L, "failure", failed ? 1 : 0);
         number(L, "capture_failures", status.failures);
         return 1;

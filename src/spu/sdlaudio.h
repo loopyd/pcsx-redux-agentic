@@ -155,10 +155,7 @@ class SDLAudio {
         m_voiceEnqueued += frames;
         return true;
     }
-    Circular<Frame, AudioStreamCapacity>::Admission feedCDData(const Frame* data, size_t frames) {
-        if (cooperativeEnabled()) failCooperative("Cooperative audio does not support CD audio feeds");
-        return m_audioStream.enqueue(data, frames);
-    }
+    Circular<Frame, AudioStreamCapacity>::Admission feedCDData(const Frame* data, size_t frames);
     size_t getBytesBuffered(unsigned streamId = 0) {
         switch (streamId) {
             case 0:
@@ -188,12 +185,14 @@ class SDLAudio {
     struct Cooperative {
         uint64_t epoch = 0, retired = 0, producerCommands = 0, batches = 0, enqueueAttempts = 0, enqueues = 0;
         uint64_t consumerCommands = 0, consumerFrames = 0, quantumServices = 0, waitServices = 0;
+        uint64_t cdWaitServices = 0;
         uint32_t quantum = 0, chunk = 0, remainder = 0;
     } m_cooperative;
     std::atomic<bool> m_cooperativeFailed{false};
     std::function<void()> m_cooperativeService;
     [[noreturn]] void failCooperative(const char*);
     void requireCooperative();
+    void serviceCooperative();
     void cooperativeWait(uint32_t initialTrigger);
     void consumeCooperativeChunk();
     Capture m_capture;

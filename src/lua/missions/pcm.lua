@@ -58,7 +58,7 @@ function M.export(prefix)
             blocks = 'last CPU publication observed by callback; not per-sample cycles',
             main_gain = 'signed Q15 pair consumed by the output chunk after summing the two streams, before mono',
             events = 'CPU access cycles with observed capture cursor; not audible-effect positions',
-            feed_waits = 'queue occupancy under its mutex; initial blocked predicate and host wait_for duration, excluding initial lock acquisition and copying; not CPU time or proof of OS sleep',
+            feed_waits = 'queue occupancy, initial blocked predicate and host duration of wait_for or cooperative service turns; excludes initial lock acquisition and copying; not CPU time or proof of OS sleep',
             workers = 'completed batches and acknowledged enqueue ranges; missing prefixes and unconfirmed tails remain unknown',
             stop_samples = 'first sample in each channel loop consuming a true ADSR stop input; -1 means none observed',
             pre_sample_steps = 'per-channel installed 16.16 steps before sample loops, not simultaneous or per-sample modulation observations',
